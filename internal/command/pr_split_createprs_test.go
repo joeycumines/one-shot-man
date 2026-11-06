@@ -8,28 +8,9 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// T034: createPRs mock execution flow tests
-//
-// These tests exercise the createPRs function by intercepting the exec module
-// at the JS level. Because Goja caches `require()` results, mutating the
-// properties of the cached `osm:exec` object affects all consumers —
-// including the `var exec = require('osm:exec')` captured at script load.
-// ---------------------------------------------------------------------------
+// T034: createPRs mock execution flow tests.
 
-// execMockSetupJS returns JS code that installs an exec mock with
-// configurable per-command responses. The mock records every call and
-// returns an appropriate response based on the command prefix.
-//
-// Mock state globals:
-//
-//	_execCalls       — array of {argv:[...]} records
-//	_execResponses   — map of command-key → response override
-//
-// Matching priority (first match wins):
-//  1. Exact match on full argv joined with "\x00" separator
-//  2. Prefix match on "cmd subcmd1 subcmd2" (e.g. "gh pr create")
-//  3. Fallback: success with empty stdout/stderr
+// execMockSetupJS installs an exec mock with configurable responses.
 func execMockSetupJS() string {
 	return `(function() {
     var execMod = require('osm:exec');

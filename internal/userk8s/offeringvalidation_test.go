@@ -179,11 +179,7 @@ spec:
 	}
 }
 
-// TestRouteValidationAllowsTwoShaperRoutesForOneAccess pins the documented
-// multi-account design: ModelRoute.metadata.name is the shaper section identity,
-// so several routes (accounts, regions, protocols) may dial the same logical
-// ModelAccess. Each route here has a distinct mount prefix, which is what the
-// shaper actually needs to keep them apart.
+// TestRouteValidationAllowsTwoShaperRoutesForOneAccess checks multi-route access.
 func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	_, err := loadDocuments(routeValidationDocuments(
 		routeValidationRoute("alpha-one", "alpha-chat", "", ""),
@@ -268,9 +264,7 @@ spec:
 	}
 }
 
-// TestRouteValidationRefusesTwoShaperRoutesOnOneMount is the hazard the
-// per-access ban was standing in for: two shaper sections claiming the same
-// local path would serve whichever route bound it first.
+// TestRouteValidationRefusesTwoShaperRoutesOnOneMount checks duplicate mount.
 func TestRouteValidationRefusesTwoShaperRoutesOnOneMount(t *testing.T) {
 	first := `apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
@@ -317,9 +311,7 @@ spec:
 	}
 }
 
-// TestRouteValidationRefusesSurfaceWithoutMountPrefix covers the sentinel bug:
-// a surface whose endpoint is just /v1 (or /) contributes no mount prefix, and
-// a later surface must not be allowed to define one on its behalf.
+// TestRouteValidationRefusesSurfaceWithoutMountPrefix checks no-mount surface.
 func TestRouteValidationRefusesSurfaceWithoutMountPrefix(t *testing.T) {
 	noPrefix := `apiVersion: one-shot-man/v1alpha1
 kind: ModelRoute
@@ -395,12 +387,7 @@ spec:
 	}
 }
 
-// TestShaperMountPrefixNormalization pins the endpoint->mount derivation for
-// every accepted endpoint shape and every repeated-slash shape that is
-// normalized away. The guard the function exists for is that no surface may
-// reduce to an empty prefix: repeated slashes between a surface API suffix and
-// "/v1" used to leave the suffix in place, so "/openai//v1" survived as the
-// phantom mount "/openai" and accepted an API-only path.
+// TestShaperMountPrefixNormalization checks endpoint->mount derivation.
 func TestShaperMountPrefixNormalization(t *testing.T) {
 	route := func(surface, endpoint string) *v1alpha1.ModelRouteSpec {
 		return &v1alpha1.ModelRouteSpec{

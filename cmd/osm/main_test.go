@@ -351,12 +351,8 @@ func TestVersionCommandVariations(t *testing.T) {
 	}
 }
 
-// runWithCapturedIO invokes run() with the given os.Args, capturing stdout
-// and stderr to temporary files. It returns the captured output and the error.
-//
-// WARNING: This function mutates process-global state (os.Args, os.Stdout,
-// os.Stderr). Tests that call this function MUST NOT use t.Parallel().
-// Adding t.Parallel() to any caller will cause data races under -race.
+// runWithCapturedIO runs run() with given args, capturing stdout/stderr.
+// Mutates process-global state; callers must not use t.Parallel().
 func runWithCapturedIO(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 
@@ -470,12 +466,7 @@ func TestMainInvokesRun(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// T392: Clean flag-parse error output tests
-//
-// Validates that parse errors show a concise 1-line error + hint to use
-// --help, instead of dumping the full flag listing.
-// ---------------------------------------------------------------------------
+// T392: clean flag-parse error output tests.
 
 func TestFlagParseError_CleanOutput(t *testing.T) {
 	testCases := []struct {
@@ -545,8 +536,7 @@ func TestFlagParseError_CleanOutput(t *testing.T) {
 	}
 }
 
-// TestCommandHelpStillWorks verifies that --help on a command still
-// produces the full usage output (regression check for T392).
+// TestCommandHelpStillWorks checks --help output.
 func TestCommandHelpStillWorks(t *testing.T) {
 	testCases := []struct {
 		name string

@@ -382,12 +382,7 @@ func TestChunk06_CleanupBranches_NullPlan(t *testing.T) {
 //  mislabel cut-short captures.
 // ---------------------------------------------------------------------------
 
-// installTruncatedSpawnMock replaces the git-mock spawn with one whose
-// streams end with {done: true, truncated: true} when the mocked execv result
-// carries error === true, and cleanly otherwise. Returns JS restoring it.
-//
-// The mock dispatches through the same execv override so '!sh' responses keep
-// working; only the stream end marker changes.
+// installTruncatedSpawnMock replaces spawn with truncated streams.
 const truncatedSpawnMockJS = `
 	globalThis.__origSpawn06 = globalThis.prSplit._modules.exec.spawn;
 	globalThis.prSplit._modules.exec.spawn = function(cmd, args) {

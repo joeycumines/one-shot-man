@@ -1,12 +1,6 @@
 package command
 
-// Tests for the optional TUIStateMachine / EventStream integration in
-// AgentCodeExecutor (pr_split_09_agent.js). These verify that:
-//   - initEventTracking creates a stateMachine when aimux provides
-//     newTUIStateMachine
-//   - startEventLoop feeds output lines to the state machine, causing
-//     state transitions
-//   - close() stops the event loop and nulls out all enhancement fields
+// Tests for optional TUIStateMachine/EventStream integration.
 
 import (
 	"encoding/json"

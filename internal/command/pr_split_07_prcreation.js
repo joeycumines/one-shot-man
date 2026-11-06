@@ -4,9 +4,7 @@
 // Attaches to prSplit: createPRs.
 
 (function(prSplit) {
-    // Note: gitExec and exec are read at call time (late-bound) rather than
-    // captured at load time. This enables test mocking since createPRs
-    // involves external calls (push, gh CLI) that must be mockable.
+    // gitExec/exec are late-bound for test mocking.
     var padIndex = prSplit._padIndex;
     // Late-bound so test mocks of _execFailReason are honored.
     var execFailReason = function(result) { return prSplit._execFailReason(result); };
@@ -123,13 +121,7 @@
         return lines.join('\n');
     }
 
-    // --- createPRs — pushes branches and creates stacked GitHub PRs ---
-    // Options:
-    //   draft:       bool   - Create as draft PRs (default: true)
-    //   remote:      string - Git remote to push to (default: 'origin')
-    //   pushOnly:    bool   - Push branches but don't create PRs
-    //   autoMerge:   bool   - Enable auto-merge via merge queue
-    //   mergeMethod: string - Merge method: squash, merge, rebase
+    // --- createPRs — pushes branches and creates stacked PRs ---
     async function createPRs(plan, options) {
         options = options || {};
         var resolveDir = prSplit._resolveDir;
@@ -145,7 +137,7 @@
             return { error: 'no splits in plan — run "plan" or "run" to generate splits first', results: [] };
         }
 
-        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        // T077: dry-run mode.
         if (dryRun) {
             var dryResults = [];
             for (var d = 0; d < plan.splits.length; d++) {
@@ -176,14 +168,10 @@
             }
         }
 
-        // Pre-flight: verify baseBranch exists on the remote so we don't
-        // hit "Base sha can't be blank" from the GitHub GraphQL API.
+        // Pre-flight: verify baseBranch on remote.
         if (!pushOnly) {
             var remoteCheck = await gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            // ls-remote exits 0 with empty output when the ref is absent, and
-            // 2 on transport/auth errors; an exec-layer failure (error true,
-            // e.g. an aborted capture, code -1) is neither — it must be
-            // reported as an ls-remote failure, not as a missing branch.
+            // ls-remote: 0 empty = absent; 2 = transport error; error true = failure.
             if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
                 return {
                     error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
@@ -242,16 +230,11 @@
                 ghArgs.push('--draft');
             }
 
-            // Pre-check: verify the head branch has actual changes from
-            // the base. This avoids the GraphQL error "No commits between
-            // base and head" / "Head sha can't be blank" which occurs when
-            // execute-split fell back to --allow-empty.
+            // Pre-check: head has changes from base.
             var diffCheck = await gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
-            // Exit 0 = no diff (skip PR); exit 1 = there is a diff (create
-            // the PR); anything else (128 git error, -1 aborted capture) is an
-            // unknown state — record the failure and do NOT create a PR.
+            // Exit 0 = no diff (skip); 1 = diff (create); else = error.
             if (diffCheck.code === 0) {
-                // Exit code 0 means no diff — skip PR creation.
+                // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" — skipping PR creation';
@@ -298,21 +281,9 @@
     prSplit.formatPRBody = formatPRBody;
     prSplit.createPRs = createPRs;
 
-    // --- createPRsAsync — non-blocking variant for TUI use (T076) ---
-    // Identical logic to createPRs but uses exec.spawn via _gitExecAsync
-    // and a local ghExecAsync helper instead of blocking exec.execv.
-    // This keeps the Goja event loop free so BubbleTea can continue
-    // rendering and processing events during push/PR/merge operations.
-    //
-    // Additional options over createPRs:
-    //   progressFn(msg)  — callback for per-step progress updates
-    //
-    // The synchronous createPRs is preserved for REPL / CLI / test usage.
+    // --- createPRsAsync — non-blocking variant (T076) ---
 
-    // ghExecAsync — spawn 'gh' with args array, collect stdout+stderr,
-    // return {stdout, stderr, code, error, message}.
-    // Uses exec.spawn directly (not shell) to avoid quoting issues
-    // with PR titles/bodies that contain special characters.
+    // ghExecAsync: spawn gh, collect output.
     async function ghExecAsync(args, options) {
         var exec = prSplit._modules.exec;
         var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
@@ -348,7 +319,7 @@
             return { error: 'no splits in plan \u2014 run "plan" or "run" to generate splits first', results: [] };
         }
 
-        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        // T077: dry-run mode.
         if (dryRun) {
             var dryResults = [];
             for (var d = 0; d < plan.splits.length; d++) {
@@ -370,7 +341,7 @@
 
         var gitExecAsync = prSplit._gitExecAsync;
 
-        // Pre-flight: verify gh CLI is available.
+        // Pre-flight: gh CLI available.
         if (!pushOnly) {
             if (progressFn) progressFn('Checking gh CLI availability\u2026');
             var ghCheck = await ghExecAsync(['--version']);
@@ -379,14 +350,11 @@
             }
         }
 
-        // Pre-flight: verify baseBranch exists on the remote.
+        // Pre-flight: baseBranch on remote.
         if (!pushOnly) {
             if (progressFn) progressFn('Verifying base branch "' + plan.baseBranch + '" on remote\u2026');
             var remoteCheck = await gitExecAsync(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            // ls-remote exits 0 with empty output when the ref is absent, and
-            // 2 on transport/auth errors; an exec-layer failure (error true,
-            // e.g. an aborted capture, code -1) is neither \u2014 it must be
-            // reported as an ls-remote failure, not as a missing branch.
+            // ls-remote: 0 empty = absent; 2 = transport; error true = failure.
             if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
                 return {
                     error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
@@ -401,7 +369,7 @@
             }
         }
 
-        // Cancellation check helper.
+        // Cancellation check.
         function cancelled() {
             return (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) ||
                 (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled());  // T117: honor force-cancel
@@ -446,14 +414,11 @@
             var title = formatPRTitle(plan, pi);
             var body = formatPRBody(plan, pi);
 
-            // Pre-check: verify the head branch has actual changes from
-            // the base. Avoids GraphQL error "No commits between base and head".
+            // Pre-check: head has changes.
             var diffCheck = await gitExecAsync(dir, ['diff', '--quiet', base, prSplit2.name]);
-            // Exit 0 = no diff (skip PR); exit 1 = there is a diff (create
-            // the PR); anything else (128 git error, -1 aborted capture) is an
-            // unknown state — record the failure and do NOT create a PR.
+            // Exit 0 = no diff (skip); 1 = diff (create); else = error.
             if (diffCheck.code === 0) {
-                // Exit code 0 means no diff — skip PR creation.
+                // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" \u2014 skipping PR creation';

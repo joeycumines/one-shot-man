@@ -41,14 +41,7 @@ func TestSpawnChild_ContextDeadline(t *testing.T) {
 		t.Skip("skipping process timeout test in short mode")
 	}
 
-	// The deadline must be generous enough that process startup itself
-	// (process creation, job assignment, pipe setup) is not racing the clock:
-	// on a loaded CI runner, CreateProcess can take longer than 75ms, and
-	// os/exec's Start then returns the raw ctx error, which used to fail this
-	// test with "SpawnChild: context deadline exceeded". The contract under
-	// test is that the deadline terminates the process TREE promptly once the
-	// child is running, so the budget covers startup and the Wait bound below
-	// covers the kill.
+	// Generous deadline to cover startup on loaded CI.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	command, args := hangingCommand()
@@ -74,13 +67,7 @@ func TestSpawnChild_ContextDeadline(t *testing.T) {
 	}
 }
 
-// TestSpawnChild_AlreadyExpiredContext pins the explicit error contract:
-// SpawnChild with an already-cancelled context reports a *SpawnContextError
-// wrapping the context error (no process is started), so callers can tell a
-// pre-expired deadline apart from a genuine start failure. This is the exact
-// signature the windows CI runner produced when a 75ms deadline expired
-// during CreateProcess on a loaded machine — the raw "context deadline
-// exceeded" from os/exec.Start read like a SpawnChild bug.
+// TestSpawnChild_AlreadyExpiredContext checks expired ctx error contract.
 func TestSpawnChild_AlreadyExpiredContext(t *testing.T) {
 	t.Parallel()
 
@@ -93,8 +80,7 @@ func TestSpawnChild_AlreadyExpiredContext(t *testing.T) {
 		_, _ = child.Wait()
 		t.Fatal("SpawnChild with an expired context succeeded, want an error")
 	}
-	var spawnCtxErr *SpawnContextError
-	if !errors.As(err, &spawnCtxErr) {
+	if _, ok := errors.AsType[*SpawnContextError](err); !ok {
 		t.Fatalf("SpawnChild error = %v (%T), want a *SpawnContextError", err, err)
 	}
 	if !errors.Is(err, context.Canceled) {
@@ -138,14 +124,7 @@ func TestTimeoutFromMilliseconds(t *testing.T) {
 	}
 }
 
-// TestRunExec_TimeoutKeepsInGroupWritersOutput pins the abort grace on the
-// execv timeout path: when ctx kills the command, the process-group close has
-// already reaped every in-group writer, so the readers' natural EOF — and the
-// output the command had already written — must be collected within the
-// abort grace instead of the capture being force-closed at 0ms and reported
-// as a cut stream. The command itself was killed, so the result is still an
-// error (non-zero status), but stdout/stderr must be COMPLETE, not a prefix
-// with the capture-aborted diagnostic.
+// TestRunExec_TimeoutKeepsInGroupWritersOutput checks timeout keeps output.
 func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
 	skipSlow(t)
 
@@ -193,12 +172,7 @@ func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
 	}
 }
 
-// TestSpawn_TimeoutDeliversBufferedOutputClean pins the same grace on the
-// spawn path: a child that writes output and then hangs is killed by timeoutMs;
-// because the group kill reaps the only writer, the pumps reach natural EOF
-// within the abort grace, so the stream ends CLEAN (done, not truncated) with
-// the full output — the timeout is reported by elapsedMs/wait, not by a cut
-// stream.
+// TestSpawn_TimeoutDeliversBufferedOutputClean checks timeout delivers output.
 func TestSpawn_TimeoutDeliversBufferedOutputClean(t *testing.T) {
 	skipIfWindows(t)
 	skipSlow(t)

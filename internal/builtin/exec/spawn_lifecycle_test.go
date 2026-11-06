@@ -316,20 +316,7 @@ func TestChildLifetimeHoldsLoopUntilCleanupAfterKillError(t *testing.T) {
 	}
 }
 
-// TestRunExec_CapturesOutputAfterASchedulingDelay pins the capture contract a
-// wall-clock drain deadline used to break: the reader goroutines may be
-// scheduled arbitrarily late relative to the command's exit (plain scheduler
-// delay under load, no wedged child involved), and the captured streams must
-// still be complete.
-//
-// The regression it reproduces, from the 2026-11-03 macOS CI gate: the
-// collector abandoned the readers 250ms after the process tree closed, closing
-// them before they had run at all, so a successful `git rev-parse HEAD`
-// reported code 0, error false and stdout "". pr-split read that as an empty
-// SHA and TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped failed on "expected
-// non-empty SHA". A deadline over goroutine scheduling is not a failure
-// detector: it publishes a truncated stream as if it were the command's
-// output.
+// TestRunExec_CapturesOutputAfterASchedulingDelay checks late readers still capture fully.
 func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 	skipSlow(t)
 
@@ -359,12 +346,7 @@ func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 	}
 }
 
-// TestRunExec_AbortedCaptureIsAnExecFailure pins the other half of the
-// contract: capture is cut short only for a real reason (cancellation, an EOF
-// ceiling reached, or a process-tree close that could not prove the writers
-// were gone), and when it is, the result must report an exec-layer failure. A
-// partial or empty stream may never be presented as the output of a command
-// that "succeeded".
+// TestRunExec_AbortedCaptureIsAnExecFailure checks aborted capture is a failure.
 func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 	skipSlow(t)
 
@@ -411,18 +393,7 @@ func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 	}
 }
 
-// TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach covers the one writer
-// the process-tree close cannot reach: a process that left the command's
-// process group while holding an inherited write end. Shell job control
-// (`sh -c 'set -m; sleep 30 & echo parent-done'`) and setsid/daemon(3) both do
-// this, and the reproduced effect on a deadline-free collector is that runExec
-// never returns — the readers block on a write end no group signal can close.
-//
-// The endpoint here is the same shape from the collector's point of view: it
-// serves the leader's output, then blocks without ever reporting EOF. The EOF
-// ceiling must fire, keep the bytes the leader had already written, and report
-// the abandoned capture as an exec-layer failure instead of a hang or a silent
-// truncation.
+// TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach checks EOF ceiling.
 func TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach(t *testing.T) {
 	skipSlow(t)
 

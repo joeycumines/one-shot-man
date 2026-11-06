@@ -14,11 +14,7 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
-// renderedProfile is the fixture the userk8s package owns: the module tests
-// load the same rendered personal profile through the scripting surface rather
-// than restating catalog facts. The count assertions below mirror its contents,
-// so a fixture refresh must update this file too — see TestLoadRealRenderedProfile
-// in internal/userk8s, which asserts the same totals.
+// renderedProfile is the fixture the module tests load.
 const renderedProfile = "../../userk8s/testdata/rendered-personal-profile.yaml"
 
 type failingRunner struct{}
@@ -27,10 +23,7 @@ func (failingRunner) Run(context.Context, []string, time.Duration) (string, erro
 	return "", errors.New("test runner never resolves")
 }
 
-// newRuntime builds the module against a live event loop and returns the
-// runtime plus a runAsync helper that executes an async script body and
-// collects either the awaited value (delivered to __collect) or the first
-// rejection (__collectErr). The loop runs until the helper's deadline.
+// newRuntime builds the module against a live event loop.
 func newRuntime(t *testing.T, options Options) (*goja.Runtime, func(string) (goja.Value, error)) {
 	t.Helper()
 	loop, err := goeventloop.New()
@@ -215,8 +208,7 @@ func TestModuleResolveCredentialRejectsTypedCode(t *testing.T) {
 	}
 }
 
-// failingOnceRunner fails every resolver execution with a raw error whose
-// text (a fake resolver stdout/env detail) must never reach JavaScript.
+// failingOnceRunner fails every resolver execution.
 type failingOnceRunner struct{}
 
 const rawResolverSecret = "resolver-stdout: token=hunter2 env=AWS_SESSION_TOKEN=..."
@@ -225,12 +217,7 @@ func (failingOnceRunner) Run(context.Context, []string, time.Duration) (string, 
 	return "", errors.New(rawResolverSecret)
 }
 
-// TestModuleResolveCredentialRedactsResolverFailure drives resolver failure
-// redaction: the FilesBackend reports a failed command attempt through its
-// sanitized attempts detail (status missingCredentials), so the module rejects
-// with credential-unresolved — and by construction the raw resolver output
-// (stdout/env text) never reaches JavaScript, whichever typed code the path
-// produces.
+// TestModuleResolveCredentialRedactsResolverFailure checks redaction.
 func TestModuleResolveCredentialRedactsResolverFailure(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: failingOnceRunner{}})
@@ -422,7 +409,7 @@ func TestModuleRejectsUnserviceableSources(t *testing.T) {
 	}
 }
 
-// slowRunner delays before answering, so an abort can land mid-resolution.
+// slowRunner delays before answering.
 type slowRunner struct{}
 
 func (slowRunner) Run(ctx context.Context, _ []string, _ time.Duration) (string, error) {
@@ -434,10 +421,7 @@ func (slowRunner) Run(ctx context.Context, _ []string, _ time.Duration) (string,
 	}
 }
 
-// TestModuleResolveCredentialAbortsOnSignal proves the optional AbortSignal
-// aborts a pending resolution: the promise rejects with ABORT_ERR / AbortError
-// and the underlying resolver's context is cancelled (slowRunner returns on
-// ctx.Done rather than completing its 2s wait).
+// TestModuleResolveCredentialAbortsOnSignal checks abort.
 func TestModuleResolveCredentialAbortsOnSignal(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	vm, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}, Runner: slowRunner{}})
@@ -467,9 +451,7 @@ func TestModuleResolveCredentialAbortsOnSignal(t *testing.T) {
 	}
 }
 
-// TestModuleLoadIsAsync proves load() returns a promise: calling .then on it
-// resolves with the snapshot, and the synchronous style of the old API no
-// longer applies (load() itself returns a promise object, not the snapshot).
+// TestModuleLoadIsAsync checks load() is async.
 func TestModuleLoadIsAsync(t *testing.T) {
 	_, runAsync := newRuntime(t, Options{Source: SourceFiles, Artifacts: []string{renderedProfile}})
 	value, err := runAsync(`
@@ -490,14 +472,7 @@ func TestModuleLoadIsAsync(t *testing.T) {
 	}
 }
 
-// TestModuleExposesAccessAnnotationsAndLabels proves the JS view carries a
-// ModelAccess's metadata.annotations verbatim alongside its labels.
-//
-// An annotation is how a CONSUMER-owned fact (a vendor binary's command line,
-// for example) reaches a script without the CRD modelling a field nobody else
-// would use. That only works if the module passes the map through untouched:
-// filtering "known" keys, coercing values, or dropping all-but-registry-name
-// would silently strip the very fact a consumer came to read.
+// TestModuleExposesAccessAnnotationsAndLabels checks annotations/labels pass-through.
 func TestModuleExposesAccessAnnotationsAndLabels(t *testing.T) {
 	document := `apiVersion: one-shot-man/v1alpha1
 kind: ModelProvider

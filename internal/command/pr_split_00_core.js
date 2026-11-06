@@ -1,15 +1,7 @@
 'use strict';
 // pr_split_00_core.js — Core: requires, style, config, runtime, internal helpers
 //
-// Initializes globalThis.prSplit and defines foundational utilities used by
-// every subsequent chunk. This file MUST be loaded first.
-//
-// Go-injected globals expected:
-//   prSplitConfig  — {baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, ...}
-//   config.name    — "pr-split"
-//   prSplit._cancelSource — cancellation callback (optional; used by isCancelled/isPaused/isForceCancelled)
-//
-// See docs/architecture-pr-split-chunks.md for the full chunk loading contract.
+// Core utilities; load first. See docs/architecture-pr-split-chunks.md.
 
 (function() {
     // --- Module imports ---
@@ -17,8 +9,7 @@
     var bt = require('osm:bt');
     var exec = require('osm:exec');
 
-    // TUI-only modules: loaded conditionally so that the script can also be
-    // require()'d from test environments that lack these modules.
+    // TUI-only modules (optional).
     var template, shared;
     try {
         template = require('osm:text/template');
@@ -138,10 +129,7 @@
 
     // --- Discovery & Scoping ---
 
-    // discoverVerifyCommand auto-detects the verification command for the
-    // working directory. Checks for Makefile, makefile, and GNUmakefile.
-    // Prefers 'gmake' (GNU Make on macOS) over 'make' if available.
-    // Returns the best make command, or '' if no Makefile found.
+    // discoverVerifyCommand auto-detects the verify command.
     async function discoverVerifyCommand(dir) {
         var sep = isWindows() ? '\\' : '/';
         var names = ['Makefile', 'makefile', 'GNUmakefile'];
@@ -160,9 +148,7 @@
         }
         if (!hasMakefile) return '';
 
-        // Prefer gmake (GNU Make) if available — required on macOS where
-        // the system 'make' is BSD Make 3.81 which cannot run GNU Makefiles.
-        // Late-bind through prSplit._lookupBinary so tests can override.
+        // Prefer gmake (GNU Make) on macOS.
         var lbFn = (typeof prSplit !== 'undefined' && prSplit._lookupBinary) || lookupBinary;
         var gmakeLookup = await lbFn('gmake');
         if (gmakeLookup.found) return 'gmake';
@@ -170,10 +156,7 @@
         return 'make';
     }
 
-    // T071: Language detection helpers for scopedVerifyCommand.
-    // Each detector returns the scoped test command for a homogeneous set of
-    // files of that language, or null if the file set is not exclusively that
-    // language. Detectors are tried in order; first match wins.
+    // Language detectors for scopedVerifyCommand (T071).
 
     function scopedShellArg(value) {
         return /^[A-Za-z0-9_./-]+$/.test(value) ? value : shellQuote(value);
@@ -206,7 +189,7 @@
 
     var _langDetectors = [
         {
-            // Go: run `go test -race` on unique package directories.
+            // Go: go test -race on unique packages.
             name: 'go',
             test: function(f) { return f.match(/\.go$/) !== null; },
             build: function(files) {
@@ -223,11 +206,11 @@
             }
         },
         {
-            // JavaScript / TypeScript: run jest with file paths.
+            // JS/TS: jest with file paths.
             name: 'js',
             test: function(f) { return f.match(/\.(js|jsx|ts|tsx|mjs|cjs)$/) !== null; },
             build: function(files) {
-                // Collect unique directories for --testPathPattern.
+                // Collect unique directories.
                 var dirs = {};
                 for (var i = 0; i < files.length; i++) {
                     var lastSlash = files[i].lastIndexOf('/');
@@ -243,7 +226,7 @@
             }
         },
         {
-            // Python: run pytest with file paths.
+            // Python: pytest with file paths.
             name: 'python',
             test: function(f) { return f.match(/\.py$/) !== null; },
             build: function(files) {
@@ -259,8 +242,7 @@
             }
         },
         {
-            // Rust: run cargo test (scoping to specific crates is complex,
-            // so we scope to the workspace root; still better than 'make').
+            // Rust: cargo test.
             name: 'rust',
             test: function(f) { return f.match(/\.rs$/) !== null; },
             build: function(_files) {
@@ -269,13 +251,7 @@
         }
     ];
 
-    // scopedVerifyCommand returns a verification command scoped to the
-    // packages/directories affected by the given files. Supports Go, JS/TS,
-    // Python, and Rust. For mixed-language file sets, returns the fallback
-    // command (full verification). The scoped command runs the appropriate
-    // test runner for the detected language.
-    //
-    // T071: Extended from Go-only to multi-language support.
+    // scopedVerifyCommand returns a verification command scoped to affected files.
     function scopedVerifyCommand(files, fallbackCommand) {
         if (!files || files.length === 0) {
             return fallbackCommand;
@@ -286,7 +262,7 @@
             }
         }
 
-        // Only scope when the fallback is a known build/test runner.
+        // Only scope for known runners.
         // Custom verify commands (e.g. 'true', 'echo ok') must not be replaced.
         var scopable = (fallbackCommand === 'make' ||
                         fallbackCommand === 'gmake' ||
@@ -363,14 +339,7 @@
         return await exec.execv(cmd);
     }
 
-    // collectSpawnOutput drains a spawned child's stdout and stderr while
-    // waiting for its exit status. A stream the exec layer had to cut before EOF
-    // ends with truncated: true (a writer outside the process group still held
-    // the pipe); that is reported, never hidden, because a prefix of the output
-    // is not the command's result.
-    //
-    // Returns {stdout, stderr, code, signal, truncated}. code falls back to 0
-    // when the handle reported no status, matching execv's contract.
+    // collectSpawnOutput drains a spawned child's stdout/stderr.
     async function collectSpawnOutput(child, outputFn) {
         var truncated = false;
 
@@ -437,14 +406,7 @@
         };
     }
 
-    // gitExecAsync runs a git command asynchronously using exec.spawn().
-    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
-    // Unlike gitExec (blocking), this does NOT freeze the event loop during execution,
-    // allowing BubbleTea to continue rendering and processing events.
-    //
-    // T30: Critical for unblocking the TUI event loop during git operations.
-    // T44: Optional third parameter `options` with `outputFn(line)` callback
-    //      to stream output chunks to the TUI Output tab in real-time.
+    // gitExecAsync runs git asynchronously.
     async function gitExecAsync(dir, args, options) {
         var gitArgs = [];
         if (dir && dir !== '' && dir !== '.') {
@@ -480,19 +442,7 @@
         };
     }
 
-    // shellExecAsync runs an arbitrary shell command asynchronously via the
-    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
-    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
-    // Uses shellSpawnAsync internally, so the event loop is NOT frozen,
-    // allowing BubbleTea to continue rendering and processing events.
-    //
-    // T078/T109: Generic async shell execution for conflict resolution strategies,
-    // verify commands, and resolution commands. Follows the same readAll + Promise.all
-    // pattern as gitExecAsync for consistent behavior.
-    //
-    // Options:
-    //   outputFn(line) — callback to stream each output line (for TUI Output tab)
-    //   timeoutMs — native child-process deadline; the binding owns termination
+    // shellExecAsync runs a shell command asynchronously.
     async function shellExecAsync(command, options) {
         options = options || {};
         var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
@@ -537,15 +487,7 @@
         };
     }
 
-    // resolveDir resolves a directory path to an absolute path. When dir is
-    // empty, falsy, or '.', it resolves to the current working directory.
-    // This prevents git operations from being affected by later CWD changes
-    // (e.g. during test cleanup ordering races).
-    //
-    // Resolution order:
-    //   1. If dir is already an absolute/non-default path, use it.
-    //   2. If runtime.dir is configured (set by tests or CLI), use it.
-    //   3. Fall back to '.' (uses process CWD — correct in production).
+    // resolveDir resolves a directory to an absolute path.
     function resolveDir(dir) {
         if (dir && dir !== '' && dir !== '.') {
             return dir;
@@ -631,12 +573,7 @@
             : (await exec.execv(['test', '-f', path])).code === 0;
     }
 
-    // lookupBinary checks whether a named binary exists on PATH, or whether an
-    // explicit absolute command path exists on disk.
-    // Returns {found: bool, path: string} using 'where.exe' on Windows,
-    // 'which' on Unix for PATH lookups. found requires a non-empty resolved
-    // path, so a lookup whose output was cut short can never report a prefix
-    // as a binary.
+    // lookupBinary checks whether a binary exists on PATH.
     async function lookupBinary(name) {
         if (absolutePath(name)) {
             var exists = await fileExistsSync(name);
@@ -850,13 +787,7 @@
         return s;
     }
 
-    // --- Cooperative Cancellation (via injectable callback) ---
-    //
-    // The auto-split TUI was removed in T27. Cancellation is
-    // now driven by a _cancelSource callback injected before pipeline runs.
-    // Callers set prSplit._cancelSource = function(query) { ... } before
-    // calling automatedSplit(). query is 'cancelled', 'paused', or 'forceCancelled'.
-    // The callback returns true/false. When no callback is set, returns false.
+    // --- Cooperative Cancellation ---
 
     // isCancelled checks cooperative cancellation.
     // Returns true when the user has requested cancellation.
@@ -909,15 +840,7 @@
     // Mutable runtime config.
     prSplit.runtime = runtime;
 
-    // execFailReason renders a failed gitExec/gitExecAsync result for an
-    // error string. git's stderr is the primary evidence, but a nonzero
-    // exit can carry an EMPTY stderr — a silent failure (the process died
-    // before writing, a spawn/fork resource error, a bare exit status) —
-    // and an error string of just "<command> failed: " is then
-    // undiagnosable. The exec layer's message field always holds the
-    // Go-side error (including an aborted-capture diagnostic when output
-    // was cut short); it is appended whenever it adds information the
-    // stderr does not already carry.
+    // execFailReason renders a failed result's error string.
     var execFailReason = function(result) {
         var stderr = (result.stderr || '').trim();
         var message = (result.message === undefined || result.message === null) ? '' : String(result.message);

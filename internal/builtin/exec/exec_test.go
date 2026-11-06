@@ -617,11 +617,7 @@ func gojaStringLit(s string) string {
 	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\\`, `\\\\`), `'`, `\'`) + "'"
 }
 
-// TestSpawnNormalExitNeverTruncatesStream is the jsSpawn-level regression for
-// the abort-watcher race: when a command exits cleanly, the reap releases the
-// child context, and that must never race the abort watcher into closing the
-// drain while the pumps are still delivering buffered output. Every iteration
-// must observe the full line and a clean (non-truncated) end.
+// TestSpawnNormalExitNeverTruncatesStream checks clean exit does not truncate.
 func TestSpawnNormalExitNeverTruncatesStream(t *testing.T) {
 	skipIfWindows(t)
 	skipSlow(t)
@@ -653,20 +649,7 @@ func TestSpawnNormalExitNeverTruncatesStream(t *testing.T) {
 	}
 }
 
-// TestSpawnPostReapTimeoutCutsDrain is the jsSpawn-level regression for the
-// post-reap stall: the leader exits immediately while an escaped descendant
-// (own session via the test binary re-executed as a setsid helper — see
-// spawn_escaper_unix_test.go; the `setsid` binary is not portable and dash
-// cannot use job control without a tty) keeps the stdout write end open. The
-// timeoutMs deadline fires AFTER the reap, and nothing but the abort watcher
-// keyed on child.settled can cut the drain — the terminal read must arrive
-// promptly (well under the 30s EOF ceiling), not stall.
-//
-// The leader waits for a readiness file the helper writes only AFTER setsid()
-// returned, so the reaper's pre-reap group kill can never land before the
-// escape: without that wait the descendant may still be in the group when the
-// kill lands — then it dies, the pipe reaches a clean EOF, and the stream is
-// never truncated (the observed ubuntu CI flake).
+// TestSpawnPostReapTimeoutCutsDrain checks post-reap timeout cuts drain.
 func TestSpawnPostReapTimeoutCutsDrain(t *testing.T) {
 	skipIfWindows(t)
 	skipSlow(t)

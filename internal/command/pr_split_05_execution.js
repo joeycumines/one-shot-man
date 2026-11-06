@@ -103,8 +103,7 @@
 
     // --- executeSplit — creates branches for each split in a plan ---
     //
-    // All branch operations run in a temporary git worktree so the user's
-    // working directory remains completely untouched.
+    // Branch ops run in a temp worktree.
     async function executeSplit(plan, options) {
         options = options || {};
         var dir = resolveDir(plan.dir || '.');
@@ -117,8 +116,7 @@
             return { error: 'invalid plan: ' + validation.errors.join('; '), results: [] };
         }
 
-        // fileStatuses is REQUIRED — it determines whether each file
-        // should be checked out (A/M/R/C/T) or removed (D).
+        // fileStatuses determines checkout vs removal.
         if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
             return {
                 error: 'plan.fileStatuses is required — pass fileStatuses from analyzeDiff() to createSplitPlan()',
@@ -128,9 +126,7 @@
         var fileStatuses = plan.fileStatuses;
         var fileRenames = plan.fileRenames || {};
 
-        // Pre-validate: detect git-ignored files in the plan.
-        // Files matching .gitignore rules won't be processable via git add
-        // on fresh branches. We collect all plan files and batch-check them.
+        // Pre-validate: detect git-ignored files.
         var allPlanFiles = [];
         for (var pi = 0; pi < plan.splits.length; pi++) {
             for (var pf = 0; pf < plan.splits[pi].files.length; pf++) {
@@ -138,16 +134,10 @@
             }
         }
         if (allPlanFiles.length > 0) {
-            // --no-index: check purely against .gitignore rules, even if the
-            // file is currently tracked (e.g., force-added). On a new branch
-            // created from base, these files won't be tracked, so git add
-            // would silently skip them.
+            // --no-index checks .gitignore rules.
             var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
             var checkResult = await gitExec(dir, checkArgs);
-            // exit 0 = at least one file is ignored; exit 1 = none ignored.
-            // Any other status (128 fatal, -1 aborted capture) means the
-            // ignore list is UNKNOWN — proceeding would silently un-skip
-            // ignored files, so it is a top-level error.
+            // exit 0 = ignored; exit 1 = none; other = error.
             if (checkResult.code !== 0 && checkResult.code !== 1) {
                 return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
             }
@@ -166,7 +156,7 @@
             }
         }
 
-        // Pre-flight: delete any pre-existing split branches to allow re-runs.
+        // Pre-flight: delete pre-existing split branches.
         for (var k = 0; k < plan.splits.length; k++) {
             var existCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
             if (existCheck.code === 0) {
@@ -174,9 +164,7 @@
             }
         }
 
-        // Create a temporary git worktree for isolated split operations.
-        // The user's CWD remains completely untouched.
-        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        // Create a temp worktree (T103).
         var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
@@ -187,12 +175,7 @@
             await gitExec(dir, ['worktree', 'remove', '--force', worktreePath]);
         }
 
-        // INVARIANT (T108): Split branches form a CUMULATIVE CHAIN.
-        // Each split branches off the previous split (not baseBranch).
-        // split[0] branches off baseBranch, split[1] off split[0], etc.
-        // The final split therefore contains ALL files from ALL prior splits
-        // plus its own new files. This is why verifyEquivalence() (T094) only
-        // needs to compare the LAST split's tree SHA to sourceBranch^{tree}.
+        // INVARIANT (T108): cumulative chain of splits.
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
@@ -268,10 +251,7 @@
 
             var sha = await gitExec(worktreePath, ['rev-parse', 'HEAD']);
             if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
-                // A failed or empty rev-parse in a just-committed worktree means
-                // the split is in an unknown state — surface it rather than
-                // silently reporting an empty SHA (the commit itself is
-                // already durable, so the caller must see the problem).
+                // Failed/empty rev-parse after commit is an error.
                 splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
                 await cleanupWorktree();
@@ -300,9 +280,7 @@
         return { error: null, results: results, overallSkippedFiles: overallSkipped };
     }
 
-    // executeSplitAsync is the non-blocking version of executeSplit.
-    // Uses gitExecAsync (exec.spawn) so the event loop stays responsive during BubbleTea TUI.
-    // T31: async version for pipeline use.
+    // executeSplitAsync: non-blocking version.
     async function executeSplitAsync(plan, options) {
         var gitExecAsync = prSplit._gitExecAsync;
         options = options || {};
@@ -357,10 +335,7 @@
         if (allPlanFiles.length > 0) {
             var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
             var checkResult = await gitExecAsync(dir, checkArgs);
-            // exit 0 = at least one file is ignored; exit 1 = none ignored.
-            // Any other status (128 fatal, -1 aborted capture) means the
-            // ignore list is UNKNOWN — proceeding would silently un-skip
-            // ignored files, so it is a top-level error.
+            // exit 0 = ignored; exit 1 = none; other = error.
             if (checkResult.code !== 0 && checkResult.code !== 1) {
                 return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
             }
@@ -379,9 +354,7 @@
             }
         }
 
-        // Pre-flight: delete only branches that are not already represented by
-        // a valid checkpoint prefix. Completed branches are part of the
-        // cumulative chain and must remain available as the next split's base.
+        // Pre-flight: delete branches without a valid checkpoint.
         for (var k = 0; k < plan.splits.length; k++) {
             if (k < completedCount) {
                 continue;
@@ -392,8 +365,7 @@
             }
         }
 
-        // Create a temporary git worktree for isolated split operations.
-        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        // Create a temp worktree (T103).
         var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
@@ -404,13 +376,7 @@
             await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreePath]);
         }
 
-        // INVARIANT (T108): Split branches form a CUMULATIVE CHAIN.
-        // Each split[i] is based on split[i-1] (or plan.baseBranch for i=0).
-        // After creating split[i], we set `currentBase = split[i].name` so the
-        // next iteration branches from the previous split. The final split
-        // therefore contains ALL changes from all prior splits PLUS its own.
-        // This is why verifyEquivalence only compares the LAST split's tree
-        // to the source branch's tree.
+        // INVARIANT (T108): cumulative chain of splits.
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
@@ -488,9 +454,7 @@
 
             var sha = await gitExecAsync(worktreePath, ['rev-parse', 'HEAD']);
             if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
-                // Same contract as the sync path: a failed or empty rev-parse
-                // after a durable commit must surface, not collapse to an
-                // empty SHA.
+                // Failed/empty rev-parse after commit is an error.
                 splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
                 results.push(splitResult);
                 await cleanupWorktreeAsync();

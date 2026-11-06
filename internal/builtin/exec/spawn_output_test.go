@@ -15,9 +15,7 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
-// TestPipeQueueReportsCutShortStream pins the terminal contract of a stream the
-// exec layer closed instead of the writer: what was queued is delivered first,
-// and the end of the stream is an explicit cut-short, never a clean EOF.
+// TestPipeQueueReportsCutShortStream checks cut-short terminal contract.
 func TestPipeQueueReportsCutShortStream(t *testing.T) {
 	t.Parallel()
 
@@ -37,9 +35,7 @@ func TestPipeQueueReportsCutShortStream(t *testing.T) {
 	}
 }
 
-// TestPipeQueueCleanCloseStaysClean makes sure the truncation flag is not set by
-// a stream that ended on its own, and that the queued data still arrives before
-// the terminal state.
+// TestPipeQueueCleanCloseStaysClean checks clean close stays clean.
 func TestPipeQueueCleanCloseStaysClean(t *testing.T) {
 	t.Parallel()
 
@@ -58,11 +54,7 @@ func TestPipeQueueCleanCloseStaysClean(t *testing.T) {
 	}
 }
 
-// TestSettlePumpsMarksStreamsItCut pins the bounded drain: a pump that cannot
-// finish is cut, its stream is marked truncated so a consumer can tell its
-// prefix from the whole output, and the handle still settles instead of hanging
-// on a writer the platform could not kill. Both pipes are distinct so the test
-// proves stderr is closed and marked exactly like stdout.
+// TestSettlePumpsMarksStreamsItCut checks bounded drain cuts streams.
 func TestSettlePumpsMarksStreamsItCut(t *testing.T) {
 	t.Parallel()
 
@@ -222,7 +214,7 @@ func TestSettlePumpsLeavesFinishedPumpsAlone(t *testing.T) {
 func TestSettlePumpsPrefersFinishedPumpsOverAbort(t *testing.T) {
 	t.Parallel()
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
 		child.stdout.close()
 		child.stderr.close()
@@ -406,13 +398,7 @@ func TestReadPipeNilContextDoesNotPanic(t *testing.T) {
 	}
 }
 
-// TestSpawnedChildSettlesPumpsPromptlyAfterKill is the end-to-end reproducer
-// for the 30s-stall finding: a spawned command whose leader exits while an
-// escaped background writer (own process group via job control) still holds
-// stdout must not stall stream reads for outputEOFCeiling once the drain is
-// aborted — which is what Kill(), timeoutMs expiry, baseCtx cancellation, or a
-// failed tree close all do. Pre-fix there was no abort channel, so ReadStdout
-// blocked for the full 30s ceiling.
+// TestSpawnedChildSettlesPumpsPromptlyAfterKill checks drain settles after kill.
 func TestSpawnedChildSettlesPumpsPromptlyAfterKill(t *testing.T) {
 	skipSlow(t)
 	if runtime.GOOS == "windows" {
@@ -421,16 +407,7 @@ func TestSpawnedChildSettlesPumpsPromptlyAfterKill(t *testing.T) {
 
 	child, err := SpawnChild(context.Background(), SpawnConfig{
 		Command: "sh",
-		// The descendant escapes into its own session via the test binary
-		// re-executed as a setsid helper (see spawn_escaper_unix_test.go) —
-		// the `setsid` binary is not available on every POSIX platform
-		// (macOS), and shell job control (`set -m; ... &`) does not work in
-		// dash without a tty. The leader waits for a readiness file the helper
-		// writes only AFTER setsid() returned, so the reaper's pre-reap group
-		// kill can never land before the escape: without that wait the
-		// descendant may still be in the group when the kill lands (it dies,
-		// the pipe reaches a clean EOF, and the stream is never truncated —
-		// the observed ubuntu CI flake).
+		// Descendant escapes via setsid helper; leader waits for readiness.
 		Args: []string{"-c", escaperScript(t.TempDir() + "/ready")},
 	})
 	if err != nil {

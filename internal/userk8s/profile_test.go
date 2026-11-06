@@ -8,16 +8,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
-// renderedPersonalProfile is a byte-exact copy of the personal profile that
-// `gmake render-model-profiles` produces in the joeyc-ai repository. It
-// exercises the real registry vocabulary: cluster-scoped catalog kinds
-// alongside the Namespace and Secret, Models under sanitized metadata names
-// (canonical_id always keeps the raw registry spelling, and most carry it in
-// their alias lists too), ModelServings carrying one-shot-man/registry-name
-// annotations written as model:provider (or model:variant:provider), three
-// ModelRoutes carrying one-shot-man/shaper-args, and 13 selector-matched
-// bindings whose local chains are command-only — no env or file resolvers, per
-// the local no-secret-files policy.
+// renderedPersonalProfile is the rendered personal profile fixture.
 const renderedPersonalProfile = "testdata/rendered-personal-profile.yaml"
 
 func TestLoadRealRenderedProfile(t *testing.T) {
@@ -122,13 +113,7 @@ func TestRealRenderedProfileProjectsEveryToolSelection(t *testing.T) {
 			attempted++
 			projection, err := backend.ProjectServing(ctx, tool.Name, serving)
 			if err != nil {
-				// A registry slug that a tool's grammar cannot express is a
-				// legitimate incompatibility; anything else is a defect. (The
-				// historical example, codex's "~openai/gpt-latest", left the
-				// catalog on 2026-09-23 when it was removed as unserveable
-				// through the shaper; the guard below now pins sweep coverage
-				// directly instead of depending on an inexpressible pair
-				// existing.)
+				// Inexpressible slug is a legitimate incompatibility.
 				if strings.Contains(err.Error(), "cannot derive") {
 					grammarRejections++
 					continue

@@ -33,11 +33,6 @@
     }
 
     // --- verifySplit — runs verify command on a single branch ---
-    //
-    //  Uses a temporary git worktree so the user's CWD is never modified.
-    //  Tries proper branch checkout first (preserves branch name for verify
-    //  commands that inspect HEAD), falls back to detached HEAD if the
-    //  branch is already checked out elsewhere.
     async function verifySplit(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -50,7 +45,7 @@
             return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
         }
 
-        // Create a temporary worktree for this branch.
+        // Create temp worktree.
         // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
@@ -84,12 +79,7 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
-            // Spawns a watchdog that kills the command after timeoutSec. If the
-            // command finishes first, the watchdog is killed immediately.
-            // The watchdog's stdout/stderr are redirected to /dev/null to prevent
-            // FD inheritance from keeping Go's cmd.Wait() alive after the main
-            // command exits.
+            // Portable shell timeout.
             shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
         // Note: Windows timeout is an interactive command; timeout handling
@@ -134,10 +124,7 @@
         // a deterministic failure (and must never be forgiven as pre-existing).
         var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
 
-        // A configured timeout that elapsed is a deterministic timeout failure,
-        // not an unknown-verdict truncation: evaluate it BEFORE the truncation
-        // gate so a native timeoutMs expiry is reported as a timeout even when
-        // the killed process's streams were also cut.
+        // Timeout before truncation gate.
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
@@ -193,9 +180,7 @@
 
         // Pre-existing failure detection: run verification on the source
         // branch first. If it fails, split branch failures are flagged as
-        // pre-existing rather than new regressions. A baseline whose verdict is
-        // UNKNOWN (truncated capture, cancelled) is not a baseline failure:
-        // it disables pre-existing detection rather than forgiving anything.
+        // pre-existing detection; unknown baseline disables it.
         var baselineFailure = null;
         var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
@@ -261,12 +246,7 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            // Mark pre-existing failures. A truncated (unknown-verdict) branch
-            // is NEVER pre-existing: its capture was cut short, so it cannot be
-            // attributed to the source branch and counts as a failure. With an
-            // unknown baseline, pre-existing detection is disabled, but a
-            // deterministically-failed branch is still annotated so the user
-            // knows attribution was impossible.
+            // Mark pre-existing failures.
             if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
@@ -290,18 +270,6 @@
     }
 
     // --- verifyEquivalence — tree-SHA comparison of last split vs source ---
-    //
-    //  DESIGN NOTE (T094): This check relies on the CUMULATIVE CHAIN model.
-    //  executeSplit/executeSplitAsync in pr_split_05_execution.js builds
-    //  branches as a stacked chain: each split inherits ALL content from
-    //  the previous split (via `currentBase = split.name`). The last split
-    //  is therefore the accumulation of baseBranch + ALL changed files
-    //  (each checked out from sourceBranch). Comparing its tree SHA against
-    //  sourceBranch^{tree} is a bit-perfect integrity check.
-    //
-    //  If the execution model ever changes to INDEPENDENT branches (each
-    //  starting from baseBranch), this check would need redesign — likely
-    //  a combined merge or tree-walk approach.
     async function verifyEquivalence(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
@@ -363,9 +331,7 @@
         if (diffResult.code === 0) {
             base.diffSummary = diffResult.stdout.trim();
         } else {
-            // A failed diff cannot list the differing files; the reason must
-            // still reach the caller (an aborted capture carries it in
-            // message, not stderr).
+            // Failed diff: report reason.
             base.diffError = execFailReason(diffResult);
         }
 
@@ -413,17 +379,7 @@
         return { deleted: deleted, errors: errors };
     }
 
-    // --- prepareVerifyWorktree — create worktree without spawning a session ---
-    //
-    //  Creates a temporary git worktree for the given branch. Returns the
-    //  worktree path and resolved dir. No CaptureSession is created; the
-    //  caller decides which session model to use (interactive shell vs
-    //  one-shot command vs async fallback).
-    //
-    //  Returns:
-    //    { worktreeDir, dir }     on success
-    //    { skipped: true }        if no verify command configured
-    //    { error: string }        on failure
+    // --- prepareVerifyWorktree — create worktree ---
     async function prepareVerifyWorktree(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -454,21 +410,7 @@
         return { worktreeDir: worktreeDir, dir: dir };
     }
 
-    // --- startVerifySession — non-blocking variant using CaptureSession ---
-    //
-    //  Creates a temporary git worktree and spawns the verify command in a
-    //  CaptureSession (PTY + VTerm). Returns immediately so the TUI can
-    //  poll output via ticks. Caller is responsible for cleanup via
-    //  cleanupVerifyWorktree() after the session completes.
-    //
-    //  This is the ONE-SHOT verify model: the command runs once and exits.
-    //  For the canonical INTERACTIVE model (persistent shell), use
-    //  prepareVerifyWorktree() + spawnShellSession() directly.
-    //
-    //  Returns:
-    //    { session, worktreeDir, dir, branchName, startTime }  on success
-    //    { skipped: true }                                     if no verify command
-    //    { error: string }                                     on failure
+    // --- startVerifySession — non-blocking variant ---
     async function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -557,31 +499,6 @@
     }
 
     // --- DESIGN NOTE (T003): PTY Verify Pipeline Audit ---
-    //
-    //  The async verification pipeline (startVerifySession → pollVerifySession
-    //  → runVerifyBranch in chunk 16) was audited for correctness:
-    //
-    //  1. CaptureSession lifecycle: readerLoop stores exitCode BEFORE closing
-    //     the done channel, so isDone() → exitCode() is always safe. The TUI
-    //     polls isDone() at 100ms intervals — no busy-wait or race.
-    //
-    //  2. Worktree cleanup: cleanupVerifyWorktree is best-effort (fire-and-forget
-    //     `git worktree remove --force`). Failures are silent by design — a
-    //     dangling worktree is harmless and will be GC'd on next prune.
-    //
-    //  3. Dual-path architecture: runVerifyBranch tries CaptureSession first
-    //     (PTY + VTerm for live output) and falls back to verifySplitAsync
-    //     (exec.spawn) if CaptureSession creation fails (e.g., PTY unavailable
-    //     on the platform). Note: require('osm:termmux') must succeed;
-    //     a missing module is a fatal error.
-    //
-    //  4. preExisting detection: pollVerifySession hard-codes preExisting=false
-    //     because CaptureSession results don't carry baseline info. T115 will
-    //     add proper pre-existing detection to the PTY path.
-    //
-    //  5. Async variants (verifySplitAsync, verifySplitsAsync,
-    //     verifyEquivalenceAsync) now have unit test coverage via mocked
-    //     _gitExecAsync and exec.spawn infrastructure.
 
     // --- Async versions for pipeline use (T31) ---
     //  Uses gitExecAsync (exec.spawn) so the event loop stays responsive.
@@ -711,9 +628,7 @@
             watchCancellation();
         }
 
-        // Read stdout and stderr concurrently via async streams. A stream the
-        // exec layer cut before EOF ends with truncated: true — the output is a
-        // prefix, so it cannot decide the verdict.
+        // Read stdout/stderr concurrently; truncated stream is a prefix.
         var streamsTruncated = false;
         async function readStream(stream, onChunk) {
             var buf = '';
@@ -759,10 +674,7 @@
             };
         }
 
-        // A configured timeout that elapsed is a deterministic timeout failure,
-        // not an unknown-verdict truncation: evaluate it BEFORE the truncation
-        // gate so a native timeoutMs expiry is reported as a timeout even when
-        // the killed process's streams were also cut.
+        // Timeout before truncation gate.
         if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
@@ -913,12 +825,7 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            // A truncated (unknown-verdict) branch is NEVER pre-existing: its
-            // capture was cut short, so it cannot be attributed to the source
-            // branch and counts as a failure. With an unknown baseline,
-            // pre-existing detection is disabled, but a deterministically-failed
-            // branch is still annotated so the user knows attribution was
-            // impossible.
+            // Truncated branch is never pre-existing.
             if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';

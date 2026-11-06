@@ -16,11 +16,7 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
-// handleSettleErr handles settler/bridge settlement errors symmetrically.
-// ErrLoopTerminated, ErrAdapterInvalid and ErrPromiseSettled are expected
-// during shutdown/termination; other errors are unexpected and are logged. Documented tolerance: settlement
-// may be dropped if loop terminated before Submit, promise may remain pending
-// only for hard Close (stranded is defined behavior, see track.go).
+// handleSettleErr logs unexpected settlement errors; expected shutdown errors are ignored.
 func handleSettleErr(err error) {
 	if err == nil {
 		return
@@ -40,23 +36,13 @@ func timeoutFromMilliseconds(ms int64) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// Require returns a module loader for `osm:exec` that uses the provided base context
-// (typically the TUI manager's context). Each invocation wraps the base context
-// with context.WithCancel and uses exec.CommandContext to ensure proper
-// cancellation propagation.
-//
-// The adapter parameter is required for execv() and spawn(), which both return
-// Promises. If adapter is nil, neither will be available.
+// Require returns a module loader for `osm:exec`.
 func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
 		if adapter != nil {
-			// execv(argv: string[], opts?: {timeoutMs?: number}): Promise<{stdout, stderr, code, error, message}>
-			// error is true when the command failed (non-zero exit, signal,
-			// could not be started), or when its output could not be captured
-			// completely; while it is false, the command exited 0 and
-			// stdout and stderr are the command's complete output.
+			// execv(argv, opts?): Promise<{stdout, stderr, code, error, message}>.
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
@@ -98,16 +84,13 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				})
 			})
 
-			// spawn(command: string, args: string[], opts?: {cwd?, env?, envReplace?, timeoutMs?}): Promise<ChildHandle>
-			// Resolves after process startup with a handle exposing streaming stdout/stderr read().
+			// spawn(command, args, opts?): Promise<ChildHandle>.
 			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, loop))
 		}
 	}
 }
 
-// jsSpawn creates the spawn() JS function binding. Process startup is a
-// blocking operation, so it runs in a tracked worker and resolves a native
-// Promise with the child handle.
+// jsSpawn creates the spawn() JS binding.
 func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
@@ -119,8 +102,6 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			panic(rt.NewTypeError("spawn: command must be a non-empty string"))
 		}
 
-		// Parse args array on the event-loop goroutine before starting the
-		// worker. No Goja value is touched after the worker begins.
 		var args []string
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
 			if err := rt.ExportTo(call.Argument(1), &args); err != nil {
@@ -141,8 +122,6 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 					cfg.Env = envMap
 				}
 			}
-			// envReplace: the child's environment is exactly opts.env — no
-			// inheritance of the caller's shell state (credential custody).
 			if v := optsObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				cfg.EnvReplace = v.ToBoolean()
 			}
@@ -154,10 +133,7 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 		return adapter.TrackPromise(baseCtx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
 			childCtx := workerCtx
 			var cancel context.CancelFunc
-			// abortCtx carries the caller's timeout and the base context but is
-			// NOT cancelled when the child is reaped: a normal exit must not cut
-			// its own streams. It only fires the drain abort on timeout, base
-			// cancellation, or (via AbortDrain) Kill / failed tree close.
+			// abortCtx carries timeout/base cancellation but is not cancelled on reap.
 			abortCtx := workerCtx
 			var abortCancel context.CancelFunc
 			if timeout > 0 {
@@ -178,31 +154,15 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 				return
 			}
 
-			// Abort the pump drain on timeout or base-context cancellation; a
-			// plain reap releases the child context without aborting, so an
-			// exiting command's streams are never cut by their own exit.
-			//
-			// The abort watcher keys on child.settled (the drain finishing),
-			// not child.done (the process exiting): once the leader is reaped
-			// an escaped descendant may still hold a pipe, and a timeoutMs or
-			// base-context cancellation that lands in that window must still
-			// cut the drain promptly. A single goroutine owns both the select
-			// and abortCancel, so a normal reap can never race abortCancel
-			// into closing abortCtx while this select is still evaluating —
-			// which would pick <-abortCtx.Done() at random and falsely abort
-			// the drain of a cleanly exited command.
+			// Abort the drain on timeout/base cancellation; a normal reap does not.
+			stopAbort := context.AfterFunc(abortCtx, func() { child.AbortDrain() })
 			go func() {
-				select {
-				case <-abortCtx.Done():
-					child.AbortDrain()
-				case <-child.settled:
-				}
+				<-child.settled
+				stopAbort()
 				abortCancel()
 			}()
 
-			// Release a timeout context once the child has been reaped. Without
-			// this, a long timeout retains its timer until the deadline even when
-			// the child exits immediately.
+			// Release the timeout timer once the child is reaped.
 			go func() {
 				<-child.done
 				cancel()
@@ -259,7 +219,6 @@ func trackChildProcessLifetime(baseCtx context.Context, rt *goja.Runtime, adapte
 func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, child *ChildProcess, cancel context.CancelFunc) goja.Value {
 	obj := rt.NewObject()
 
-	// child.pid
 	_ = obj.Set("pid", child.Pid())
 
 	// child.stdin — {write(data), close()}
@@ -296,9 +255,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	// child.stderr — {read(): Promise<{value: string, done: boolean, truncated?}>}
 	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStderrContext))
 
-	// child.wait(): Promise<{code: number, signal: string|null}>
-	// It resolves when the process is reaped and does not wait for the output
-	// streams; read() reports a stream that ended before EOF with truncated.
+	// child.wait(): Promise<{code, signal}>.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.Wait()
@@ -334,11 +291,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 		})
 	})
 
-	// child.signal(name): Promise<void> — deliver the named POSIX signal
-	// ("SIGTERM", "SIGINT", ...) to the child, mirroring kill's process-group
-	// semantics. Unlike kill, it does not cancel the handle context: a
-	// graceful signal lets the child decide, and wait() still reports its
-	// status.
+	// child.signal(name): Promise<void>.
 	_ = obj.Set("signal", func(call goja.FunctionCall) goja.Value {
 		name := ""
 		if len(call.Arguments) > 0 {
@@ -356,22 +309,13 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	return obj
 }
 
-// wrapReadableStream creates a JS object with a read() method that returns
-// Promises, following the ReadableStream protocol: {value: string, done: bool}.
-// A stream the exec layer had to cut before EOF ends with done and
-// truncated: true, so a consumer can tell a prefix from the whole stream.
-// readFn takes the TrackPromise worker context so a blocked read also unblocks
-// on caller cancellation (e.g. loop shutdown).
+// wrapReadableStream creates a JS readable stream wrapper.
 func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func(ctx context.Context) (string, bool, error)) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			data, done, err := readFn(ctx)
 			if errors.Is(err, errOutputStreamCutShort) {
-				// The stream ended because the exec layer closed it, not
-				// because the writer reached EOF: report the flag rather than a
-				// rejection so a streaming consumer can still drain what
-				// arrived, and so no consumer can mistake this for a clean end.
 				handleSettleErr(settle.Settle(false, func(rt *goja.Runtime) any {
 					return map[string]any{"value": nil, "done": true, "truncated": true}
 				}))
@@ -395,30 +339,9 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 	return streamObj
 }
 
-// outputAbortGrace bounds only the delivery of results whose reads the
-// collector has just interrupted, and only on a path that already reports
-// outputCaptureAbortedError. It cannot turn truncation into a success: a reader
-// that misses the grace leaves the capture marked incomplete and failed.
 const outputAbortGrace = 100 * time.Millisecond
 
-// outputEOFCeiling bounds how long runExec waits for its output readers to
-// reach EOF after the command's process tree has been closed and its leader
-// reaped.
-//
-// It is scheduling headroom, not an expected cost: the tree is closed before
-// capture starts, which kills the command's process group — every holder of a
-// pipe write end that stayed in it — so the readers reach EOF as soon as they
-// are scheduled. The one writer that kill cannot reach is a process that left
-// the group (setsid, shell job control) while holding an inherited write end;
-// waiting on it unconditionally would hang the command forever, so the ceiling
-// turns it into outputCaptureAbortedError instead of a hang or a silent
-// truncation. A caller that needs a tighter bound passes opts.timeoutMs or
-// cancels its context.
-//
-// The ceiling must stay far above any plausible goroutine-scheduling delay: a
-// reader that is merely late must never be abandoned. The 250ms capture
-// deadline this replaces did exactly that, and published truncated output (an
-// empty `git rev-parse HEAD` SHA) as a successful command's result.
+// outputEOFCeiling bounds how long runExec waits for output readers to reach EOF.
 const outputEOFCeiling = 30 * time.Second
 
 type commandPipeEndpoint interface {
@@ -499,12 +422,7 @@ type commandOutputResult struct {
 	err   error
 }
 
-// outputCaptureAbortedError reports that command output capture stopped before
-// EOF, so the captured streams are only a prefix of what the command wrote. It
-// is an exec-layer failure: an incomplete stream presented as a successful
-// command's output is indistinguishable from real output — a truncated
-// `git rev-parse HEAD` empty SHA is how that surfaces — and must never be
-// silent.
+// outputCaptureAbortedError reports truncated output capture.
 type outputCaptureAbortedError struct {
 	cause error
 }
@@ -514,21 +432,14 @@ func (e *outputCaptureAbortedError) Error() string {
 	if e.cause == nil {
 		return message
 	}
-	return message + ": " + e.cause.Error()
+	return fmt.Sprintf("%s: %v", message, e.cause)
 }
 
 func (e *outputCaptureAbortedError) Unwrap() error { return e.cause }
 
 func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
 	data, err := io.ReadAll(r)
-	// The read error is preserved as-is: an os.ErrClosed here is only benign
-	// when the collector itself closed the reader to abort capture, and only
-	// the collector knows that — it clears the induced error in abortCapture.
-	// An unexpected pipe closure therefore surfaces as a real error instead
-	// of being silently converted into a clean io.EOF.
 	if closeErr := r.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-		// ErrClosed here only means the collector closed the reader first;
-		// any other close error is real and preserved.
 		err = errors.Join(err, fmt.Errorf("close command output pipe: %w", closeErr))
 	}
 	results <- commandOutputResult{index: index, data: data, err: err}
@@ -541,19 +452,7 @@ func startCommandOutputReaders(stdout, stderr io.ReadCloser) <-chan commandOutpu
 	return results
 }
 
-// collectCommandOutput returns the command's stdout and stderr along with the
-// readers' errors.
-//
-// It waits for both readers and applies no per-read deadline: buffered output
-// must never be abandoned because a goroutine was scheduled late. The wait is
-// bounded only by eofCeiling (see outputEOFCeiling), which covers a writer that
-// escaped the command's process group, and by ctx for cancellation. Either
-// bound keeps whatever the readers had captured, closes them, and reports
-// outputCaptureAbortedError, so an incomplete capture is never mistaken for an
-// empty output.
-//
-// abort closes the readers when the caller cannot vouch for the writers at all
-// (the process-tree close failed).
+// collectCommandOutput returns the command's stdout and stderr.
 func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (string, string, error) {
 	var output [2]string
 	var outputErr error
@@ -565,18 +464,7 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 		received++
 	}
 
-	// abortCapture ends the capture as an explicit exec-layer failure. Before
-	// force-closing the readers it gives them a brief grace to deliver natural
-	// EOF: when the bound fired because ctx killed the command, the process
-	// tree is already closed and every in-group writer is dead, so the readers
-	// reach EOF as soon as they are scheduled and the captured output is
-	// complete. Only a writer that escaped the process group stays open past
-	// the grace; closing the readers then unblocks their in-flight reads (the
-	// io.ReadCloser contract) so both readers still report what they had read.
 	abortCapture := func(cause error) (string, string, error) {
-		// induced marks results whose os.ErrClosed was caused by THIS abort
-		// closing the readers (below); only those are cleared. A read error
-		// delivered before the close is real and preserved.
 		induced := false
 		clearInduced := func(result commandOutputResult) commandOutputResult {
 			if induced && errors.Is(result.err, os.ErrClosed) {
@@ -591,14 +479,6 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 			case result := <-results:
 				store(clearInduced(result))
 			case <-grace.C:
-				// Closing a reader unblocks its in-flight Read (the
-				// io.ReadCloser contract, and what os.Pipe does through Go's
-				// poller), so both readers still report what they had read
-				// before the interruption. A reader that has not been
-				// scheduled yet is the same shape: Close makes its first
-				// Read return os.ErrClosed, and the data the dead writer had
-				// already put in the kernel buffer is lost with it. That loss
-				// is exactly what must be visible, so the abort error stays.
 				induced = true
 				_ = stdout.Close()
 				_ = stderr.Close()
@@ -608,10 +488,6 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 					case result := <-results:
 						store(clearInduced(result))
 					case <-timer.C:
-						// A reader that ignored Close would otherwise hold the
-						// command here. The abort is already an error, so
-						// returning without its bytes cannot turn a lie into a
-						// success.
 						timer.Stop()
 						return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
 					}
@@ -620,18 +496,12 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 				return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
 			}
 		}
-		// Both readers reached EOF on their own within the grace: the capture
-		// is complete, so the abort cause must not taint it. The command was
-		// still killed, which waitErr already reports.
 		return output[0], output[1], outputErr
 	}
 
 	ceiling := time.NewTimer(eofCeiling)
 	defer ceiling.Stop()
 	for received < 2 {
-		// Prefer output that is already buffered: a cancellation or ceiling
-		// that becomes ready at the same instant must not preempt a result the
-		// readers have already delivered.
 		select {
 		case result := <-results:
 			store(result)
@@ -739,12 +609,6 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
 	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
 
-	// The process tree is closed, so the command's whole process group is dead
-	// and the readers reach EOF on their own. collectCommandOutput bounds that
-	// wait by eofCeiling, which covers a writer that escaped the group, and by
-	// ctx. Only a failed close leaves a writer we cannot claim to have killed
-	// at all, so capture is aborted immediately there: the close error already
-	// fails the command, and the abort makes the incomplete output explicit.
 	var captureAbort chan struct{}
 	if closeErr != nil {
 		captureAbort = make(chan struct{})

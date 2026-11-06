@@ -30,26 +30,9 @@ func (tm *TUIManager) scheduleWrite(fn func() error) {
 	}
 }
 
-// TestTUIExitFromJSCommandNoDeadlock is a regression test for the deadlock scenario
-// where a JavaScript command handler calls tui.exit() while the manager is in a state
-// that would previously deadlock.
-//
-// The bug: JS callbacks (completers, command handlers, key bindings) run without holding
-// locks and can synchronously call JS-exposed mutators that attempt to acquire the write
-// lock. If another goroutine holds the write lock and waits on something from that JS
-// invocation, a deadlock occurs.
-//
-// The fix: JS-originated mutations are routed through a single writer goroutine via
-// scheduleWrite/scheduleWriteAndWait. The writer goroutine is the only place that holds
-// tm.mu.Lock() for JS-originated mutations.
+// TestTUIExitFromJSCommandNoDeadlock checks no deadlock on tui.exit().
 func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
-	// The ctx is the deadlock-detection bound, not a performance budget: a real
-	// deadlock still fails at ctx.Done(). It must be generous enough for
-	// NewEngine's full builtin.Register (including the bt bridge's event-loop
-	// RunSync init) to be admitted on a loaded CI runner — under `make -j` on
-	// windows-latest, with internal/command's git-spawn tests running in
-	// parallel, a 5s bound expired before the Submit was admitted and the bt
-	// bridge panicked with "context deadline exceeded" (CI run 42093004864).
+	// Generous deadline for loaded CI runners.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

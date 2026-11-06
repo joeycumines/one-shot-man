@@ -6,15 +6,7 @@ import (
 	"testing"
 )
 
-// TestMain re-executes the test binary as an "escaper" helper when
-// OSM_EXEC_ESCAPER_HELPER=1 is set: the helper calls setsid() (leaving the
-// leader's process group and session), writes a readiness file, and sleeps —
-// holding the inherited stdout write end, which is exactly the writer the
-// process-group kill cannot reach. Tests use this instead of the `setsid`
-// binary so the escape works on every POSIX platform (macOS has no setsid(1)
-// in its default PATH) and is deterministic: the leader waits for the
-// readiness file, which the helper writes only AFTER setsid() returned, so
-// the reaper's pre-reap group kill can never land before the escape.
+// TestMain re-executes the binary as an escaper helper when set.
 const escaperHelperEnv = "OSM_EXEC_ESCAPER_HELPER"
 
 func TestMain(m *testing.M) {
@@ -24,13 +16,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// escaperScript returns a POSIX shell script that backgrounds the test binary
-// re-executed as the setsid helper (writing readyFile only after setsid()),
-// waits for that readiness file, and then prints parent-done and exits. The
-// leader therefore exits only after the descendant has verifiably left the
-// process group, so the escaped writer always survives the pre-reap group
-// kill and keeps the stdout write end open. Only called from tests that skip
-// on Windows.
+// escaperScript builds a POSIX script that escapes into its own session.
 func escaperScript(readyFile string) string {
 	if runtime.GOOS == "windows" {
 		panic("escaperScript is POSIX-only; callers must skip on Windows")

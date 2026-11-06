@@ -1,15 +1,5 @@
 'use strict';
-// pr_split_09_agent.js — Agent Code Executor & prompt system
-// Dependencies: chunks 00, 02 must be loaded first
-// Late-binds: exec (00), template (00), detectGoModulePath (02), fileExtension (00), runtime (00)
-//
-// Exports: AgentCodeExecutor, renderPrompt, renderClassificationPrompt,
-//          renderSplitPlanPrompt, renderConflictPrompt, detectLanguage,
-//          CLASSIFICATION_PROMPT_TEMPLATE, SPLIT_PLAN_PROMPT_TEMPLATE,
-//          CONFLICT_RESOLUTION_PROMPT_TEMPLATE
-//
-// Implementation uses osm:aimux (generic agent/process multiplexer),
-// provider-agnostic and not tied to any specific LLM CLI.
+// pr_split_09_agent.js — Agent Code Executor & prompt system.
 
 (function(prSplit) {
 
@@ -25,11 +15,7 @@
         this.provider = '';
         this.handle = null;
         this.sessionId = null;
-        // Optional TUIStateMachine integration for event-driven state tracking.
-        // These are created in initEventTracking() after spawn succeeds.
-        // If aimux does not provide the constructors (e.g. stripped test
-        // builds), all remain null and the existing screenshot-based
-        // detection and isAlive() polling continue to work unchanged.
+        // Optional TUIStateMachine (created in initEventTracking).
         this.stateMachine = null;
         this.eventStream = null;
         this.healthMonitor = null;
@@ -41,9 +27,7 @@
     async function runAsync(exec, argv) {
         var child = await exec.spawn(argv[0], argv.slice(1));
         var collected = await prSplit._collectSpawnOutput(child, null);
-        // A cut capture arrives with code -1 and error true, the same exec-layer
-        // failure shape as execv, so a caller that checks the code cannot accept
-        // a prefix of the output as this command's result.
+        // Cut capture: code -1, error true.
         return {
             stdout: collected.stdout,
             stderr: collected.stderr,
@@ -123,15 +107,7 @@
         };
     };
 
-    // buildAgentArgv is the single source for the agent argv. userArgs come
-    // first, then exactly one --mcp-config pair. defaultArgs is empty by
-    // construction so provider concatenation (defaultArgs plus opts.Args at
-    // provider_process.go:57) cannot duplicate the flag.
-    // Matches both --mcp-config forms: bare ('--mcp-config', value in the
-    // next argv element) and attached ('--mcp-config=/path'). Exact-element
-    // counting alone would miss the attached form, letting a user-supplied
-    // --mcp-config=x slip past the exactly-one assertion and produce a
-    // duplicate MCP config pair at spawn.
+    // buildAgentArgv builds the agent argv.
     function isMcpConfigArg(arg) {
         return arg === '--mcp-config' || (typeof arg === 'string' && arg.indexOf('--mcp-config=') === 0);
     }
@@ -318,8 +294,7 @@
             cmdDesc += ' ' + baseArgs.join(' ');
         }
 
-        // Generic providers receive one managed --mcp-config pair. Opencode
-        // receives the same callback through OPENCODE_CONFIG_CONTENT instead.
+        // Generic providers get one --mcp-config pair.
         if (invocation.provider === 'generic' && countMcpConfig(baseArgs) !== 1) {
             return { error: 'agent argv must contain exactly one --mcp-config at provider boundary' };
         }
@@ -370,12 +345,7 @@
         return { error: null, sessionId: this.sessionId, argv: baseArgs };
     };
 
-    // initEventTracking creates the optional TUIStateMachine, EventStream,
-    // and HealthMonitor after a successful spawn. Each is created
-    // independently — if one fails, the others are still attempted.
-    // All are optional: if aimux does not expose the constructor or the
-    // handle lacks the required methods, the field stays null and the
-    // existing screenshot-based detection and isAlive() polling continue.
+    // initEventTracking creates optional monitors.
     AgentCodeExecutor.prototype.initEventTracking = function() {
         try {
             if (typeof aimux.newTUIStateMachine === 'function') {
@@ -407,13 +377,7 @@
         this.startEventLoop();
     };
 
-    // startEventLoop reads output lines from the handle via
-    // receiveEventAsync and feeds each line to the state machine's
-    // processOutput method. The loop is Promise-based and non-blocking:
-    // each iteration awaits a single line, then schedules the next via
-    // setTimeout(0) to yield to the JS event loop. The loop stops when
-    // stopEventLoop is called, the handle dies, or receiveEventAsync
-    // resolves null (EOF / unsupported).
+    // startEventLoop reads output lines into the state machine.
     AgentCodeExecutor.prototype.startEventLoop = function() {
         if (this._eventLoopRunning) return;
         if (!this.stateMachine || !this.handle) return;

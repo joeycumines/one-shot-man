@@ -155,10 +155,12 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}
 
 			// Abort the drain on timeout/base cancellation; a normal reap does not.
-			stopAbort := context.AfterFunc(abortCtx, func() { child.AbortDrain() })
 			go func() {
-				<-child.settled
-				stopAbort()
+				select {
+				case <-abortCtx.Done():
+					child.AbortDrain()
+				case <-child.settled:
+				}
 				abortCancel()
 			}()
 

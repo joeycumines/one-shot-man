@@ -110,12 +110,16 @@ spec:
                 minimum: 1
                 type: integer
               surfaces:
-                description: Surfaces lists the client wire surfaces this route publishes.
+                description: |-
+                  Surfaces lists the client wire surfaces this route publishes. "gemini"
+                  is the Google GenerateContent client surface (Antigravity CLI); a shaper
+                  transport serves it by transcoding the request to the access protocol.
                 items:
                   enum:
                   - anthropic
                   - chat
                   - responses
+                  - gemini
                   type: string
                 minItems: 1
                 type: array
@@ -212,8 +216,8 @@ spec:
             x-kubernetes-validations:
             - message: spec.surfaces must declare at least one client surface
               rule: self.surfaces.size() > 0
-            - message: spec.surfaces items must be one of anthropic|chat|responses
-              rule: self.surfaces.all(s, s in ['anthropic', 'chat', 'responses'])
+            - message: spec.surfaces items must be one of anthropic|chat|responses|gemini
+              rule: self.surfaces.all(s, s in ['anthropic', 'chat', 'responses', 'gemini'])
             - message: spec.endpoints must declare exactly the surfaces in spec.surfaces
               rule: self.endpoints.size() == self.surfaces.size() && self.surfaces.all(s,
                 s in self.endpoints) && self.endpoints.all(k, k in self.surfaces)

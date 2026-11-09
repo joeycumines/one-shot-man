@@ -179,6 +179,73 @@ spec:
 	}
 }
 
+// TestRouteValidationAllowsGeminiSurfaceOnEveryShaperProtocol pins that the
+// Gemini client surface is a shaper capability, not an access protocol: a
+// chat, messages, or responses access can each publish it by transcode.
+func TestRouteValidationAllowsGeminiSurfaceOnEveryShaperProtocol(t *testing.T) {
+	for _, protocol := range []string{"chat", "messages", "responses"} {
+		t.Run(protocol, func(t *testing.T) {
+			access := `apiVersion: one-shot-man/v1alpha1
+kind: ModelAccess
+metadata:
+  name: alpha-source
+  labels:
+    one-shot-man/provider: alpha
+spec:
+  provider: alpha
+  protocol: ` + protocol + `
+`
+			route := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-gemini
+  namespace: test
+spec:
+  access: alpha-source
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - gemini
+  endpoints:
+    gemini: http://127.0.0.1:1/alpha-gemini
+  naming: served
+  transport:
+    kind: shaper
+    upstream: https://alpha.example
+`
+			if _, err := loadDocuments(routeValidationDocuments(access, route)...); err != nil {
+				t.Fatalf("%s access should serve the gemini surface by transcode: %v", protocol, err)
+			}
+		})
+	}
+}
+
+// TestRouteValidationRefusesDirectGeminiSurface pins that a direct transport,
+// which can only carry its protocol's own surface, cannot claim a transcode.
+func TestRouteValidationRefusesDirectGeminiSurface(t *testing.T) {
+	route := `apiVersion: one-shot-man/v1alpha1
+kind: ModelRoute
+metadata:
+  name: alpha-direct
+  namespace: test
+spec:
+  access: alpha-chat
+  offers:
+  - serving: alpha-model-alpha
+  surfaces:
+  - gemini
+  endpoints:
+    gemini: https://alpha.example
+  naming: wire
+  transport:
+    kind: direct
+`
+	_, err := loadDocuments(routeValidationDocuments(route)...)
+	if err == nil || !strings.Contains(err.Error(), `publishes surface "gemini", which protocol "chat" cannot serve on a direct transport`) {
+		t.Fatalf("error: got %v", err)
+	}
+}
+
 // TestRouteValidationAllowsTwoShaperRoutesForOneAccess checks multi-route access.
 func TestRouteValidationAllowsTwoShaperRoutesForOneAccess(t *testing.T) {
 	_, err := loadDocuments(routeValidationDocuments(
@@ -405,6 +472,9 @@ func TestShaperMountPrefixNormalization(t *testing.T) {
 		{name: "bare v1 chat", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
 		{name: "bare v1 responses", surface: "responses", endpoint: "http://127.0.0.1:11239/alpha/v1", want: "/alpha"},
 		{name: "bare anthropic mount", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha", want: "/alpha"},
+		{name: "bare gemini mount", surface: "gemini", endpoint: "http://127.0.0.1:11239/alpha", want: "/alpha"},
+		{name: "gemini api version suffix", surface: "gemini", endpoint: "http://127.0.0.1:11239/alpha/v1beta", want: "/alpha"},
+		{name: "bare gemini api path", surface: "gemini", endpoint: "http://127.0.0.1:11239/v1beta", wantErr: "carries no mount prefix"},
 		{name: "anthropic api suffix", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic", want: "/alpha"},
 		{name: "anthropic api suffix and v1", surface: "anthropic", endpoint: "http://127.0.0.1:11239/alpha/anthropic/v1", want: "/alpha"},
 		{name: "trailing slash", surface: "chat", endpoint: "http://127.0.0.1:11239/alpha/v1/", want: "/alpha"},

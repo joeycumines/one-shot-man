@@ -48,10 +48,12 @@ type ToolSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	DisplayName string `json:"display_name"`
 
-	// Surfaces lists the wire surfaces this tool can speak.
+	// Surfaces lists the wire surfaces this tool can speak. "gemini" is the
+	// Google GenerateContent client surface (Antigravity CLI), which a shaper
+	// transport serves by transcoding from chat, messages, or responses.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:UniqueItems=true
-	// +kubebuilder:validation:items:Enum=anthropic;chat;responses
+	// +kubebuilder:validation:items:Enum=anthropic;chat;responses;gemini
 	Surfaces []string `json:"surfaces"`
 
 	// CredentialChannels lists how this tool can receive credentials:

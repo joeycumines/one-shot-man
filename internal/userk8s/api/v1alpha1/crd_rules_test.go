@@ -270,6 +270,15 @@ func TestShippedModelRouteRulesBehave(t *testing.T) {
 			why:   "the id becomes a served model id, which is an RFC-1123 name",
 		},
 		{
+			name: "gemini surface on a shaper route",
+			spec: valid(func(m map[string]any) {
+				m["surfaces"] = []any{"gemini"}
+				m["endpoints"] = map[string]any{"gemini": "http://127.0.0.1:1/alpha"}
+			}),
+			valid: true,
+			why:   "the Gemini GenerateContent client surface is a shaper transcode, not an access protocol",
+		},
+		{
 			name: "remote route omits offers",
 			spec: valid(func(m map[string]any) {
 				delete(m, "offers")

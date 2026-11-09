@@ -3,6 +3,7 @@ package userk8s
 import (
 	"fmt"
 	"net/url"
+	pathpkg "path"
 	"slices"
 	"sort"
 	"strings"
@@ -10,8 +11,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/userk8s/api/v1alpha1"
 )
 
-// ResolvedOffer is one route offer with its effective capability and the
-// serving/model it resolves to.
+// ResolvedOffer is a route offer with its effective capability.
 type ResolvedOffer struct {
 	ID        string
 	Serving   *v1alpha1.ModelServing
@@ -19,9 +19,7 @@ type ResolvedOffer struct {
 	Effective EffectiveModel
 }
 
-// validateServings checks provider/model references, per-provider defaults,
-// and the narrowing rule. The narrowing check is here (not only in CEL)
-// because the files backend never runs an API server.
+// validateServings checks provider/model refs, defaults, and narrowing.
 func (o *Objects) validateServings() error {
 	defaults := map[string]string{}
 	for i := range o.Servings {
@@ -37,8 +35,7 @@ func (o *Objects) validateServings() error {
 		if serving.Spec.ProviderModelID == "" {
 			return fmt.Errorf("ModelServing %q declares no provider_model_id", serving.Name)
 		}
-		// Priority defaults to 100; zero is the unset zero value and is rejected
-		// when declared explicitly, matching the CRD's Minimum=1.
+		// Priority defaults to 100; zero is unset and rejected when explicit.
 		if serving.Spec.Priority <= 0 {
 			return fmt.Errorf("ModelServing %q declares priority %d; it must be at least 1 (omit it to take the default 100)", serving.Name, serving.Spec.Priority)
 		}
@@ -53,10 +50,8 @@ func (o *Objects) validateServings() error {
 		if err != nil {
 			return err
 		}
-		// A tool setting is authored against the canonical Model, but a
-		// projection runs on the serving's narrowed capabilities. Checking the
-		// pair here means a contradiction fails the catalog instead of producing
-		// a launch plan that silently exceeds what the provider offers.
+		// Tool settings are authored against the canonical Model but run on
+		// narrowed capabilities; reject contradictions here.
 		if err := validateToolSettingsAgainstEffective(model, serving, effective); err != nil {
 			return err
 		}
@@ -64,7 +59,7 @@ func (o *Objects) validateServings() error {
 	return nil
 }
 
-// validateSelections checks candidate references, offer references, and cycles.
+// validateSelections checks candidate/offer refs and cycles.
 func (o *Objects) validateSelections() error {
 	for i := range o.Selections {
 		selection := &o.Selections[i]
@@ -164,15 +159,7 @@ func (o *Objects) validateSelectionCycle(selection *v1alpha1.ModelSelection, pat
 	return nil
 }
 
-// routeOffers resolves the effective inventory of one route. An empty Offers
-// list on a shaper/direct route means every non-deprecated serving of the
-// access's provider; a remote route must declare its inventory.
-//
-// Deprecation filters the INVENTORY, not an explicit declaration. A deprecated
-// Model "hides every serving unless one is explicitly pinned" (Model.Spec), so a
-// serving the route author listed by name is honoured and only the defaulted
-// inventory is filtered. Every structural check still runs on both kinds, so a
-// misconfigured deprecated entry is reported rather than silently skipped.
+// routeOffers resolves the effective inventory of a route.
 func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, error) {
 	spec := &route.Spec
 	explicit := len(spec.Offers) > 0
@@ -238,9 +225,7 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 		if !ok {
 			return nil, fmt.Errorf("ModelServing %q references undeclared Model %q", serving.Name, serving.Spec.Model)
 		}
-		// Providers are compared as resolved objects, not as raw strings: a
-		// reference may be written with the provider's registry name, which is a
-		// different spelling of the same object.
+		// Providers are compared as resolved objects, not raw strings.
 		if access != nil {
 			accessProvider, ok := o.lookupProvider(access.Spec.Provider)
 			if !ok {
@@ -262,7 +247,7 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 			return nil, fmt.Errorf("ModelRoute %q exposes served id %q more than once", route.Name, id)
 		}
 		seen[id] = true
-		// Only a defaulted inventory is filtered: an explicit offer is a pin.
+		// Only a defaulted inventory is filtered; an explicit offer is a pin.
 		if !explicit && (serving.Spec.Deprecated || model.Spec.Deprecated) {
 			continue
 		}
@@ -275,15 +260,9 @@ func (o *Objects) routeOffers(route *v1alpha1.ModelRoute) ([]ResolvedOffer, erro
 	return out, nil
 }
 
-// validateRoutes performs the structural and cross-resource checks a files
-// artifact never has an API server evaluate.
+// validateRoutes performs structural and cross-resource checks.
 func (o *Objects) validateRoutes() error {
-	// Two shaper routes may share one ModelAccess: the route is the access item
-	// (an account, a region, a protocol), and ModelRoute.metadata.name is the
-	// shaper section identity, so a suite legitimately carries several routes
-	// over the same logical access. What two shaper sections cannot share is the
-	// same local mount prefix — the shaper would claim one listener path twice
-	// and serve whichever route bound it first.
+	// Two shaper routes may share one ModelAccess but not a mount prefix.
 	mounts := map[string]string{}
 	for i := range o.Routes {
 		route := &o.Routes[i]
@@ -293,9 +272,7 @@ func (o *Objects) validateRoutes() error {
 		if route.Spec.Transport.Kind != v1alpha1.TransportShaper {
 			continue
 		}
-		// A route whose whole inventory is retired is a catalog statement, not a
-		// section that will run: the gateway filters deprecated offers and never
-		// spawns it, so it must not claim a mount path and block a live route.
+		// A fully retired route claims no mount path.
 		offers, err := o.routeOffers(route)
 		if err != nil {
 			return err
@@ -315,10 +292,7 @@ func (o *Objects) validateRoutes() error {
 	return nil
 }
 
-// shaperMountPrefix returns the single mount prefix a shaper route publishes,
-// validating that every endpoint resolves to one non-empty mount prefix.
-// The shaper strips the prefix before dispatch, so an endpoint without one is
-// unreachable and endpoints that disagree would make some declared surface unreachable.
+// shaperMountPrefix returns the mount prefix for a shaper route.
 func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, error) {
 	var prefix string
 	for i, surface := range spec.Surfaces {
@@ -326,7 +300,19 @@ func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, erro
 		if err != nil {
 			return "", fmt.Errorf("ModelRoute %q endpoint for %q: %w", name, surface, err)
 		}
-		trimmed := strings.TrimRight(strings.TrimSuffix(strings.TrimRight(path, "/"), "/v1"), "/")
+		trimmed := cleanEndpointPath(path)
+		switch surface {
+		case "chat", "responses":
+			if rest, ok := strings.CutSuffix(trimmed, "/v1"); ok {
+				trimmed = strings.TrimSuffix(rest, "/openai")
+			} else if trimmed == "/openai" {
+				trimmed = ""
+			}
+		case "anthropic":
+			trimmed = strings.TrimSuffix(trimmed, "/v1")
+			trimmed = strings.TrimSuffix(trimmed, "/anthropic")
+		}
+		trimmed = strings.TrimRight(trimmed, "/")
 		if trimmed == "" {
 			return "", fmt.Errorf("ModelRoute %q shaper endpoint for surface %q carries no mount prefix (path %q)", name, surface, path)
 		}
@@ -342,6 +328,11 @@ func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, erro
 		return "", fmt.Errorf("ModelRoute %q shaper endpoints carry no mount prefix", name)
 	}
 	return prefix, nil
+}
+
+// cleanEndpointPath normalizes an endpoint path like the router.
+func cleanEndpointPath(path string) string {
+	return strings.TrimRight(pathpkg.Clean(path), "/")
 }
 
 func (o *Objects) validateRoute(route *v1alpha1.ModelRoute) error {
@@ -398,11 +389,7 @@ func (o *Objects) validateRoute(route *v1alpha1.ModelRoute) error {
 			}
 		}
 	}
-	// A shaper auth mode that presents a credential is a promise that a
-	// credential exists. With no binding (or a binding whose scheme is none)
-	// there is nothing to present, and the shaper would either send no auth to
-	// an upstream that rejects it or fail at its first request. Refuse the
-	// catalog instead of starting a mount that cannot honour its declaration.
+	// A shaper auth mode presenting a credential needs a binding.
 	if spec.Transport.Kind == v1alpha1.TransportShaper && spec.Transport.Shaper != nil {
 		credentialless := spec.Credential == "" || (binding != nil && binding.Spec.EffectiveScheme() == v1alpha1.CredentialNone)
 		if mode := strings.TrimSpace(spec.Transport.Shaper.AuthMode); credentialless && credentialMode(mode) {
@@ -414,18 +401,13 @@ func (o *Objects) validateRoute(route *v1alpha1.ModelRoute) error {
 		return err
 	}
 	if len(offers) == 0 {
-		// A route whose whole inventory is retired is a catalog statement, not
-		// a defect: the gateway filters deprecated offers and never spawns a
-		// section for it.
 		return nil
 	}
 	return nil
 }
 
 func validateRouteShape(name string, spec *v1alpha1.ModelRouteSpec) error {
-	// Order defaults to 100; zero is the unset zero value and is rejected when
-	// declared explicitly, so the normalization is total rather than silently
-	// rewriting an author's choice (the CRD states the same with Minimum=1).
+	// Order defaults to 100; zero is unset and rejected when explicit.
 	if spec.Order <= 0 {
 		return fmt.Errorf("ModelRoute %q declares order %d; it must be at least 1 (omit it to take the default 100)", name, spec.Order)
 	}
@@ -490,9 +472,7 @@ func validateRouteShape(name string, spec *v1alpha1.ModelRouteSpec) error {
 	return nil
 }
 
-// credentialMode reports whether a shaper --auth-mode value presents a
-// credential. auto and none do not: auto lets the shaper choose from what it
-// was given, and none strips credentials. The header:NAME form does.
+// credentialMode reports whether an auth mode presents a credential.
 func credentialMode(mode string) bool {
 	switch mode {
 	case "", "none", "auto":
@@ -503,9 +483,7 @@ func credentialMode(mode string) bool {
 	return strings.HasPrefix(mode, "header:")
 }
 
-// validateSurfaceSupport enforces the transport's real capability. A declared
-// surface is a promise; advertising one the protocol cannot reach sends clients
-// to a 404.
+// validateSurfaceSupport enforces transport capability.
 func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v1alpha1.ModelRouteSpec) error {
 	supported := map[string]bool{}
 	switch protocol {
@@ -541,10 +519,7 @@ func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v
 	return nil
 }
 
-// validateShaperMount requires every endpoint of a shaper route to resolve to
-// one non-empty mount prefix. The shaper strips the prefix before dispatch, so
-// an endpoint without one is unreachable and endpoints that disagree would make
-// some declared surface unreachable.
+// validateShaperMount requires a non-empty mount prefix.
 func validateShaperMount(name string, spec *v1alpha1.ModelRouteSpec) error {
 	_, err := shaperMountPrefix(name, spec)
 	return err

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
@@ -98,7 +99,7 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 	// Both branches should have a SHA.
 	for i, r := range execResult.Results {
 		if r.SHA == "" {
-			t.Errorf("result %d (%s) has empty SHA", i, r.Name)
+			t.Errorf("result %d (%s) has empty SHA (executeSplit returned: %s)", i, r.Name, result)
 		}
 		if r.Error != nil {
 			t.Errorf("result %d (%s) has error: %s", i, r.Name, *r.Error)
@@ -413,7 +414,7 @@ func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
 
 	r := execResult.Results[0]
 	if r.SHA == "" {
-		t.Error("expected non-empty SHA")
+		t.Error("expected non-empty SHA (executeSplit returned: " + result.(string) + ")")
 	}
 	if r.Error != nil {
 		t.Errorf("unexpected error: %s", *r.Error)
@@ -543,7 +544,7 @@ func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload.First.Error != nil || payload.Resumed.Error != nil {
-		t.Fatalf("resume execution failed: first=%v resumed=%v", payload.First.Error, payload.Resumed.Error)
+		t.Fatalf("resume execution failed: first=%v resumed=%v (executeSplitAsync returned: %s)", payload.First.Error, payload.Resumed.Error, result)
 	}
 	if len(payload.First.Results) != 1 || len(payload.Resumed.Results) != 2 {
 		t.Fatalf("unexpected result counts: first=%d resumed=%d", len(payload.First.Results), len(payload.Resumed.Results))
@@ -553,5 +554,230 @@ func TestChunk05_ExecuteSplit_ResumesCompletedPrefix(t *testing.T) {
 	}
 	if payload.Resumed.Results[1].Name != "split/02-dels" || payload.Resumed.Results[1].SHA == "" {
 		t.Errorf("pending split was not executed: %+v", payload.Resumed.Results[1])
+	}
+}
+
+// TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces pins the async
+// execution contract: when rev-parse HEAD fails inside the just-committed
+// worktree, the error must surface with the exec-layer reason (not an empty
+// SHA, not a swallowed failure) and the worktree must be cleaned up.
+func TestChunk05_ExecuteSplitAsync_RevParseFailureSurfaces(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	dir, statuses := setupExecRepo(t)
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statusJSON, _ := json.Marshal(statuses)
+
+	// Intercept the async git path so that `rev-parse HEAD` inside the
+	// temporary worktree fails after the commit, simulating a broken
+	// worktree HEAD. Everything else passes through to the real git binary.
+	// (Mocking _gitExecAsync keeps this cross-platform — no PATH shim.)
+	if _, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var orig = prSplit._gitExecAsync;
+			prSplit._gitExecAsync = async function(d, args) {
+				if (args && args[0] === 'rev-parse' && args[1] === 'HEAD' && d && d !== '` + escapeJSPath(dir) + `') {
+					return {stdout: '', stderr: 'fatal: bad revision\n', code: 128, error: true, message: 'exit status 128'};
+				}
+				return orig(d, args);
+			};
+		})()
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
+				]
+			};
+			var r = await prSplit.executeSplitAsync(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name  string  `json:"name"`
+			SHA   string  `json:"sha"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+
+	if execResult.Error == nil {
+		t.Fatal("expected top-level error for rev-parse failure")
+	}
+	if !strings.Contains(*execResult.Error, "rev-parse HEAD after commit failed") {
+		t.Errorf("error should name the rev-parse failure, got %q", *execResult.Error)
+	}
+	// The exec-layer reason must survive: stderr content and/or exec message.
+	if !strings.Contains(*execResult.Error, "bad revision") && !strings.Contains(*execResult.Error, "exit status") {
+		t.Errorf("error should carry the exec-layer reason, got %q", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 || execResult.Results[0].SHA != "" {
+		t.Errorf("failed split must not carry a SHA, got %+v", execResult.Results)
+	}
+
+	// The worktree for the failed split must be gone.
+	wtList := gitCmd(t, dir, "worktree", "list", "--porcelain")
+	if strings.Contains(wtList, "split/01-mods") {
+		t.Error("worktree for failed split should have been cleaned up")
+	}
+}
+
+// TestChunk05_ExecuteSplit_CheckIgnoreErrorIsFatal pins that a git
+// check-ignore failure other than 0 (ignored) / 1 (none ignored) — e.g. exit
+// 128 or an aborted capture (error true, code -1) — aborts executeSplit with
+// the exec reason instead of silently proceeding with an empty ignore list.
+func TestChunk05_ExecuteSplit_CheckIgnoreErrorIsFatal(t *testing.T) {
+	t.Parallel()
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "main.go"), "package main")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(dir, "feature.go"), "package feature")
+	gitCmd(t, dir, "add", "feature.go")
+	gitCmd(t, dir, "commit", "-m", "feature")
+
+	evalJS := prsplittest.NewChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statuses := map[string]string{"feature.go": "A"}
+	statusJSON, _ := json.Marshal(statuses)
+
+	result, err := evalJS(`
+		(async function() {
+			var prSplit = globalThis.prSplit;
+			// Chunk 05 captures gitExec (which calls exec.execv) in a closure at
+			// load time, so patch the exec binding underneath.
+			var execMod = prSplit._modules.exec;
+			var origExecv = execMod.execv;
+			execMod.execv = function(argv) {
+				if (argv && argv.indexOf('check-ignore') >= 0) {
+					return { stdout: '', stderr: 'fatal: unable to access', code: 128, error: true, message: 'fatal: unable to access' };
+				}
+				return origExecv(argv);
+			};
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [{ name: 'split/01-a', files: ['feature.go'], message: 'part 1' }]
+			};
+			var r = await prSplit.executeSplit(plan);
+			execMod.execv = origExecv;
+			return JSON.stringify({ error: r.error || '', resultCount: r.results.length });
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		Error       string `json:"error"`
+		ResultCount int    `json:"resultCount"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(data.Error, "git check-ignore failed") {
+		t.Errorf("error = %q, want a check-ignore failure", data.Error)
+	}
+	if !strings.Contains(data.Error, "unable to access") {
+		t.Errorf("error = %q, want the exec-layer reason carried through", data.Error)
+	}
+	if data.ResultCount != 0 {
+		t.Errorf("no split should have been executed, got %d results", data.ResultCount)
+	}
+}
+
+// TestChunk05_ExecuteSplitAsync_EmptyShaGuard pins that a rev-parse HEAD that
+// exits 0 with error true and empty stdout (an exec-layer anomaly) fails the
+// split instead of publishing an empty SHA.
+func TestChunk05_ExecuteSplitAsync_EmptyShaGuard(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	dir, statuses := setupExecRepo(t)
+
+	// Wider budget for loaded CI runners.
+	engine := prsplittest.NewEngine(t, nil)
+	engine.LoadChunks(t, "00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+	evalJS := engine.EvalJSTimeout(t, 5*time.Minute)
+
+	statusJSON, _ := json.Marshal(statuses)
+
+	if _, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var orig = prSplit._gitExecAsync;
+			prSplit._gitExecAsync = async function(d, args) {
+				if (args && args[0] === 'rev-parse' && args[1] === 'HEAD' && d && d !== '` + escapeJSPath(dir) + `') {
+					return { stdout: '', stderr: '', code: 0, error: true, message: 'command output capture was cut short before EOF' };
+				}
+				return orig(d, args);
+			};
+		})()
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
+				]
+			};
+			var r = await prSplit.executeSplitAsync(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name  string  `json:"name"`
+			SHA   string  `json:"sha"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+	if execResult.Error == nil || !strings.Contains(*execResult.Error, "rev-parse HEAD after commit failed") {
+		t.Fatalf("error = %v, want the rev-parse guard to fire", execResult.Error)
+	}
+	if !strings.Contains(*execResult.Error, "cut short") {
+		t.Errorf("error = %q, want the exec-layer reason carried through", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 || execResult.Results[0].SHA != "" {
+		t.Errorf("failed split must not carry a SHA, got %+v", execResult.Results)
 	}
 }

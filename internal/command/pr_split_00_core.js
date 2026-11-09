@@ -1,15 +1,7 @@
 'use strict';
 // pr_split_00_core.js — Core: requires, style, config, runtime, internal helpers
 //
-// Initializes globalThis.prSplit and defines foundational utilities used by
-// every subsequent chunk. This file MUST be loaded first.
-//
-// Go-injected globals expected:
-//   prSplitConfig  — {baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, ...}
-//   config.name    — "pr-split"
-//   prSplit._cancelSource — cancellation callback (optional; used by isCancelled/isPaused/isForceCancelled)
-//
-// See docs/architecture-pr-split-chunks.md for the full chunk loading contract.
+// Core utilities; load first. See docs/architecture-pr-split-chunks.md.
 
 (function() {
     // --- Module imports ---
@@ -17,8 +9,7 @@
     var bt = require('osm:bt');
     var exec = require('osm:exec');
 
-    // TUI-only modules: loaded conditionally so that the script can also be
-    // require()'d from test environments that lack these modules.
+    // TUI-only modules (optional).
     var template, shared;
     try {
         template = require('osm:text/template');
@@ -138,10 +129,7 @@
 
     // --- Discovery & Scoping ---
 
-    // discoverVerifyCommand auto-detects the verification command for the
-    // working directory. Checks for Makefile, makefile, and GNUmakefile.
-    // Prefers 'gmake' (GNU Make on macOS) over 'make' if available.
-    // Returns the best make command, or '' if no Makefile found.
+    // discoverVerifyCommand auto-detects the verify command.
     async function discoverVerifyCommand(dir) {
         var sep = isWindows() ? '\\' : '/';
         var names = ['Makefile', 'makefile', 'GNUmakefile'];
@@ -160,9 +148,7 @@
         }
         if (!hasMakefile) return '';
 
-        // Prefer gmake (GNU Make) if available — required on macOS where
-        // the system 'make' is BSD Make 3.81 which cannot run GNU Makefiles.
-        // Late-bind through prSplit._lookupBinary so tests can override.
+        // Prefer gmake (GNU Make) on macOS.
         var lbFn = (typeof prSplit !== 'undefined' && prSplit._lookupBinary) || lookupBinary;
         var gmakeLookup = await lbFn('gmake');
         if (gmakeLookup.found) return 'gmake';
@@ -170,10 +156,7 @@
         return 'make';
     }
 
-    // T071: Language detection helpers for scopedVerifyCommand.
-    // Each detector returns the scoped test command for a homogeneous set of
-    // files of that language, or null if the file set is not exclusively that
-    // language. Detectors are tried in order; first match wins.
+    // Language detectors for scopedVerifyCommand (T071).
 
     function scopedShellArg(value) {
         return /^[A-Za-z0-9_./-]+$/.test(value) ? value : shellQuote(value);
@@ -206,7 +189,7 @@
 
     var _langDetectors = [
         {
-            // Go: run `go test -race` on unique package directories.
+            // Go: go test -race on unique packages.
             name: 'go',
             test: function(f) { return f.match(/\.go$/) !== null; },
             build: function(files) {
@@ -223,11 +206,11 @@
             }
         },
         {
-            // JavaScript / TypeScript: run jest with file paths.
+            // JS/TS: jest with file paths.
             name: 'js',
             test: function(f) { return f.match(/\.(js|jsx|ts|tsx|mjs|cjs)$/) !== null; },
             build: function(files) {
-                // Collect unique directories for --testPathPattern.
+                // Collect unique directories.
                 var dirs = {};
                 for (var i = 0; i < files.length; i++) {
                     var lastSlash = files[i].lastIndexOf('/');
@@ -243,7 +226,7 @@
             }
         },
         {
-            // Python: run pytest with file paths.
+            // Python: pytest with file paths.
             name: 'python',
             test: function(f) { return f.match(/\.py$/) !== null; },
             build: function(files) {
@@ -259,8 +242,7 @@
             }
         },
         {
-            // Rust: run cargo test (scoping to specific crates is complex,
-            // so we scope to the workspace root; still better than 'make').
+            // Rust: cargo test.
             name: 'rust',
             test: function(f) { return f.match(/\.rs$/) !== null; },
             build: function(_files) {
@@ -269,13 +251,7 @@
         }
     ];
 
-    // scopedVerifyCommand returns a verification command scoped to the
-    // packages/directories affected by the given files. Supports Go, JS/TS,
-    // Python, and Rust. For mixed-language file sets, returns the fallback
-    // command (full verification). The scoped command runs the appropriate
-    // test runner for the detected language.
-    //
-    // T071: Extended from Go-only to multi-language support.
+    // scopedVerifyCommand returns a verification command scoped to affected files.
     function scopedVerifyCommand(files, fallbackCommand) {
         if (!files || files.length === 0) {
             return fallbackCommand;
@@ -286,7 +262,7 @@
             }
         }
 
-        // Only scope when the fallback is a known build/test runner.
+        // Only scope for known runners.
         // Custom verify commands (e.g. 'true', 'echo ok') must not be replaced.
         var scopable = (fallbackCommand === 'make' ||
                         fallbackCommand === 'gmake' ||
@@ -363,14 +339,74 @@
         return await exec.execv(cmd);
     }
 
-    // gitExecAsync runs a git command asynchronously using exec.spawn().
-    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
-    // Unlike gitExec (blocking), this does NOT freeze the event loop during execution,
-    // allowing BubbleTea to continue rendering and processing events.
-    //
-    // T30: Critical for unblocking the TUI event loop during git operations.
-    // T44: Optional third parameter `options` with `outputFn(line)` callback
-    //      to stream output chunks to the TUI Output tab in real-time.
+    // collectSpawnOutput drains a spawned child's stdout/stderr.
+    async function collectSpawnOutput(child, outputFn) {
+        var truncated = false;
+
+        async function readAll(stream, streamOutputFn) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) {
+                    if (chunk.truncated === true) truncated = true;
+                    break;
+                }
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    var chunkStr = String(chunk.value);
+                    buf += chunkStr;
+                    // T44: Stream each chunk line-by-line to the output callback.
+                    if (streamOutputFn) {
+                        var chunkLines = chunkStr.split('\n');
+                        for (var cl = 0; cl < chunkLines.length; cl++) {
+                            var line = chunkLines[cl];
+                            // Skip trailing empty line from split (last \n produces empty string).
+                            if (cl === chunkLines.length - 1 && line === '') continue;
+                            streamOutputFn(line);
+                        }
+                    }
+                }
+            }
+            return buf;
+        }
+
+        // Collect stdout and stderr in parallel to avoid deadlock
+        // (the command may fill stderr while we drain stdout). wait() is
+        // guarded: a failed process-tree close rejects it, and that rejection
+        // is an exec-layer failure of the command, not an unhandled rejection
+        // of the whole collection.
+        var waitResult = {};
+        var waitError = null;
+        var results = await Promise.all([
+            readAll(child.stdout, outputFn),
+            readAll(child.stderr, outputFn),
+            child.wait().then(function (r) { waitResult = r || {}; }, function (err) { waitError = err; })
+        ]);
+        var code = (waitResult.code !== undefined) ? waitResult.code : 0;
+        if (waitError) {
+            code = -1;
+        }
+        // A cut capture is an exec-layer failure, exactly as execv reports it:
+        // the caller gets the prefix it received plus a status it cannot mistake
+        // for the command's own. (execv may instead surface the process's own
+        // non-zero exit code alongside error true — both shapes are failures;
+        // no consumer may treat either as success.)
+        var waitMessage = waitError ? String((waitError && waitError.message) || waitError) : '';
+        return {
+            stdout: results[0],
+            stderr: results[1],
+            code: truncated || waitError ? -1 : code,
+            signal: waitResult.signal || null,
+            truncated: truncated,
+            error: truncated || waitError || code !== 0 ? true : false,
+            message: truncated
+                ? 'command output capture was cut short before EOF: the output is incomplete'
+                : (waitError
+                    ? waitMessage
+                    : (code !== 0 ? 'exit status ' + code : ''))
+        };
+    }
+
+    // gitExecAsync runs git asynchronously.
     async function gitExecAsync(dir, args, options) {
         var gitArgs = [];
         if (dir && dir !== '' && dir !== '.') {
@@ -396,65 +432,17 @@
         }
 
         var child = await exec.spawn('git', gitArgs);
-
-        // Collect stdout and stderr in parallel to avoid deadlock
-        // (process may fill stderr buffer before we finish reading stdout).
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    // T44: Stream each chunk line-by-line to the output callback.
-                    if (streamOutputFn) {
-                        var chunkLines = chunkStr.split('\n');
-                        for (var cl = 0; cl < chunkLines.length; cl++) {
-                            var line = chunkLines[cl];
-                            // Skip trailing empty line from split (last \n produces empty string).
-                            if (cl === chunkLines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
-            }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-
-        var stdout = results[0];
-        var stderr = results[1];
-        var waitResult = results[2];
-        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
-
+        var collected = await collectSpawnOutput(child, outputFn);
         return {
-            stdout: stdout,
-            stderr: stderr,
-            code: code,
-            error: code !== 0,
-            message: code !== 0 ? 'exit status ' + code : ''
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error,
+            message: collected.message
         };
     }
 
-    // shellExecAsync runs an arbitrary shell command asynchronously via the
-    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
-    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
-    // Uses shellSpawnAsync internally, so the event loop is NOT frozen,
-    // allowing BubbleTea to continue rendering and processing events.
-    //
-    // T078/T109: Generic async shell execution for conflict resolution strategies,
-    // verify commands, and resolution commands. Follows the same readAll + Promise.all
-    // pattern as gitExecAsync for consistent behavior.
-    //
-    // Options:
-    //   outputFn(line) — callback to stream each output line (for TUI Output tab)
-    //   timeoutMs — native child-process deadline; the binding owns termination
+    // shellExecAsync runs a shell command asynchronously.
     async function shellExecAsync(command, options) {
         options = options || {};
         var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
@@ -476,66 +464,30 @@
             timeoutMs: (typeof options.timeoutMs === 'number' && options.timeoutMs > 0) ? options.timeoutMs : 0
         });
 
-        // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
-        async function readAll(stream, streamOutputFn) {
-            var buf = '';
-            while (true) {
-                var chunk = await stream.read();
-                if (chunk.done) break;
-                if (chunk.value !== undefined && chunk.value !== null) {
-                    var chunkStr = String(chunk.value);
-                    buf += chunkStr;
-                    if (streamOutputFn) {
-                        var chunkLines = chunkStr.split('\n');
-                        for (var cl = 0; cl < chunkLines.length; cl++) {
-                            var line = chunkLines[cl];
-                            if (cl === chunkLines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
-                        }
-                    }
-                }
-            }
-            return buf;
-        }
-
-        var results = await Promise.all([
-            readAll(child.stdout, outputFn),
-            readAll(child.stderr, outputFn),
-            child.wait()
-        ]);
-
-        var stdout = results[0];
-        var stderr = results[1];
-        var waitResult = results[2];
-        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
+        var collected = await collectSpawnOutput(child, outputFn);
+        var message = collected.message;
+        // A configured timeout that elapsed is a deterministic timeout failure,
+        // not an unknown-verdict truncation: evaluate it BEFORE the truncated
+        // gate so a native timeoutMs expiry is reported as a timeout even when
+        // the killed process's streams were also cut.
         var elapsedMs = Date.now() - startedAt;
-        var message = code !== 0 ? 'exit status ' + code : '';
-        if (waitResult && waitResult.signal) {
-            message = String(waitResult.signal);
-        }
         var timedOut = timeoutMs > 0 && elapsedMs >= timeoutMs;
         if (timedOut) {
             message = 'timed out after ' + timeoutMs + 'ms';
+        } else if (!collected.truncated && collected.signal) {
+            message = String(collected.signal);
         }
 
         return {
-            stdout: stdout,
-            stderr: stderr,
-            code: code,
-            error: code !== 0 || timedOut,
+            stdout: collected.stdout,
+            stderr: collected.stderr,
+            code: collected.code,
+            error: collected.error || timedOut,
             message: message
         };
     }
 
-    // resolveDir resolves a directory path to an absolute path. When dir is
-    // empty, falsy, or '.', it resolves to the current working directory.
-    // This prevents git operations from being affected by later CWD changes
-    // (e.g. during test cleanup ordering races).
-    //
-    // Resolution order:
-    //   1. If dir is already an absolute/non-default path, use it.
-    //   2. If runtime.dir is configured (set by tests or CLI), use it.
-    //   3. Fall back to '.' (uses process CWD — correct in production).
+    // resolveDir resolves a directory to an absolute path.
     function resolveDir(dir) {
         if (dir && dir !== '' && dir !== '.') {
             return dir;
@@ -621,10 +573,7 @@
             : (await exec.execv(['test', '-f', path])).code === 0;
     }
 
-    // lookupBinary checks whether a named binary exists on PATH, or whether an
-    // explicit absolute command path exists on disk.
-    // Returns {found: bool, path: string} using 'where.exe' on Windows,
-    // 'which' on Unix for PATH lookups.
+    // lookupBinary checks whether a binary exists on PATH.
     async function lookupBinary(name) {
         if (absolutePath(name)) {
             var exists = await fileExistsSync(name);
@@ -636,14 +585,18 @@
         var cmd = isWindows() ? 'where.exe' : 'which';
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
         var result = await e.execv([cmd, name]);
+        var path = (result.stdout || '').split('\n')[0].trim();
         return {
-            found: result.code === 0,
-            path: (result.stdout || '').split('\n')[0].trim()
+            found: result.code === 0 && !result.error && path !== '',
+            path: path
         };
     }
 
     // lookupBinaryAsync is the non-blocking version of lookupBinary.
-    // Returns a Promise<{found: bool, path: string}>.
+    // Returns a Promise<{found: bool, path: string}>. The spawned lookup drains
+    // through the shared collectSpawnOutput, so a stream the exec layer had to
+    // cut before EOF is an exec-layer failure (code -1, error true), never a
+    // {found: true, path: '<prefix>'}.
     async function lookupBinaryAsync(name) {
         if (absolutePath(name)) {
             var exists = await fileExistsSync(name);
@@ -657,18 +610,11 @@
         // that reassign the global 'exec' are visible here.
         var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
         var child = await e.spawn(cmd, [name]);
-        var stdout = '';
-        while (true) {
-            var chunk = await child.stdout.read();
-            if (chunk.done) break;
-            if (chunk.value !== undefined && chunk.value !== null) {
-                stdout += String(chunk.value);
-            }
-        }
-        var waitResult = await child.wait();
+        var collected = await collectSpawnOutput(child, null);
+        var path = (collected.stdout || '').split('\n')[0].trim();
         return {
-            found: waitResult && waitResult.code === 0,
-            path: stdout.split('\n')[0].trim()
+            found: !collected.truncated && collected.code === 0 && path !== '',
+            path: path
         };
     }
 
@@ -841,13 +787,7 @@
         return s;
     }
 
-    // --- Cooperative Cancellation (via injectable callback) ---
-    //
-    // The auto-split TUI was removed in T27. Cancellation is
-    // now driven by a _cancelSource callback injected before pipeline runs.
-    // Callers set prSplit._cancelSource = function(query) { ... } before
-    // calling automatedSplit(). query is 'cancelled', 'paused', or 'forceCancelled'.
-    // The callback returns true/false. When no callback is set, returns false.
+    // --- Cooperative Cancellation ---
 
     // isCancelled checks cooperative cancellation.
     // Returns true when the user has requested cancellation.
@@ -900,23 +840,18 @@
     // Mutable runtime config.
     prSplit.runtime = runtime;
 
-    // execFailReason renders a failed gitExec/gitExecAsync result for an
-    // error string. git's stderr is the primary evidence, but a nonzero
-    // exit can carry an EMPTY stderr — a silent failure (the process died
-    // before writing, a spawn/fork resource error, a bare exit status) —
-    // and an error string of just "<command> failed: " is then
-    // undiagnosable. The exec layer's message field always holds the
-    // Go-side error; it is appended only when it adds information the
-    // stderr does not already carry.
+    // execFailReason renders a failed result's error string.
     var execFailReason = function(result) {
-        var stderr = result.stderr.trim();
-        if (stderr !== '' || result.message === undefined || result.message === null || result.message === '') {
+        var stderr = (result.stderr || '').trim();
+        var message = (result.message === undefined || result.message === null) ? '' : String(result.message);
+        if (message === '' || stderr.indexOf(message) >= 0) {
             return stderr;
         }
-        return stderr + ' (exec: ' + result.message + ')';
+        return stderr === '' ? message : stderr + ' (exec: ' + message + ')';
     };
 
     // Internal helpers.
+    prSplit._collectSpawnOutput = collectSpawnOutput;
     prSplit._gitExec = gitExec;
     prSplit._gitExecAsync = gitExecAsync;
     prSplit._shellExecAsync = shellExecAsync;

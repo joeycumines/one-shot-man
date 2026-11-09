@@ -6,12 +6,31 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/command"
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
-const version = "0.1.0"
+func cliVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		return versionFromBuildInfo(info)
+	}
+	return "devel"
+}
+
+func versionFromBuildInfo(info *debug.BuildInfo) string {
+	if info == nil {
+		return "devel"
+	}
+	version := strings.TrimPrefix(info.Main.Version, "v")
+	if version == "" || version == "(devel)" {
+		return "devel"
+	}
+	return version
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -58,7 +77,7 @@ func run() error {
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
-	registry.Register(command.NewVersionCommand(version))
+	registry.Register(command.NewVersionCommand(cliVersion()))
 	registry.Register(command.NewConfigCommand(cfg, configPath))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
@@ -138,13 +157,7 @@ func run() error {
 	// Let the command setup its flags
 	cmd.SetupFlags(fs)
 
-	// Parse flags using the FlagSet so flag values are correctly
-	// associated with their flags (avoids breaking flags that accept
-	// values, e.g. `-config file.yaml`). The FlagSet will stop parsing
-	// at the first non-flag token and the remaining arguments can be
-	// retrieved with fs.Args().
-	// Parse only the arguments belonging to this command (everything after
-	// the command name in the global flagset's remaining args).
+	// Parse flags for this command.
 	cmdArgs := gargs[1:]
 	if err := fs.Parse(cmdArgs); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -166,12 +179,7 @@ func run() error {
 	return cmd.Execute(fs.Args(), os.Stdout, os.Stderr)
 }
 
-// notifyProvidedFlags hands the parsed FlagSet to commands that track
-// explicitly-provided flags (see PrSplitCommand.CaptureProvidedFlags) so
-// config-file defaults cannot override explicit CLI flags. The flag
-// package consumes flags from fs.Args(), so commands cannot recover this
-// information from the positional leftovers alone. Commands without the
-// method are unaffected.
+// notifyProvidedFlags hands the FlagSet to commands tracking provided flags.
 func notifyProvidedFlags(cmd command.Command, fs *flag.FlagSet) {
 	if capturer, ok := cmd.(interface{ CaptureProvidedFlags(*flag.FlagSet) }); ok {
 		capturer.CaptureProvidedFlags(fs)

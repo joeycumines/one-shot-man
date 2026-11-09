@@ -37,7 +37,7 @@ func TestSpawnChild_ConcurrentStdoutReaders(t *testing.T) {
 	results := make(chan string, 2)
 	for range 2 {
 		go func() {
-			data, done, err := child.ReadStdout()
+			data, done, err := child.ReadStdoutContext(context.Background())
 			if err != nil {
 				results <- fmt.Sprintf("error:%v", err)
 				return
@@ -123,7 +123,7 @@ func TestSpawnChild_BasicStdout(t *testing.T) {
 
 	var all strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout error: %v", err)
 		}
@@ -154,7 +154,7 @@ func TestSpawnChild_BasicStderr(t *testing.T) {
 
 	var all strings.Builder
 	for {
-		data, done, err := child.ReadStderr()
+		data, done, err := child.ReadStderrContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStderr error: %v", err)
 		}
@@ -201,7 +201,7 @@ func TestSpawnChild_Stdin(t *testing.T) {
 
 	var all strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout error: %v", err)
 		}
@@ -234,7 +234,7 @@ func TestSpawnChild_MixedStdoutStderr(t *testing.T) {
 	go func() {
 		defer close(doneCh)
 		for {
-			data, done, err := child.ReadStderr()
+			data, done, err := child.ReadStderrContext(context.Background())
 			if err != nil {
 				return
 			}
@@ -246,7 +246,7 @@ func TestSpawnChild_MixedStdoutStderr(t *testing.T) {
 	}()
 
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout error: %v", err)
 		}
@@ -279,7 +279,7 @@ func TestSpawnChild_LargeOutput(t *testing.T) {
 	var lineCount int
 	var buf strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout error: %v", err)
 		}
@@ -387,7 +387,7 @@ func TestSpawnChild_Cwd(t *testing.T) {
 
 	var buf strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout: %v", err)
 		}
@@ -419,7 +419,7 @@ func TestSpawnChild_Env(t *testing.T) {
 
 	var buf strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout: %v", err)
 		}
@@ -473,7 +473,7 @@ func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
 
 			var buf strings.Builder
 			for {
-				data, done, readErr := child.ReadStdout()
+				data, done, readErr := child.ReadStdoutContext(context.Background())
 				if readErr != nil {
 					results <- result{err: fmt.Errorf("read %d: %w", idx, readErr)}
 					return
@@ -573,7 +573,7 @@ func TestSpawnChild_EmptyStdout(t *testing.T) {
 	// Process that writes nothing to stdout.
 	child := shSpawn(t, context.Background(), `true`)
 
-	data, done, err := child.ReadStdout()
+	data, done, err := child.ReadStdoutContext(context.Background())
 	if err != nil {
 		t.Fatalf("ReadStdout error: %v", err)
 	}
@@ -608,7 +608,7 @@ func TestSpawnChild_BinaryData(t *testing.T) {
 
 	var buf strings.Builder
 	for {
-		data, done, err := child.ReadStdout()
+		data, done, err := child.ReadStdoutContext(context.Background())
 		if err != nil {
 			t.Fatalf("ReadStdout: %v", err)
 		}

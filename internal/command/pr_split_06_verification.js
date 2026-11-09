@@ -16,6 +16,10 @@
     var isWindows = prSplit._isWindows;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
+    // Late-bound so test mocks of _execFailReason are honored (same pattern as
+    // chunk 07): an aborted capture carries its diagnostic in result.message,
+    // not stderr, so failure strings must go through execFailReason.
+    var execFailReason = function(result) { return prSplit._execFailReason(result); };
 
     async function resolveVerifyCommand(command, dir) {
         if (command) return command;
@@ -29,11 +33,6 @@
     }
 
     // --- verifySplit — runs verify command on a single branch ---
-    //
-    //  Uses a temporary git worktree so the user's CWD is never modified.
-    //  Tries proper branch checkout first (preserves branch name for verify
-    //  commands that inspect HEAD), falls back to detached HEAD if the
-    //  branch is already checked out elsewhere.
     async function verifySplit(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -46,7 +45,7 @@
             return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
         }
 
-        // Create a temporary worktree for this branch.
+        // Create temp worktree.
         // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
@@ -61,7 +60,7 @@
                     name: branchName,
                     passed: false,
                     output: '',
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                    error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
         }
@@ -80,12 +79,7 @@
 
         if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
-            // Portable shell timeout: works on macOS (no GNU coreutils) and Linux.
-            // Spawns a watchdog that kills the command after timeoutSec. If the
-            // command finishes first, the watchdog is killed immediately.
-            // The watchdog's stdout/stderr are redirected to /dev/null to prevent
-            // FD inheritance from keeping Go's cmd.Wait() alive after the main
-            // command exits.
+            // Portable shell timeout.
             shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
         // Note: Windows timeout is an interactive command; timeout handling
@@ -106,27 +100,50 @@
             }
         }
 
-        var result = await shellSpawnSync(shellCmd, {
-            timeoutMs: timeoutMs,
-            onStdout: function(chunk) {
-                stdoutBuf += chunk;
-                emitChunk(chunk);
-            },
-            onStderr: function(chunk) {
-                stderrBuf += chunk;
-                emitChunk(chunk);
-            }
-        });
+        var result;
+        try {
+            result = await shellSpawnSync(shellCmd, {
+                timeoutMs: timeoutMs,
+                onStdout: function(chunk) {
+                    stdoutBuf += chunk;
+                    emitChunk(chunk);
+                },
+                onStderr: function(chunk) {
+                    stderrBuf += chunk;
+                    emitChunk(chunk);
+                }
+            });
+        } finally {
+            // The worktree must be removed even if the spawn throws.
+            await cleanupWorktree();
+        }
         var elapsedMs = Date.now() - startMs;
 
-        await cleanupWorktree();
+        // An aborted capture is an exec-layer failure whose stderr may be
+        // empty: the verdict is unknown, so it can neither pass nor count as
+        // a deterministic failure (and must never be forgiven as pre-existing).
+        var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
 
+        // Timeout before truncation gate.
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                exitCode: result.code,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
+
+        if (captureCutShort) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                truncated: true,
+                exitCode: result.code,
+                error: 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
+                    (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
             };
         }
 
@@ -134,7 +151,10 @@
             name: branchName,
             passed: result.code === 0,
             output: stdoutBuf,
-            error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
+            exitCode: result.code,
+            error: result.code !== 0
+                ? 'verify failed (exit ' + result.code + '): ' + execFailReason(result)
+                : null
         };
     }
 
@@ -160,8 +180,9 @@
 
         // Pre-existing failure detection: run verification on the source
         // branch first. If it fails, split branch failures are flagged as
-        // pre-existing rather than new regressions.
+        // pre-existing detection; unknown baseline disables it.
         var baselineFailure = null;
+        var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplit(plan.sourceBranch, {
                 dir: dir,
@@ -169,7 +190,9 @@
                 verifyTimeoutMs: verifyTimeoutMs,
                 outputFn: options.outputFn || null
             });
-            if (!baselineResult.passed) {
+            if (baselineResult.truncated) {
+                baselineUnknown = true;
+            } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
             }
         }
@@ -224,9 +247,11 @@
             }
 
             // Mark pre-existing failures.
-            if (!result.passed && baselineFailure) {
+            if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            } else if (!result.passed && baselineUnknown) {
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;
@@ -245,18 +270,6 @@
     }
 
     // --- verifyEquivalence — tree-SHA comparison of last split vs source ---
-    //
-    //  DESIGN NOTE (T094): This check relies on the CUMULATIVE CHAIN model.
-    //  executeSplit/executeSplitAsync in pr_split_05_execution.js builds
-    //  branches as a stacked chain: each split inherits ALL content from
-    //  the previous split (via `currentBase = split.name`). The last split
-    //  is therefore the accumulation of baseBranch + ALL changed files
-    //  (each checked out from sourceBranch). Comparing its tree SHA against
-    //  sourceBranch^{tree} is a bit-perfect integrity check.
-    //
-    //  If the execution model ever changes to INDEPENDENT branches (each
-    //  starting from baseBranch), this check would need redesign — likely
-    //  a combined merge or tree-walk approach.
     async function verifyEquivalence(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
@@ -275,7 +288,7 @@
                 equivalent: false,
                 splitTree: '',
                 sourceTree: '',
-                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+                error: 'failed to get split tree: ' + execFailReason(splitTreeResult)
             };
         }
         var splitTree = splitTreeResult.stdout.trim();
@@ -286,7 +299,7 @@
                 equivalent: false,
                 splitTree: splitTree,
                 sourceTree: '',
-                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+                error: 'failed to get source tree: ' + execFailReason(sourceTreeResult)
             };
         }
         var sourceTree = sourceTreeResult.stdout.trim();
@@ -315,7 +328,12 @@
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
         var diffResult = await gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
-        base.diffSummary = diffResult.code === 0 ? diffResult.stdout.trim() : '';
+        if (diffResult.code === 0) {
+            base.diffSummary = diffResult.stdout.trim();
+        } else {
+            // Failed diff: report reason.
+            base.diffError = execFailReason(diffResult);
+        }
 
         var diffNamesResult = await gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
         if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
@@ -324,6 +342,9 @@
             });
         } else {
             base.diffFiles = [];
+            if (diffNamesResult.code !== 0 && !base.diffError) {
+                base.diffError = execFailReason(diffNamesResult);
+            }
         }
 
         return base;
@@ -351,24 +372,14 @@
             if (result.code === 0) {
                 deleted.push(name);
             } else {
-                errors.push(name + ': ' + result.stderr.trim());
+                errors.push(name + ': ' + execFailReason(result));
             }
         }
 
         return { deleted: deleted, errors: errors };
     }
 
-    // --- prepareVerifyWorktree — create worktree without spawning a session ---
-    //
-    //  Creates a temporary git worktree for the given branch. Returns the
-    //  worktree path and resolved dir. No CaptureSession is created; the
-    //  caller decides which session model to use (interactive shell vs
-    //  one-shot command vs async fallback).
-    //
-    //  Returns:
-    //    { worktreeDir, dir }     on success
-    //    { skipped: true }        if no verify command configured
-    //    { error: string }        on failure
+    // --- prepareVerifyWorktree — create worktree ---
     async function prepareVerifyWorktree(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -390,7 +401,7 @@
             wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
                 return {
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim(),
+                    error: 'create worktree failed: ' + execFailReason(wtAdd),
                     worktreeDir: null
                 };
             }
@@ -399,21 +410,7 @@
         return { worktreeDir: worktreeDir, dir: dir };
     }
 
-    // --- startVerifySession — non-blocking variant using CaptureSession ---
-    //
-    //  Creates a temporary git worktree and spawns the verify command in a
-    //  CaptureSession (PTY + VTerm). Returns immediately so the TUI can
-    //  poll output via ticks. Caller is responsible for cleanup via
-    //  cleanupVerifyWorktree() after the session completes.
-    //
-    //  This is the ONE-SHOT verify model: the command runs once and exits.
-    //  For the canonical INTERACTIVE model (persistent shell), use
-    //  prepareVerifyWorktree() + spawnShellSession() directly.
-    //
-    //  Returns:
-    //    { session, worktreeDir, dir, branchName, startTime }  on success
-    //    { skipped: true }                                     if no verify command
-    //    { error: string }                                     on failure
+    // --- startVerifySession — non-blocking variant ---
     async function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -502,31 +499,6 @@
     }
 
     // --- DESIGN NOTE (T003): PTY Verify Pipeline Audit ---
-    //
-    //  The async verification pipeline (startVerifySession → pollVerifySession
-    //  → runVerifyBranch in chunk 16) was audited for correctness:
-    //
-    //  1. CaptureSession lifecycle: readerLoop stores exitCode BEFORE closing
-    //     the done channel, so isDone() → exitCode() is always safe. The TUI
-    //     polls isDone() at 100ms intervals — no busy-wait or race.
-    //
-    //  2. Worktree cleanup: cleanupVerifyWorktree is best-effort (fire-and-forget
-    //     `git worktree remove --force`). Failures are silent by design — a
-    //     dangling worktree is harmless and will be GC'd on next prune.
-    //
-    //  3. Dual-path architecture: runVerifyBranch tries CaptureSession first
-    //     (PTY + VTerm for live output) and falls back to verifySplitAsync
-    //     (exec.spawn) if CaptureSession creation fails (e.g., PTY unavailable
-    //     on the platform). Note: require('osm:termmux') must succeed;
-    //     a missing module is a fatal error.
-    //
-    //  4. preExisting detection: pollVerifySession hard-codes preExisting=false
-    //     because CaptureSession results don't carry baseline info. T115 will
-    //     add proper pre-existing detection to the PTY path.
-    //
-    //  5. Async variants (verifySplitAsync, verifySplitsAsync,
-    //     verifyEquivalenceAsync) now have unit test coverage via mocked
-    //     _gitExecAsync and exec.spawn infrastructure.
 
     // --- Async versions for pipeline use (T31) ---
     //  Uses gitExecAsync (exec.spawn) so the event loop stays responsive.
@@ -577,7 +549,7 @@
                     name: branchName,
                     passed: false,
                     output: '',
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                    error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
         }
@@ -656,12 +628,16 @@
             watchCancellation();
         }
 
-        // Read stdout and stderr concurrently via async streams.
+        // Read stdout/stderr concurrently; truncated stream is a prefix.
+        var streamsTruncated = false;
         async function readStream(stream, onChunk) {
             var buf = '';
             while (true) {
                 var chunk = await stream.read();
-                if (chunk.done) break;
+                if (chunk.done) {
+                    if (chunk.truncated === true) streamsTruncated = true;
+                    break;
+                }
                 if (chunk.value !== undefined && chunk.value !== null) {
                     var text = String(chunk.value);
                     buf += text;
@@ -692,17 +668,31 @@
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                exitCode: exitCode,
                 error: 'verification cancelled by user',
                 cancelled: true
             };
         }
 
+        // Timeout before truncation gate.
         if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                exitCode: exitCode,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
+
+        if (streamsTruncated) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                truncated: true,
+                exitCode: exitCode,
+                error: 'verification output capture was cut short before EOF: the verdict is unknown'
             };
         }
 
@@ -710,7 +700,8 @@
             name: branchName,
             passed: exitCode === 0,
             output: stdoutBuf,
-            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + stderrBuf : null
+            exitCode: exitCode,
+            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : '') : null
         };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
@@ -759,8 +750,11 @@
         var failedBranches = {};
 
         // Pre-existing failure detection: run verification on the source
-        // branch first.
+        // branch first. A baseline whose verdict is UNKNOWN (truncated capture)
+        // is not a baseline failure: it disables pre-existing detection rather
+        // than forgiving failing branches.
         var baselineFailure = null;
+        var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
             var baselineResult = await verifySplitAsync(plan.sourceBranch, {
                 dir: dir,
@@ -772,7 +766,9 @@
             if (baselineResult.cancelled || isCancelledNow()) {
                 return { allPassed: false, results: [], error: 'verification cancelled by user' };
             }
-            if (!baselineResult.passed) {
+            if (baselineResult.truncated) {
+                baselineUnknown = true;
+            } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
             }
         }
@@ -829,9 +825,12 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            if (!result.passed && baselineFailure) {
+            // Truncated branch is never pre-existing.
+            if (!result.passed && !result.truncated && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            } else if (!result.passed && baselineUnknown) {
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;
@@ -869,7 +868,7 @@
                 equivalent: false,
                 splitTree: '',
                 sourceTree: '',
-                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+                error: 'failed to get split tree: ' + execFailReason(splitTreeResult)
             };
         }
         var splitTree = splitTreeResult.stdout.trim();
@@ -880,7 +879,7 @@
                 equivalent: false,
                 splitTree: splitTree,
                 sourceTree: '',
-                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+                error: 'failed to get source tree: ' + execFailReason(sourceTreeResult)
             };
         }
         var sourceTree = sourceTreeResult.stdout.trim();
@@ -911,6 +910,8 @@
         var diffStatResult = await gitExecAsync(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
         if (diffStatResult.code === 0) {
             base.diffSummary = diffStatResult.stdout.trim();
+        } else {
+            base.diffError = execFailReason(diffStatResult);
         }
 
         var diffNamesResult = await gitExecAsync(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
@@ -918,6 +919,8 @@
             base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
                 return f !== '';
             });
+        } else if (diffNamesResult.code !== 0 && !base.diffError) {
+            base.diffError = execFailReason(diffNamesResult);
         }
 
         return base;
@@ -944,7 +947,7 @@
             if (result.code === 0) {
                 deleted.push(name);
             } else {
-                errors.push(name + ': ' + result.stderr.trim());
+                errors.push(name + ': ' + execFailReason(result));
             }
         }
 

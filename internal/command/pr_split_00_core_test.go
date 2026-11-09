@@ -1,10 +1,12 @@
 package command
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -590,6 +592,405 @@ func TestChunk00_ResolveDir_NeverReturnsEmpty(t *testing.T) {
 			}
 			if s == "" {
 				t.Errorf("resolveDir returned empty string for input %q — must return at least '.'", tt.expr)
+			}
+		})
+	}
+}
+
+// TestChunk00_CollectSpawnOutputReportsTruncatedCapture pins the shared spawned-
+// command collector: a stream the exec layer cut before EOF must be reported as
+// truncated, with the prefix it received preserved, so no caller can turn a
+// partial capture into a successful result. A clean stream reports truncated
+// false and must not gain the flag.
+func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		stdoutChunks  string
+		stderrChunks  string
+		waitResult    string
+		waitMessage   string
+		wantStdout    string
+		wantStderr    string
+		wantCode      float64
+		wantError     bool
+		wantMessage   string
+		wantTruncated bool
+	}{
+		{
+			name:          "cut before EOF",
+			stdoutChunks:  `[{done: false, value: 'parent-done\n'}, {done: true, truncated: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "parent-done\n",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:          "cut reported only on the stream",
+			stdoutChunks:  `[{done: false, value: 'partial'}, {done: true, truncated: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "partial",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:          "stderr-only cut",
+			stdoutChunks:  `[{done: false, value: 'all of stdout\n'}, {done: true}]`,
+			stderrChunks:  `[{done: false, value: 'warn'}, {done: true, truncated: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "all of stdout\n",
+			wantStderr:    "warn",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:          "cut with a non-zero exit status",
+			stdoutChunks:  `[{done: false, value: 'partial'}, {done: true, truncated: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 3, signal: null}`,
+			wantStdout:    "partial",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
+		{
+			name:         "clean",
+			stdoutChunks: `[{done: false, value: 'all of it\n'}, {done: true}]`,
+			stderrChunks: `[{done: false, value: 'warning\n'}, {done: true}]`,
+			waitResult:   `{code: 0, signal: null}`,
+			wantStdout:   "all of it\n",
+			wantStderr:   "warning\n",
+			wantCode:     0,
+		},
+		{
+			name:         "clean with a failing exit status",
+			stdoutChunks: `[{done: true}]`,
+			stderrChunks: `[{done: false, value: 'boom\n'}, {done: true}]`,
+			waitResult:   `{code: 3, signal: null}`,
+			wantStderr:   "boom\n",
+			wantCode:     3,
+			wantError:    true,
+			wantMessage:  "exit status 3",
+		},
+		{
+			name:          "wait rejection becomes an exec-layer failure",
+			stdoutChunks:  `[{done: false, value: 'partial\n'}, {done: true}]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `REJECT`,
+			waitMessage:   "process tree close failed: permission denied",
+			wantStdout:    "partial\n",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "process tree close failed: permission denied",
+			wantTruncated: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+			result, err := evalJS(`
+				(function() {
+					function stream(chunks) {
+						var queue = chunks.slice();
+						return {
+							read: async function() {
+								return queue.length > 0 ? queue.shift() : {done: true};
+							}
+						};
+					}
+					var child = {
+						stdout: stream(` + test.stdoutChunks + `),
+						stderr: stream(` + test.stderrChunks + `),
+						wait: ` + func() string {
+				if test.waitResult == "REJECT" {
+					return `async function() { throw new Error(` + strconv.Quote(test.waitMessage) + `); }`
+				}
+				return `async function() { return ` + test.waitResult + `; }`
+			}() + `
+					};
+					return prSplit._collectSpawnOutput(child, null).then(function(collected) {
+						return JSON.stringify(collected);
+					});
+				})()
+			`)
+			if err != nil {
+				t.Fatalf("collectSpawnOutput: %v", err)
+			}
+
+			var collected struct {
+				Stdout    string  `json:"stdout"`
+				Stderr    string  `json:"stderr"`
+				Code      float64 `json:"code"`
+				Error     bool    `json:"error"`
+				Message   string  `json:"message"`
+				Truncated bool    `json:"truncated"`
+			}
+			if err := json.Unmarshal([]byte(result.(string)), &collected); err != nil {
+				t.Fatalf("unmarshal %v: %v", result, err)
+			}
+			if collected.Stdout != test.wantStdout {
+				t.Errorf("stdout = %q, want %q", collected.Stdout, test.wantStdout)
+			}
+			if collected.Stderr != test.wantStderr {
+				t.Errorf("stderr = %q, want %q", collected.Stderr, test.wantStderr)
+			}
+			if collected.Code != test.wantCode {
+				t.Errorf("code = %v, want %v", collected.Code, test.wantCode)
+			}
+			if collected.Error != test.wantError {
+				t.Errorf("error = %v, want %v", collected.Error, test.wantError)
+			}
+			if collected.Message != test.wantMessage {
+				t.Errorf("message = %q, want %q", collected.Message, test.wantMessage)
+			}
+			if collected.Truncated != test.wantTruncated {
+				t.Errorf("truncated = %v, want %v", collected.Truncated, test.wantTruncated)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  Chunk 00: truncation hardening — lookupBinaryAsync, execFailReason
+// ---------------------------------------------------------------------------
+
+// mockSpawnChildJS installs a spawn mock on prSplit._modules.exec that returns
+// a child handle whose streams serve the given chunk arrays and whose wait()
+// resolves the given result. Returns JS to restore the original spawn.
+const mockSpawnChildJS = `
+	globalThis.__origSpawn = globalThis.prSplit._modules.exec.spawn;
+	globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+		var r = globalThis.__spawnResponse;
+		function stream(chunks) {
+			var queue = chunks.slice();
+			return { read: function() { return Promise.resolve(queue.length > 0 ? queue.shift() : {done: true}); } };
+		}
+		return {
+			stdout: stream(r.stdoutChunks),
+			stderr: stream(r.stderrChunks),
+			wait: function() { return Promise.resolve(r.waitResult); },
+			kill: function() {},
+			close: function() {}
+		};
+	};
+`
+
+const restoreSpawnJS = `
+	globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn;
+	globalThis.__origSpawn = undefined;
+	globalThis.__spawnResponse = undefined;
+`
+
+// TestChunk00_LookupBinaryAsyncRefusesTruncatedCapture pins that the async
+// binary lookup cannot accept a cut-short stream as a found binary, and that an
+// empty path is not "found" even with exit code 0.
+func TestChunk00_LookupBinaryAsyncRefusesTruncatedCapture(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+	tests := []struct {
+		name      string
+		response  string
+		wantFound bool
+		wantPath  string
+	}{
+		{
+			name: "truncated stdout with exit 0 is not found",
+			response: `{
+				stdoutChunks: [{done: false, value: '/usr/bin/gm'}, {done: true, truncated: true}],
+				stderrChunks: [{done: true}],
+				waitResult: {code: 0, signal: null}
+			}`,
+			wantFound: false,
+			wantPath:  "/usr/bin/gm",
+		},
+		{
+			name: "empty stdout with exit 0 is not found",
+			response: `{
+				stdoutChunks: [{done: true}],
+				stderrChunks: [{done: true}],
+				waitResult: {code: 0, signal: null}
+			}`,
+			wantFound: false,
+			wantPath:  "",
+		},
+		{
+			name: "non-zero exit is not found",
+			response: `{
+				stdoutChunks: [{done: true}],
+				stderrChunks: [{done: false, value: 'not found\n'}, {done: true}],
+				waitResult: {code: 1, signal: null}
+			}`,
+			wantFound: false,
+			wantPath:  "",
+		},
+		{
+			name: "clean capture with a path is found",
+			response: `{
+				stdoutChunks: [{done: false, value: '/usr/bin/gmake\n'}, {done: true}],
+				stderrChunks: [{done: true}],
+				waitResult: {code: 0, signal: null}
+			}`,
+			wantFound: true,
+			wantPath:  "/usr/bin/gmake",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Sequential: the spawn mock and its response live on shared globals.
+			if _, err := evalJS(mockSpawnChildJS); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := evalJS(`globalThis.__spawnResponse = ` + test.response + `;`); err != nil {
+				t.Fatal(err)
+			}
+			result, err := evalJS(`JSON.stringify(await globalThis.prSplit._lookupBinaryAsync('gmake'))`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := evalJS(restoreSpawnJS); err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				Found bool   `json:"found"`
+				Path  string `json:"path"`
+			}
+			if err := json.Unmarshal([]byte(result.(string)), &got); err != nil {
+				t.Fatalf("unmarshal %v: %v", result, err)
+			}
+			if got.Found != test.wantFound || got.Path != test.wantPath {
+				t.Errorf("lookupBinaryAsync = (%v, %q), want (%v, %q)", got.Found, got.Path, test.wantFound, test.wantPath)
+			}
+		})
+	}
+}
+
+// TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation pins the precedence:
+// when a configured timeoutMs has elapsed, the result is a TIMEOUT (message
+// 'timed out after Nms', error true), not a cut-short capture — even when the
+// killed process's streams were also marked truncated.
+func TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+	if _, err := evalJS(`
+		globalThis.__origSpawn2 = globalThis.prSplit._modules.exec.spawn;
+		globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+			function delayedStream(chunks, delayMs) {
+				var queue = chunks.slice();
+				return { read: function() {
+					return new Promise(function(resolve) {
+						setTimeout(function() {
+							resolve(queue.length > 0 ? queue.shift() : {done: true});
+						}, delayMs);
+					});
+				} };
+			}
+			return {
+				// The stream ends truncated (the timeout kill cut the capture)
+				// but only AFTER the timeout window has elapsed.
+				stdout: delayedStream([{done: false, value: 'partial\n'}, {done: true, truncated: true}], 40),
+				stderr: delayedStream([{done: true}], 40),
+				wait: function() { return new Promise(function(resolve) { setTimeout(function() { resolve({code: -1, signal: 'SIGKILL'}); }, 40); }); },
+				kill: function() {},
+				close: function() {}
+			};
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn2; globalThis.__origSpawn2 = undefined;`); err != nil {
+			t.Errorf("restore spawn: %v", err)
+		}
+	})
+
+	result, err := evalJS(`JSON.stringify(await globalThis.prSplit._shellExecAsync('sleep 30', {timeoutMs: 10}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Stdout  string  `json:"stdout"`
+		Code    float64 `json:"code"`
+		Error   bool    `json:"error"`
+		Message string  `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &got); err != nil {
+		t.Fatalf("unmarshal %v: %v", result, err)
+	}
+	if !got.Error {
+		t.Errorf("error = false, want true (a timeout is a failure)")
+	}
+	if got.Message != "timed out after 10ms" {
+		t.Errorf("message = %q, want %q — the timeout must win over the truncation message", got.Message, "timed out after 10ms")
+	}
+	if got.Stdout != "partial\n" {
+		t.Errorf("stdout = %q, want the drained prefix %q", got.Stdout, "partial\n")
+	}
+}
+
+// TestChunk00_ExecFailReasonKeepsMessage pins the error-reason contract: the
+// exec-layer message (e.g. an aborted-capture diagnostic) survives even when
+// stderr is non-empty, and is not duplicated when stderr already carries it.
+func TestChunk00_ExecFailReasonKeepsMessage(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+	tests := []struct {
+		name   string
+		result string
+		want   string
+	}{
+		{
+			name:   "stderr and message both kept",
+			result: `{stderr: 'fatal: bad thing\n', message: 'command output capture aborted before EOF: captured output is incomplete'}`,
+			want:   "fatal: bad thing (exec: command output capture aborted before EOF: captured output is incomplete)",
+		},
+		{
+			name:   "message alone when stderr empty",
+			result: `{stderr: '', message: 'exit status 1'}`,
+			want:   "exit status 1",
+		},
+		{
+			name:   "message already in stderr is not duplicated",
+			result: `{stderr: 'boom: exit status 1', message: 'exit status 1'}`,
+			want:   "boom: exit status 1",
+		},
+		{
+			name:   "stderr only",
+			result: `{stderr: 'just stderr\n', message: ''}`,
+			want:   "just stderr",
+		},
+		{
+			name:   "neither",
+			result: `{stderr: '', message: ''}`,
+			want:   "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := evalJS(`globalThis.prSplit._execFailReason(` + test.result + `)`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.(string) != test.want {
+				t.Errorf("execFailReason = %q, want %q", result.(string), test.want)
 			}
 		})
 	}

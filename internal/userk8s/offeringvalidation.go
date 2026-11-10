@@ -311,6 +311,10 @@ func shaperMountPrefix(name string, spec *v1alpha1.ModelRouteSpec) (string, erro
 		case "anthropic":
 			trimmed = strings.TrimSuffix(trimmed, "/v1")
 			trimmed = strings.TrimSuffix(trimmed, "/anthropic")
+		case "gemini":
+			// A Gemini client base may name the API version it would append;
+			// the mount prefix is what precedes it.
+			trimmed = strings.TrimSuffix(trimmed, "/v1beta")
 		}
 		trimmed = strings.TrimRight(trimmed, "/")
 		if trimmed == "" {
@@ -422,7 +426,7 @@ func validateRouteShape(name string, spec *v1alpha1.ModelRouteSpec) error {
 	seen := map[string]bool{}
 	for _, surface := range spec.Surfaces {
 		switch surface {
-		case "anthropic", "chat", "responses":
+		case "anthropic", "chat", "responses", "gemini":
 		default:
 			return fmt.Errorf("ModelRoute %q declares unknown surface %q", name, surface)
 		}
@@ -491,11 +495,14 @@ func validateSurfaceSupport(name string, protocol v1alpha1.WireProtocol, spec *v
 		supported["chat"] = true
 		supported["anthropic"] = true
 		supported["responses"] = true
+		supported["gemini"] = true
 	case v1alpha1.WireProtocolMessages:
 		supported["anthropic"] = true
+		supported["gemini"] = true
 	case v1alpha1.WireProtocolResponses:
 		supported["responses"] = true
 		supported["anthropic"] = true
+		supported["gemini"] = true
 	default:
 		return fmt.Errorf("ModelRoute %q access declares unknown protocol %q", name, protocol)
 	}

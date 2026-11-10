@@ -109,12 +109,16 @@ spec:
                 - provider_slug
                 type: object
               surfaces:
-                description: Surfaces lists the wire surfaces this tool can speak.
+                description: |-
+                  Surfaces lists the wire surfaces this tool can speak. "gemini" is the
+                  Google GenerateContent client surface (Antigravity CLI), which a shaper
+                  transport serves by transcoding from chat, messages, or responses.
                 items:
                   enum:
                   - anthropic
                   - chat
                   - responses
+                  - gemini
                   type: string
                 minItems: 1
                 type: array

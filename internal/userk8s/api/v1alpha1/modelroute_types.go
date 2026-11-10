@@ -80,7 +80,7 @@ type ModelRoute struct {
 // ModelRouteSpec is one entity's exposure.
 //
 // +kubebuilder:validation:XValidation:rule="self.surfaces.size() > 0",message="spec.surfaces must declare at least one client surface"
-// +kubebuilder:validation:XValidation:rule="self.surfaces.all(s, s in ['anthropic', 'chat', 'responses'])",message="spec.surfaces items must be one of anthropic|chat|responses"
+// +kubebuilder:validation:XValidation:rule="self.surfaces.all(s, s in ['anthropic', 'chat', 'responses', 'gemini'])",message="spec.surfaces items must be one of anthropic|chat|responses|gemini"
 // +kubebuilder:validation:XValidation:rule="self.endpoints.size() == self.surfaces.size() && self.surfaces.all(s, s in self.endpoints) && self.endpoints.all(k, k in self.surfaces)",message="spec.endpoints must declare exactly the surfaces in spec.surfaces"
 // +kubebuilder:validation:XValidation:rule="self.endpoints.all(k, v, v.size() > 0)",message="spec.endpoints values must be non-empty base URLs"
 // +kubebuilder:validation:XValidation:rule="self.transport.kind != 'shaper' || has(self.access)",message="shaper transport requires spec.access"
@@ -108,10 +108,12 @@ type ModelRouteSpec struct {
 	// +optional
 	Offers []RouteOffer `json:"offers,omitempty"`
 
-	// Surfaces lists the client wire surfaces this route publishes.
+	// Surfaces lists the client wire surfaces this route publishes. "gemini"
+	// is the Google GenerateContent client surface (Antigravity CLI); a shaper
+	// transport serves it by transcoding the request to the access protocol.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:UniqueItems=true
-	// +kubebuilder:validation:items:Enum=anthropic;chat;responses
+	// +kubebuilder:validation:items:Enum=anthropic;chat;responses;gemini
 	Surfaces []string `json:"surfaces"`
 
 	// Endpoints maps each served surface to the client base URL.

@@ -341,7 +341,7 @@ func TestModelRouteSchema(t *testing.T) {
 	transport := asMap(t, props["transport"])
 	assertEnum(t, "modelroutes transport.kind", at(t, transport, "properties", "kind"), "direct", "shaper", "remote")
 	surfaces := asMap(t, props["surfaces"])
-	assertEnum(t, "modelroutes surfaces", surfaces["items"], "anthropic", "chat", "responses")
+	assertEnum(t, "modelroutes surfaces", surfaces["items"], "anthropic", "chat", "responses", "gemini")
 	if asInt(t, surfaces["minItems"]) != 1 || surfaces["uniqueItems"] != true {
 		t.Fatalf("surfaces must be a non-empty unique array")
 	}
@@ -433,7 +433,7 @@ func TestToolSchema(t *testing.T) {
 	spec := asMap(t, at(t, rootSchema(t, doc), "properties", "spec"))
 	props := asMap(t, spec["properties"])
 	surfaces := asMap(t, props["surfaces"])
-	assertEnum(t, "tools surfaces", surfaces["items"], "anthropic", "chat", "responses")
+	assertEnum(t, "tools surfaces", surfaces["items"], "anthropic", "chat", "responses", "gemini")
 	if asInt(t, surfaces["minItems"]) != 1 || surfaces["uniqueItems"] != true {
 		t.Fatalf("surfaces must be a non-empty unique array")
 	}

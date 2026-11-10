@@ -121,7 +121,17 @@ require = function(name) {
 		return {
 			newBoundedSession: function() { return Promise.resolve(__regressionTermmux); },
 			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
-			handlePrefixKey: function() { return {action:'Cancel'}; }
+			handlePrefixKey: function() { return {action:'Cancel'}; },
+			newKeymap: function() {
+				return {
+					handleKey: function() { return { handled: false, action: '', armed: false }; },
+					bind: function() {}, bindChord: function() {}, unbind: function() {}, unbindChord: function() {},
+					setPrefix: function() {}, prefix: function() { return ''; },
+					setPassthroughKey: function() {}, passthroughKey: function() { return ''; },
+					armed: function() { return false; }, reset: function() {},
+					bindings: function() { return []; }, listKeys: function() { return ''; }
+				};
+			}
 		};
 	}
 	if (name === 'osm:termui/termpane') {

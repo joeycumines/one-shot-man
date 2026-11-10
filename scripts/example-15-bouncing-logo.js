@@ -92,7 +92,6 @@ var state = {
     tickCount: 0,
     controlsHeight: CONFIG.controlsHeight,
     quit: false,
-    muxPrefix: false,
     message: '',
     messageUntil: 0,
     cursor: null,
@@ -152,7 +151,11 @@ var statusStyle = lipgloss.newStyle().foreground('#565F89');
 var highlightStyle = lipgloss.newStyle().foreground('#E0AF68').bold(true);
 var warningStyle = lipgloss.newStyle().foreground('#FF5370').bold(true);
 
-var router = termmux.newControlRouter({
+// All mux keys are configured in ONE place via the core Keymap: direct keys,
+// a chord prefix, and (optionally) a passthrough key. Nothing is hardcoded
+// elsewhere — rebind at runtime with km.bind(...)/km.setPrefix(...).
+var km = termmux.newKeymap({
+    prefix: 'ctrl+x',
     keys: {
         'ctrl+p': 'pause',
         'ctrl+b': 'bigger',
@@ -160,16 +163,13 @@ var router = termmux.newControlRouter({
         'ctrl+q': 'quit',
         'ctrl+c': 'quit',
     },
-    chordMode: {
-        prefix: 'ctrl+x',
-        actions: {
-            's': 'smaller',
-            'b': 'bigger',
-            'p': 'pause',
-            'q': 'quit',
-            'c': 'copyMode',
-            'ctrl+c': 'quit',
-        },
+    chords: {
+        's': 'smaller',
+        'b': 'bigger',
+        'p': 'pause',
+        'q': 'quit',
+        'c': 'copyMode',
+        'ctrl+c': 'quit',
     },
 });
 
@@ -281,7 +281,7 @@ function renderTitle() {
 }
 
 function renderChrome() {
-    var prefix = router.inChordMode() ? 'C-x-' : '';
+    var prefix = km.armed() ? 'C-x ' : '';
     var help = '^P Pause  ^B Big  ^S Small  ^Q Quit  ^X Prefix';
     var runState = state.paused ? 'PAUSED' : 'RUNNING';
     var status = 'Bounces:' + state.bounces + ' ' + runState +
@@ -345,23 +345,13 @@ function updateCompositor() {
 // ── Controls / Input ───────────────────────────────────────────────────────────
 
 function handleKey(msg) {
-    if (state.muxPrefix) {
-        state.muxPrefix = false;
-        var dispatch = termmux.handlePrefixKey({ manager: mgr, key: msg.key });
-        trackPaneOperation(Promise.resolve(dispatch).then(function(result) {
-            if (result && result.action && result.action !== 'Cancel') {
-                setMessage(result.action);
-            }
-        }), 'prefix');
-        return true;
-    }
-    if (msg.key === 'ctrl+a') {
-        state.muxPrefix = true;
+    // The mux keymap sees every key first. It reports {handled, action, armed}:
+    // handled=false means "forward to the child pane".
+    var r = km.handleKey(msg.key);
+    if (r.armed) {
         setMessage('prefix');
         return true;
     }
-
-    var r = router.handleKey(msg.key);
     if (r.handled) {
         switch (r.action) {
             case 'pause':

@@ -1687,8 +1687,11 @@ func (m *SessionManager) InputSession(id SessionID, data []byte) error {
 // multiple contiguous chunks (paste/burst detection stays on the typing
 // path's side of the line). Ordering with other input requests is preserved
 // because this goes through the same worker queue.
+//
+// The payload is copied defensively at request time so the caller may reuse
+// or mutate its buffer immediately after the call returns.
 func (m *SessionManager) InputStaged(id SessionID, data []byte) error {
-	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: data}).err
+	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: append([]byte(nil), data...)}).err
 }
 
 // SendKeys converts named keys to terminal bytes and writes them to the
@@ -2688,9 +2691,9 @@ func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(p.data, ms, p.id)
 	}
-	buf := make([]byte, len(p.data))
-	copy(buf, p.data)
-	_, err := ms.session.Write(buf)
+	// Payload was already copied once at request time; write it as-is so the
+	// child observes exactly one Write call carrying the full payload.
+	_, err := ms.session.Write(p.data)
 	return response{err: err}
 }
 

@@ -276,3 +276,34 @@ func TestSessionManager_InputStaged_Concurrent(t *testing.T) {
 		t.Fatalf("total bytes = %d, want %d", total, n*4096)
 	}
 }
+
+// TestSessionManager_InputStaged_CallerBufferReuse verifies the payload is
+// copied at request time: mutating the caller's buffer after InputStaged
+// returns must not change what the child receives.
+func TestSessionManager_InputStaged_CallerBufferReuse(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	bs := newBoundarySession()
+	id, err := m.Register(bs, SessionTarget{Name: "staged-reuse", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	buf := []byte("original-payload")
+	if err := m.InputStaged(id, buf); err != nil {
+		t.Fatalf("InputStaged: %v", err)
+	}
+	// Mutate the caller's buffer immediately after the call.
+	for i := range buf {
+		buf[i] = 'X'
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	calls := bs.writeCalls()
+	if len(calls) != 1 || string(calls[0]) != "original-payload" {
+		t.Fatalf("child received %q, want %q (caller buffer was mutated post-call)", calls, "original-payload")
+	}
+}

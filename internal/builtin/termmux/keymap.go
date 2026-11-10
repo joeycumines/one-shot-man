@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	"github.com/rivo/uniseg"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
@@ -149,20 +150,39 @@ func (m *keymapOverlayModel) render() string {
 
 	lines := splitLines(m.km.ListKeys())
 	title := "Keys"
-	contentWidth := len(title)
+	contentWidth := uniseg.StringWidth(title)
 	for _, l := range lines {
-		if len(l) > contentWidth {
-			contentWidth = len(l)
+		if w := uniseg.StringWidth(l); w > contentWidth {
+			contentWidth = w
 		}
 	}
+	// Clamp the popup to the terminal: never wider than the terminal itself
+	// (minus a 2-cell margin when there is room), and never smaller than 20
+	// when the terminal can fit it. The popup must NEVER exceed width.
 	popupWidth := contentWidth + 4
-	if popupWidth > width-2 {
-		popupWidth = width - 2
+	maxPopup := width - 2
+	if maxPopup < 20 {
+		maxPopup = width
 	}
-	if popupWidth < 20 {
+	if popupWidth > maxPopup {
+		popupWidth = maxPopup
+	}
+	if popupWidth < 20 && width >= 20 {
 		popupWidth = 20
 	}
+	if popupWidth > width {
+		popupWidth = width
+	}
+	if popupWidth < 3 {
+		popupWidth = 3
+	}
 	inner := popupWidth - 2
+	if inner < 1 {
+		inner = 1
+	}
+	// Truncate content lines to the inner width so no rendered row exceeds
+	// the popup (and thus the terminal) width.
+	lines = truncateLines(lines, inner)
 
 	contentHeight := len(lines) + 4
 	yOff := 0
@@ -172,6 +192,12 @@ func (m *keymapOverlayModel) render() string {
 	xOff := 0
 	if width > popupWidth {
 		xOff = (width - popupWidth) / 2
+	}
+	if xOff+popupWidth > width {
+		xOff = width - popupWidth
+		if xOff < 0 {
+			xOff = 0
+		}
 	}
 
 	var b []byte
@@ -187,7 +213,11 @@ func (m *keymapOverlayModel) render() string {
 	b = append(b, "├"+repeat("─", inner)+"┤\n"...)
 	for _, l := range lines {
 		b = append(b, pad...)
-		line := "│ " + l + repeat(" ", inner-cellWidth(l)-1) + "│\n"
+		pad := inner - cellWidth(l) - 1
+		if pad < 0 {
+			pad = 0
+		}
+		line := "│ " + l + repeat(" ", pad) + "│\n"
 		b = append(b, line...)
 	}
 	b = append(b, pad...)
@@ -211,6 +241,26 @@ func splitLines(s string) []string {
 	return out
 }
 
+// truncateLines clips each line to at most width display cells.
+func truncateLines(lines []string, width int) []string {
+	if width <= 0 {
+		return lines
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		if uniseg.StringWidth(l) <= width {
+			out[i] = l
+			continue
+		}
+		r := []rune(l)
+		for uniseg.StringWidth(string(r)) > width && len(r) > 0 {
+			r = r[:len(r)-1]
+		}
+		out[i] = string(r)
+	}
+	return out
+}
+
 func spaces(n int) string {
 	if n <= 0 {
 		return ""
@@ -229,7 +279,7 @@ func repeat(s string, n int) string {
 	return string(out)
 }
 
-func cellWidth(s string) int { return len([]rune(s)) }
+func cellWidth(s string) int { return uniseg.StringWidth(s) }
 
 // keymapOverlayFactory implements termmux.keymapOverlay({ keymap, tea, onClose? })
 // → { model, visible, _update } (same shape as chooseTree).

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -34,9 +33,6 @@ import (
 func TestUpdate_AltLeftWireBytes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("requires a Unix PTY")
 	}
 
 	bin := buildHexEchoProgram(t)

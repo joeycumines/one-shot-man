@@ -42,10 +42,12 @@ creating sessions and managers, plus event constants.
 | `enableMouseForward(config)` | function | Build an async mouse forwarder; call the returned `(msg) => Promise<void>` function for each mouse event |
 | `mouseDrag()` | function | Create a stateful mouse-drag object; `.handle({manager,msg})` returns a Promise |
 | `handleMouseDrag({ manager, msg })` | function | Handle one mouse event; returns `Promise<{handled, cmd}>` |
-| `newControlRouter(opts?)` | function | Create a control router for key dispatch |
+| `newControlRouter(opts?)` | function | Create a control router for key dispatch (legacy) |
+| `newKeymap(opts?)` | function | Create a `Keymap`: unopinionated mux key state machine. `opts`: `{prefix?, passthroughKey?, keys?, chords?}`. Methods: `handleKey(key)` → `{handled, action, armed}`, `bind/bindChord/unbind/unbindChord(key, action?)`, `setPrefix/prefix`, `setPassthroughKey/passthroughKey`, `armed`, `reset`, `bindings()` → array, `listKeys()` → aligned table string |
+| `keymapOverlay({keymap, tea, onClose?})` | function | `Promise<{model, visible, _update}>` — BubbleTea overlay rendering `keymap.listKeys()` as a centered popup; any key closes it and fires `onClose` |
 | `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
 | `handlePrefixKey({ manager, key })` | function | Execute a prefix action; returns `Promise<{action, consumed, description, result, listKeys}>` |
-| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`) |
+| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`). Modified nav/tilde keys use the xterm modifier parameter: `alt+left` → `ESC[1;3D`, `ctrl+shift+home` → `ESC[1;6H`, `alt+pgup` → `ESC[5;3~` (mod param = 1 + shift 1 + alt 2 + ctrl 4 + meta 8); SS3 form in app-cursor mode |
 | `renderMessageBar(text, row?, cols?)` | function | Render a one-line ANSI message bar |
 | `mouseToSGR(event, offsetRow?, offsetCol?)` | function | Convert a mouse event to SGR bytes (`string\|null`) |
 | `splitLayout(...)` | function | Split layout operation |
@@ -89,6 +91,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error |
+| `writeStaged(data)` | `InteractiveSession.Write()` (single call) | `string` | `Promise<void>` | one contiguous `Write` (sponge) |
 | `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | rejects on error |
 
 **Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
@@ -191,6 +194,8 @@ Production pr-split code should prefer pinned SessionID access: `capture(id)` /
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `inputSession(id, data)` | `SessionManager.InputSession()` | `number, string` | `Promise<void>` | rejects on error (unknown session, invalid state) |
+| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE atomic `Write` call (sponge) — use for pastes so the child never sees split contiguous chunks; ordered with other input via the same worker queue |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 | `writeToChild(data)` | `SessionManager.Input()` | `string` | `Promise<number>` (bytes) | rejects on error; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
@@ -310,6 +315,7 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `writeStaged(data)` | `SessionManager.InputStaged(activeID, data)` | `string` | `Promise<void>` | atomic single-`Write` delivery to the active session (sponge) |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---

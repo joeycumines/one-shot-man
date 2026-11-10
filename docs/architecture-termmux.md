@@ -44,7 +44,8 @@ internal/termmux/                    # Main package (termmux)
 ├── persistence_unix.go / _windows.go # Platform-specific persistence helpers
 ├── signal_unix.go / _windows.go     # Platform-specific signal handling
 ├── resize_unix.go / _windows.go     # Platform-specific resize handling
-├── input.go                         # KeyToTermBytes, MouseToSGR
+├── input.go                         # KeyToTermBytes (xterm modifier encoding), MouseToSGR
+├── keymap.go                        # Keymap: unopinionated prefix/chord/key state machine + ListKeys
 ├── sgrmouse.go                      # SGR mouse sequence parsing + status bar filtering
 ├── layout.go                        # PaneGeometry, SplitLayout
 ├── write.go                         # writeOrLog utility
@@ -438,6 +439,29 @@ User stdin (raw terminal mode)
     │ (managedSession.writer)      │
     └──────────────────────────────┘
 ```
+
+Two delivery granularities exist on the input path:
+
+- **Regular input** (`Input`, `InputSession`): each request is one
+  `session.Write` — the typing path.
+- **Staged input** (`InputStaged`): the payload is copied once and delivered
+  as a single `Write` call (`reqInputStaged`), so large pastes are never
+  observed by the child as multiple contiguous chunks. Routed through the
+  same worker queue, so ordering with regular input is preserved.
+  `termpane.forwardPaste` uses this for bracketed-paste payloads.
+
+Key encoding (`input.go` `KeyToTermBytes`) maps BubbleTea key strings to
+xterm wire bytes: modified navigation/tilde keys use the CSI modifier
+parameter (`ESC[1;{mod}{letter}`, `ESC[{num};{mod}~`, SS3 in app-cursor
+mode) with `mod = 1 + shift(1) + alt(2) + ctrl(4) + meta(8)` — so
+`alt+left` (macOS option+left, word-skip) is `ESC[1;3D`, not the legacy
+ESC-prefix `ESC b`.
+
+Mux key handling (`keymap.go` `Keymap`) is a self-contained state machine:
+optional chord prefix, direct key→action map, chord map, passthrough key;
+`HandleKey` returns `(handled, action, armed)` and `ListKeys` renders the
+binding table. The `osm:termmux` binding adds `newKeymap` and a
+`keymapOverlay` BubbleTea popup for listing keys.
 
 ### 4.3 Snapshot Publication
 

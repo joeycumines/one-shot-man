@@ -100,6 +100,15 @@ Caller goroutine          Worker goroutine
 - Configurable prefix key (default: Ctrl+B)
 - Command table: c=new-window, n=next, p=prev, d=detach, z=zoom, x=close-pane, %=split-h, "=split-v, [=copy-mode
 
+### Keymap (unopinionated mux keys)
+- `Keymap` in core: prefix/chords/direct keys/passthrough key, all optional and caller-configured
+- `HandleKey(key)` → `(handled, action, armed)`; esc or double-prefix cancels; unbound chord keys pass through
+- `ListKeys()` renders the sorted binding table; `keymapOverlay` shows it in a BubbleTea popup
+
+### Staged (atomic) input
+- `SessionManager.InputStaged(id, data)`: one `Write` call per payload (sponge) for pastes
+- JS: `mgr.inputStaged(id, data)`, `session.writeStaged(data)`
+
 ### Mouse Support
 - Click-to-focus (hit-test against pane geometries)
 - Drag-to-resize (on pane border dividers)
@@ -158,6 +167,10 @@ const mgr = termmux.newSessionManager({rows: 24, cols: 80});
 const bounded = await termmux.newBoundedSession({cmd: '/bin/sh'});
 const {session, sid} = bounded;
 const forward = termmux.enableMouseForward({sessionManager: mgr, ...});
-const router = termmux.newControlRouter({keys: {'ctrl+p': 'pause'}});
+const km = termmux.newKeymap({prefix: 'ctrl+x', keys: {'ctrl+p': 'pause'}, chords: {'s': 'save'}});
+const r = km.handleKey('ctrl+x');        // {handled: true, action: '', armed: true}
+const r2 = km.handleKey('s');             // {handled: true, action: 'save', armed: false}
+const overlay = await termmux.keymapOverlay({keymap: km, tea});
+await mgr.inputStaged(sid, bigPaste);      // atomic single-write delivery
 const chooser = await mgr.newChooser(activeID);
 ```

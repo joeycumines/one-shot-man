@@ -200,11 +200,13 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 	}
 
 	// Modifier+navigation keys → xterm CSI sequences.
-	if s, ok := encodeModNav(key); ok {
+	if s, ok := encodeModNav(key, appCursor); ok {
 		return s, true
 	}
 
-	// Alt+key → ESC prefix + inner key bytes.
+	// Alt+key → ESC prefix + inner key bytes, except for keys that have
+	// their own xterm modifier encoding (handled above), so alt+left emits
+	// ESC[1;3D rather than a double-ESC sequence.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
 		if inner, ok := KeyToTermBytes(rest, appCursor, appKeypad); ok {
 			return "\x1b" + inner, true
@@ -237,17 +239,17 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 	return "", false
 }
 
-// encodeModNav handles modifier+navigation key combinations:
-// Format: ESC[1;{mod}{letter} or ESC[{num};{mod}~ for tilde-style keys.
-func encodeModNav(key string) (string, bool) {
-	type modPrefix struct {
-		prefix string
-		mod    string
-	}
-	prefixes := []modPrefix{
-		{"ctrl+shift+", "6"},
-		{"shift+", "2"},
-		{"ctrl+", "5"},
+// encodeModNav handles modifier+navigation key combinations using the xterm
+// modifier parameter: ESC[1;{mod}{letter} for cursor-style keys and
+// ESC[{num};{mod}~ for tilde-style keys, where mod = 1 + bitmask with
+// shift=1, alt=2, ctrl=4, meta=8 (see xterm ctlseqs). Application cursor
+// mode (appCursor) uses the SS3 form ESC O {mod} {letter} instead.
+func encodeModNav(key string, appCursor bool) (string, bool) {
+	mods := map[string]int{
+		"shift": 1,
+		"alt":   2,
+		"ctrl":  4,
+		"meta":  8,
 	}
 	navMap := map[string]string{
 		"up": "A", "down": "B", "right": "C", "left": "D",
@@ -257,17 +259,34 @@ func encodeModNav(key string) (string, bool) {
 		"pgup": "5", "pgdown": "6", "delete": "3", "insert": "2",
 	}
 
-	for _, mp := range prefixes {
-		rest, ok := strings.CutPrefix(key, mp.prefix)
-		if !ok {
-			continue
+	mod := 0
+	rest := key
+	for {
+		progressed := false
+		for name, bit := range mods {
+			if r, ok := strings.CutPrefix(rest, name+"+"); ok {
+				mod |= bit
+				rest = r
+				progressed = true
+			}
 		}
-		if letter, exists := navMap[rest]; exists {
-			return "\x1b[1;" + mp.mod + letter, true
+		if !progressed {
+			break
 		}
-		if num, exists := tildeMap[rest]; exists {
-			return "\x1b[" + num + ";" + mp.mod + "~", true
+	}
+	if mod == 0 {
+		return "", false
+	}
+	xtermMod := strconv.Itoa(mod + 1)
+
+	if letter, exists := navMap[rest]; exists {
+		if appCursor {
+			return "\x1bO" + xtermMod + letter, true
 		}
+		return "\x1b[1;" + xtermMod + letter, true
+	}
+	if num, exists := tildeMap[rest]; exists {
+		return "\x1b[" + num + ";" + xtermMod + "~", true
 	}
 	return "", false
 }

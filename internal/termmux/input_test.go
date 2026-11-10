@@ -95,6 +95,23 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 		{"shift+pgdown", "\x1b[6;2~"},
 		{"ctrl+delete", "\x1b[3;5~"},
 		{"shift+insert", "\x1b[2;2~"},
+		// Alt and combined modifiers (xterm mod param = 1 + shift1|alt2|ctrl4|meta8).
+		{"alt+up", "\x1b[1;3A"},
+		{"alt+down", "\x1b[1;3B"},
+		{"alt+right", "\x1b[1;3C"},
+		{"alt+left", "\x1b[1;3D"},
+		{"alt+home", "\x1b[1;3H"},
+		{"alt+end", "\x1b[1;3F"},
+		{"alt+pgup", "\x1b[5;3~"},
+		{"alt+pgdown", "\x1b[6;3~"},
+		{"alt+delete", "\x1b[3;3~"},
+		{"alt+insert", "\x1b[2;3~"},
+		{"alt+shift+up", "\x1b[1;4A"},
+		{"ctrl+alt+left", "\x1b[1;7D"},
+		{"ctrl+alt+shift+right", "\x1b[1;8C"},
+		{"meta+up", "\x1b[1;9A"},
+		{"meta+alt+down", "\x1b[1;11B"},
+		{"shift+alt+ctrl+meta+home", "\x1b[1;16H"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
@@ -110,14 +127,34 @@ func TestKeyToTermBytes_ModNav(t *testing.T) {
 }
 
 func TestKeyToTermBytes_Alt(t *testing.T) {
-	// alt+a → ESC + 'a'
+	// alt+a → ESC + 'a' (legacy alt-prefix for printable keys)
 	got, ok := KeyToTermBytes("alt+a", false, false)
 	if !ok || got != "\x1ba" {
 		t.Errorf("alt+a: got %q ok=%v", got, ok)
 	}
-	// alt+up → ESC + ESC[A
+	// alt+enter → ESC + CR
+	got, ok = KeyToTermBytes("alt+enter", false, false)
+	if !ok || got != "\x1b\r" {
+		t.Errorf("alt+enter: got %q ok=%v", got, ok)
+	}
+	// alt+backspace → ESC + DEL
+	got, ok = KeyToTermBytes("alt+backspace", false, false)
+	if !ok || got != "\x1b\x7f" {
+		t.Errorf("alt+backspace: got %q ok=%v", got, ok)
+	}
+	// alt+nav keys use the xterm modifier form, not double-ESC.
+	got, ok = KeyToTermBytes("alt+left", false, false)
+	if !ok || got != "\x1b[1;3D" {
+		t.Errorf("alt+left: got %q ok=%v", got, ok)
+	}
+	// In application cursor mode, modifier+nav uses the SS3 form.
+	got, ok = KeyToTermBytes("alt+left", true, false)
+	if !ok || got != "\x1bO3D" {
+		t.Errorf("appCursor alt+left: got %q ok=%v", got, ok)
+	}
+	// alt+up → xterm modifier form ESC[1;3A (not a double-ESC).
 	got, ok = KeyToTermBytes("alt+up", false, false)
-	if !ok || got != "\x1b\x1b[A" {
+	if !ok || got != "\x1b[1;3A" {
 		t.Errorf("alt+up: got %q ok=%v", got, ok)
 	}
 }

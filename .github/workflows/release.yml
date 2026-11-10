@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build and publish assets for'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release-matrix:
+    name: Release Assets (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [ linux, windows, darwin ]
+        goarch: [ "386", amd64, arm64 ]
+        exclude:
+          - goarch: "386"
+            goos: darwin
+          - goarch: arm64
+            goos: windows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Build and publish release binaries
+        uses: wangyoucao577/go-release-action@v1
+        env:
+          CGO_ENABLED: 0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          goos: ${{ matrix.goos }}
+          goarch: ${{ matrix.goarch }}
+          goversion: "go.mod"
+          project_path: "./cmd/osm"
+          binary_name: "osm"
+          extra_files: "LICENSE README.md"
+          ldflags: "-s -w"
+          sha256sum: true
+          retry: 3
+          overwrite: true
+          release_tag: ${{ github.event.release.tag_name || inputs.release_tag }}

@@ -333,6 +333,28 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		})
 	})
 
+	_ = obj.Set("inputSession", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("inputSession requires at least 2 arguments (sessionID, data)"))
+		}
+		id := parent.SessionID(call.Argument(0).ToInteger())
+		data := []byte(call.Argument(1).String())
+		return s.managerPromise(func() (any, error) {
+			return nil, s.mgr.InputSession(id, data)
+		})
+	})
+
+	_ = obj.Set("inputStaged", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("inputStaged requires at least 2 arguments (sessionID, data)"))
+		}
+		id := parent.SessionID(call.Argument(0).ToInteger())
+		data := []byte(call.Argument(1).String())
+		return s.managerPromise(func() (any, error) {
+			return nil, s.mgr.InputStaged(id, data)
+		})
+	})
+
 	_ = obj.Set("sendKeys", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(s.runtime.NewTypeError("sendKeys requires at least 2 arguments (sessionID, ...keys)"))

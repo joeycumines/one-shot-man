@@ -562,6 +562,12 @@ const (
 	// Payload: inputSessionPayload. Reply value: nil.
 	reqInputSession
 
+	// reqInputStaged asks the worker to deliver data to a specific session
+	// as one atomic write (a single Write call on the session), so large
+	// payloads (e.g. pastes) are not split into multiple contiguous
+	// writes. Payload: inputSessionPayload. Reply value: nil.
+	reqInputStaged
+
 	reqSendKeys
 
 	// reqResetActivity resets the activity-fired flag for a session.
@@ -1675,6 +1681,16 @@ func (m *SessionManager) InputSession(id SessionID, data []byte) error {
 	return m.sendRequest(reqInputSession, inputSessionPayload{id: id, data: data}).err
 }
 
+// InputStaged delivers data to the specified session's PTY as one atomic
+// write: the payload is copied into a single buffer and handed to the
+// session in a single Write call, so the child never observes it as
+// multiple contiguous chunks (paste/burst detection stays on the typing
+// path's side of the line). Ordering with other input requests is preserved
+// because this goes through the same worker queue.
+func (m *SessionManager) InputStaged(id SessionID, data []byte) error {
+	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: data}).err
+}
+
 // SendKeys converts named keys to terminal bytes and writes them to the
 // specified session's PTY. Unrecognized key names return an error.
 func (m *SessionManager) SendKeys(id SessionID, keys ...string) error {
@@ -2297,6 +2313,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleInput(req.payload.([]byte))
 	case reqInputSession:
 		resp = m.handleInputSession(req.payload.(inputSessionPayload))
+	case reqInputStaged:
+		resp = m.handleInputStaged(req.payload.(inputSessionPayload))
 	case reqSendKeys:
 		resp = m.handleSendKeys(req.payload.(sendKeysPayload))
 	case reqResetActivity:
@@ -2654,6 +2672,25 @@ func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
 		return m.handleLockedInput(p.data, ms, p.id)
 	}
 	_, err := ms.session.Write(p.data)
+	return response{err: err}
+}
+
+// handleInputStaged is handleInputSession with atomic delivery: the payload
+// is copied once and written with a single session.Write call.
+func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return m.handleLockedInput(p.data, ms, p.id)
+	}
+	buf := make([]byte, len(p.data))
+	copy(buf, p.data)
+	_, err := ms.session.Write(buf)
 	return response{err: err}
 }
 

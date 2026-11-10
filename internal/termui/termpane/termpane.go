@@ -402,10 +402,10 @@ func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 // logical delivery. When the child has enabled bracketed paste mode (DECSET
 // ?2004h, captured on the snapshot), the content is wrapped in the ESC[200~ /
 // ESC[201~ delimiters so the child's own paste handling receives it as a
-// paste; otherwise the raw content is written. The bytes go to the PTY in
-// chunks of at most PassthroughReadBufferSize: the PTY write path issues a
-// single write(2) per call, and one oversized write could be truncated, so a
-// chunk the passthrough path already proves is delivered whole is the unit.
+// paste; otherwise the raw content is written. The whole payload is handed
+// to the manager as a staged write: it is delivered to the PTY in a single
+// Write call, so the child never observes a paste split into multiple
+// contiguous chunks (which would defeat paste/burst detection).
 func (m *Model) forwardPaste(content string) {
 	if content == "" {
 		return
@@ -418,17 +418,8 @@ func (m *Model) forwardPaste(content string) {
 	if bracketed {
 		payload = "\x1b[200~" + content + "\x1b[201~"
 	}
-	data := []byte(payload)
-	for len(data) > 0 {
-		chunk := data
-		if len(chunk) > termmux.PassthroughReadBufferSize {
-			chunk = chunk[:termmux.PassthroughReadBufferSize]
-		}
-		if err := m.manager.InputSession(m.sessionID, chunk); err != nil {
-			slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
-			return
-		}
-		data = data[len(chunk):]
+	if err := m.manager.InputStaged(m.sessionID, []byte(payload)); err != nil {
+		slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
 	}
 }
 

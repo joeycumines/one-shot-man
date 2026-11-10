@@ -369,6 +369,15 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			})
 		})
 
+		_ = sessionObj.Set("writeStaged", func(data string) goja.Value {
+			return s.managerPromise(func() (any, error) {
+				if id := s.cachedActiveID(); id != 0 {
+					return nil, s.mgr.InputStaged(parent.SessionID(id), []byte(data))
+				}
+				return nil, s.mgr.Input([]byte(data))
+			})
+		})
+
 		_ = sessionObj.Set("resize", func(rows, cols int) goja.Value {
 			return s.managerPromise(func() (any, error) {
 				return nil, s.mgr.Resize(rows, cols)

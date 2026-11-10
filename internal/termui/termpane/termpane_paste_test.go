@@ -122,12 +122,12 @@ func TestUpdate_PasteForwardedBracketed(t *testing.T) {
 	}
 }
 
-// TestUpdate_PasteChunkedAbovePTYWriteSize verifies that a paste larger than
-// termmux.PassthroughReadBufferSize is delivered in multiple ordered chunks
-// that reassemble byte-exactly: the PTY write path issues a single write(2)
-// per call, so one oversized write could be truncated, and the delivery must
-// never depend on that.
-func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
+// TestUpdate_PasteStagedAbovePTYWriteSize verifies that a paste larger than
+// termmux.PassthroughReadBufferSize is delivered atomically: the whole
+// payload goes to the session in a single Write call (the staged/sponge
+// path), so the child never observes the paste split into multiple
+// contiguous chunks. Byte-exactness is still required.
+func TestUpdate_PasteStagedAbovePTYWriteSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -137,8 +137,8 @@ func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
 	model := NewModel(sid, mgr, pasteBounds)
 	defer model.Close()
 
-	// 10000 bytes > 2x the 4096 chunk size, with a pattern that would expose
-	// any dropped, repeated, or reordered chunk.
+	// 10000 bytes > 2x the old 4096 chunk size, with a pattern that would
+	// expose any dropped, repeated, or reordered bytes.
 	var b strings.Builder
 	for range 1000 {
 		b.WriteString("0123456789")
@@ -155,21 +155,13 @@ func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
 			len(got), len(content), firstDivergence(got, []byte(content)))
 	}
 
-	// Chunk boundaries: the single PTY write(2) per call means delivery must
-	// not rely on one oversized write. Expect exactly
-	// ceil(10000/4096)=3 writes of 4096, 4096, 1808 bytes — no write may
-	// exceed PassthroughReadBufferSize.
+	// Atomic delivery: exactly one Write call carrying the full payload.
 	sizes := session.WriteSizes()
-	wantSizes := []int{termmux.PassthroughReadBufferSize, termmux.PassthroughReadBufferSize, len(content) - 2*termmux.PassthroughReadBufferSize}
-	if len(sizes) != len(wantSizes) {
-		t.Fatalf("paste delivered in %d writes (%v), want %d writes %v",
-			len(sizes), sizes, len(wantSizes), wantSizes)
+	if len(sizes) != 1 {
+		t.Fatalf("paste delivered in %d writes (%v), want exactly 1 atomic staged write", len(sizes), sizes)
 	}
-	for i := range wantSizes {
-		if sizes[i] != wantSizes[i] {
-			t.Fatalf("write %d carried %d bytes, want %d (all writes: %v)",
-				i, sizes[i], wantSizes[i], sizes)
-		}
+	if sizes[0] != len(content) {
+		t.Fatalf("staged write carried %d bytes, want %d (all writes: %v)", sizes[0], len(content), sizes)
 	}
 }
 
@@ -195,10 +187,10 @@ func TestUpdate_PasteEmptyIsNoop(t *testing.T) {
 	}
 }
 
-// TestUpdate_PasteBracketedChunked combines the two delivery properties: a
-// paste larger than the chunk size, delivered to a child that enabled
+// TestUpdate_PasteBracketedStaged combines the two delivery properties: a
+// paste larger than the old chunk size, delivered to a child that enabled
 // bracketed paste mode, must arrive as the delimiter-wrapped payload in
-// order, byte-exact.
+// one atomic write, byte-exact.
 func TestUpdate_PasteBracketedChunked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")

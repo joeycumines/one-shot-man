@@ -409,6 +409,21 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 		})
 	})
 
+	// writeStaged delivers the whole payload as one contiguous Write call on
+	// the underlying session (the sponge path) — useful for pastes.
+	_ = obj.Set("writeStaged", func(data string) goja.Value {
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
+			buf := []byte(data)
+			if len(buf) == 0 {
+				return nil, nil
+			}
+			staged := make([]byte, len(buf))
+			copy(staged, buf)
+			_, err := session.Write(staged)
+			return nil, err
+		})
+	})
+
 	_ = obj.Set("sendKeys", func(keys ...string) goja.Value {
 		var buf strings.Builder
 		for _, key := range keys {

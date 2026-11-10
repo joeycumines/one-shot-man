@@ -35,6 +35,8 @@ jobs:
 
       - name: Build and publish release binaries
         uses: wangyoucao577/go-release-action@v1
+        env:
+          CGO_ENABLED: 0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           goos: ${{ matrix.goos }}

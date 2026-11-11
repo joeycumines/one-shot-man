@@ -2669,36 +2669,38 @@ func (m *SessionManager) handleInput(data []byte) response {
 	return response{err: writeFull(ms.session, data)}
 }
 
+// handleInputSession writes data to a specific session. The payload is
+// delivered with a single session.Write call; InputStaged differs only in
+// that the payload is defensively copied at request time (InputStaged) so the
+// caller may reuse its buffer immediately, whereas InputSession aliases the
+// caller's slice for the duration of the (blocking) request.
 func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
-	ms, ok := m.sessions[p.id]
-	if !ok {
-		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
-	}
-	if ms.state != SessionRunning && ms.state != SessionCreated {
-		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
-	}
-	if ms.lock.IsLocked() {
-		return m.handleLockedInput(p.data, ms, p.id)
-	}
-	return response{err: writeFull(ms.session, p.data)}
+	return m.handleInputToSession(p.id, p.data)
 }
 
 // handleInputStaged is handleInputSession with atomic delivery: the payload
-// is copied once and written with a single session.Write call.
+// was copied once at request time and is written with a single
+// session.Write call, so the child observes exactly one Write carrying the
+// full payload (the sponge path for pastes).
 func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
-	ms, ok := m.sessions[p.id]
+	return m.handleInputToSession(p.id, p.data)
+}
+
+// handleInputToSession is the shared worker-side input path for
+// reqInputSession and reqInputStaged: validate the session, route locked
+// input to the unlock prompt, otherwise one full Write.
+func (m *SessionManager) handleInputToSession(id SessionID, data []byte) response {
+	ms, ok := m.sessions[id]
 	if !ok {
-		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
 	}
 	if ms.state != SessionRunning && ms.state != SessionCreated {
-		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, id, ms.state)}
 	}
 	if ms.lock.IsLocked() {
-		return m.handleLockedInput(p.data, ms, p.id)
+		return m.handleLockedInput(data, ms, id)
 	}
-	// Payload was already copied once at request time; write it as-is so the
-	// child observes exactly one Write call carrying the full payload.
-	return response{err: writeFull(ms.session, p.data)}
+	return response{err: writeFull(ms.session, data)}
 }
 
 // writeFull writes data to w and reports an error on a short write (n < len

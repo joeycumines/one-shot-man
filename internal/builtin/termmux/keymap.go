@@ -141,7 +141,11 @@ func (m *keymapOverlayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// never swallow it.
 			_, _ = m.onClose(goja.Undefined())
 		}
-		return m, tea.Quit
+		// No tea.Quit: this overlay is a sub-model driven via _update inside
+		// the host's event loop (same contract as chooseTree), so quitting
+		// here would tear down the host application. Closing is signaled via
+		// m.closed / visible() / onClose instead.
+		return m, nil
 	}
 	return m, nil
 }

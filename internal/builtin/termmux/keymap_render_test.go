@@ -141,12 +141,19 @@ func TestKeymapOverlay_RenderClosed(t *testing.T) {
 	runtime := goja.New()
 	fn, _ := goja.AssertFunction(runtime.ToValue(func() { calls++ }))
 	m.onClose = fn
-	m.Update(tea.KeyPressMsg{Code: 'q'})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'q'})
 	if out := m.render(); out != "" {
 		t.Fatalf("closed model render = %q, want empty", out)
 	}
 	if calls != 1 {
 		t.Fatalf("onClose called %d times, want 1", calls)
+	}
+	// The overlay is a sub-model driven inside the host's event loop, so
+	// closing must NOT return tea.Quit (that would quit the host app).
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Fatal("Update returned tea.Quit on close — would quit the host application")
+		}
 	}
 	// Further keys must not re-fire onClose.
 	m.Update(tea.KeyPressMsg{Code: 'x'})

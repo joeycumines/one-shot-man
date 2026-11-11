@@ -396,6 +396,22 @@ func (cs *CaptureSession) outputLoop(ctx context.Context) {
 	}
 }
 
+// InjectOutput appends a chunk to the session's output queue as if the child
+// had written it, so tests can drive the VTerm parser (e.g. DECSET ?1h to
+// flip ApplicationCursor) without a real child echo. Test-only helper.
+func (cs *CaptureSession) InjectOutput(chunk []byte) {
+	cp := make([]byte, len(chunk))
+	copy(cp, chunk)
+	cs.outputMu.Lock()
+	cs.outputQueue = append(cs.outputQueue, cp)
+	wake := cs.outputWake
+	cs.outputMu.Unlock()
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+}
+
 func (cs *CaptureSession) signalOutputMode() {
 	select {
 	case cs.outputModeWake <- struct{}{}:

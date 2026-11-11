@@ -1,3 +1,5 @@
+//go:build unix
+
 package termpane
 
 import (
@@ -6,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -246,9 +248,6 @@ func buildCopyProgram(t *testing.T) string {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
 	bin := filepath.Join(dir, "copyprog")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
 	prog := `package main
 
 import (
@@ -281,10 +280,6 @@ func TestUpdate_PasteRealPTYRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("real-PTY round trip requires a Unix PTY")
-	}
-
 	bin := buildCopyProgram(t)
 
 	cs := termmux.NewCaptureSession(termmux.CaptureConfig{
@@ -354,4 +349,173 @@ func firstDivergence(got, want []byte) string {
 		return "length mismatch"
 	}
 	return "none"
+}
+
+// TestUpdate_PasteLargeRealPTY verifies the staged-paste path on a REAL PTY:
+// a payload far larger than the kernel line-discipline buffer (~4 KiB Linux,
+// 1 KiB TTYHOG macOS) must be delivered complete and byte-exact at a raw-mode
+// child, exercising the actual CaptureSession.Write -> pty.Process.Write path
+// that mock sessions cannot cover. The child hex-echoes every byte it reads;
+// we accumulate the echo from the session's Reader channel and compare.
+func TestUpdate_PasteLargeRealPTY(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	bin := buildHexEchoProgram(t)
+	cs := termmux.NewCaptureSession(termmux.CaptureConfig{
+		Command: bin,
+		Rows:    pasteBounds.Size.Height,
+		Cols:    pasteBounds.Size.Width,
+	})
+	if err := cs.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	// 16 KiB — far above any kernel PTY input buffer (~4 KiB Linux / 1 KiB
+	// macOS TTYHOG). The child hex-echoes input to stdout, so the PTY output
+	// side carries ~32 KiB of hex; we drain it concurrently (below) to avoid
+	// the write blocking on a full output buffer.
+	content := strings.Repeat("abcdefgh", 2048)
+	want := "\x1b[200~" + content + "\x1b[201~"
+	_ = content
+
+	// Accumulate the child's hex echo from the session reader CONCURRENTLY
+	// with the write: the child echoes input to stdout, and if the PTY output
+	// buffer fills while we are still blocked in Write, the child blocks on
+	// stdout and stops draining stdin -> deadlock. Draining in a goroutine
+	// avoids that.
+	wantHex := hexEncode([]byte(want))
+	reader := cs.Reader()
+
+	// Progress reporting from the reader goroutine: updated under a mutex so
+	// the main goroutine can poll how much echo has arrived.
+	var accMu sync.Mutex
+	acc := ""
+	readerDone := make(chan struct{})
+	var readySeen bool
+	go func() {
+		defer close(readerDone)
+		var pending []byte
+		for chunk := range reader {
+			pending = append(pending, chunk...)
+			if !readySeen {
+				// The child prints "READY\n" first; skip everything up to and
+				// including that newline before hex-encoding the echo.
+				if i := bytes.Index(pending, []byte("READY\n")); i >= 0 {
+					pending = pending[i+len("READY\n"):]
+					accMu.Lock()
+					readySeen = true
+					accMu.Unlock()
+				} else {
+					continue
+				}
+			}
+			// The child already emits lowercase hex ASCII; accumulate it
+			// verbatim (do NOT hex-encode again — that would double-encode).
+			accMu.Lock()
+			acc += string(pending)
+			accMu.Unlock()
+			pending = pending[:0]
+		}
+	}()
+	// stripWS removes whitespace from the echo. The hex("READY") sentinel is
+	// stripped separately (stripReady) because the child prints READY before
+	// raw mode and a newline after; the sentinel hex may straddle chunk
+	// boundaries, so strip it from the whitespace-stripped accumulation.
+	stripWS := func(raw string) string {
+		return strings.Map(func(r rune) rune {
+			if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+				return -1
+			}
+			return r
+		}, raw)
+	}
+	getRaw := func() string {
+		accMu.Lock()
+		defer accMu.Unlock()
+		return acc
+	}
+	getAcc := func() string { return stripWS(getRaw()) }
+
+	// Wait for the child's READY sentinel (raw mode active) before writing, so
+	// the kernel line discipline cannot mangle input.
+	readyDeadline := time.After(5 * time.Second)
+	for {
+		accMu.Lock()
+		seen := readySeen
+		accMu.Unlock()
+		if seen {
+			break
+		}
+		select {
+		case <-readyDeadline:
+			t.Fatalf("timed out waiting for child READY; raw echo %q", getRaw())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Write the full bracketed payload through the real PTY write path in ONE
+	// call (the staged/sponge contract at the session level).
+	writeDone := make(chan struct{})
+	var n int
+	var werr error
+	go func() {
+		defer close(writeDone)
+		n, werr = cs.Write([]byte(want))
+	}()
+
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case <-writeDone:
+			if werr != nil {
+				t.Fatalf("real-PTY write: %v", werr)
+			}
+			if n != len(want) {
+				t.Fatalf("short write on real PTY: wrote %d of %d bytes", n, len(want))
+			}
+			// Write complete; keep draining the echo until we have it all.
+			// The child echoes exactly the bytes it read, so the accumulated
+			// hex must converge to exactly wantHex; any bytes beyond that are
+			// unexpected (corruption or duplication).
+			for {
+				a := getAcc()
+				if a == wantHex {
+					return // full payload arrived byte-exact over the real PTY
+				}
+				if len(a) > len(wantHex) {
+					t.Fatalf("child received unexpected bytes: got %d hex chars, want %d; head %q", len(a), len(wantHex), a[:min(64, len(a))])
+				}
+				select {
+				case <-readerDone:
+					t.Fatalf("reader closed early; got %d of %d hex chars", len(getAcc()), len(wantHex))
+				case <-deadline:
+					t.Fatalf("timed out draining echo; got %d of %d hex chars", len(getAcc()), len(wantHex))
+				case <-time.After(50 * time.Millisecond):
+				}
+			}
+		case <-deadline:
+			t.Fatalf("timed out: write blocked (child not draining?); echo so far %d of %d hex chars", len(getAcc()), len(wantHex))
+		}
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+const hexDigits = "0123456789abcdef"
+
+// hexEncode renders b as lowercase hex.
+func hexEncode(b []byte) string {
+	out := make([]byte, 0, len(b)*2)
+	for _, c := range b {
+		out = append(out, hexDigits[c>>4], hexDigits[c&0x0f])
+	}
+	return string(out)
 }

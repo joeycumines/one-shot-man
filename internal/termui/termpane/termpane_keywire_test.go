@@ -130,6 +130,106 @@ func TestUpdate_AltLeftWireBytes(t *testing.T) {
 	}
 }
 
+// TestUpdate_AltLeftWireBytes_AppCursor verifies the SAME alt+left wire bytes
+// when the child has enabled DECCKM (application cursor mode, DECSET ?1h) —
+// the mode vim/zsh/neovim/BubbleTea children run in. Modified cursor keys
+// must still arrive as ESC[1;3D (CSI), never as an SS3+modifier form that a
+// VT parser would consume as an unknown SS3 plus a literal 'D'.
+func TestUpdate_AltLeftWireBytes_AppCursor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+
+	bin := buildHexEchoProgram(t)
+
+	cs := termmux.NewCaptureSession(termmux.CaptureConfig{
+		Command: bin,
+		Rows:    pasteBounds.Size.Height,
+		Cols:    pasteBounds.Size.Width,
+	})
+	ctx := t.Context()
+	if err := cs.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer cs.Close()
+
+	mgr := termmux.NewSessionManager(termmux.WithTermSize(pasteBounds.Size.Height, pasteBounds.Size.Width))
+	mgrCtx, mgrCancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(mgrCtx) }()
+	<-mgr.Started()
+	defer func() {
+		mgrCancel()
+		<-errCh
+	}()
+
+	sid, err := mgr.Register(cs, termmux.SessionTarget{Name: "wire-appcursor", Kind: termmux.SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	model := NewModel(sid, mgr, pasteBounds)
+	defer model.Close()
+
+	// Wait for READY, then flip the child into application-cursor mode by
+	// injecting DECSET ?1h as child output (the manager's VTerm parses it and
+	// the snapshot's ApplicationCursor becomes true, which termpane mirrors
+	// into m.appCursor). This is the mode vim/zsh/neovim run in.
+	readyDeadline := time.After(5 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "READY") {
+			break
+		}
+		select {
+		case <-readyDeadline:
+			t.Fatal("timed out waiting for child READY")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Inject DECSET ?1h as child output and wait for the snapshot (and thus
+	// the model's appCursor mirror) to observe application-cursor mode.
+	cs.InjectOutput([]byte("\x1b[?1h"))
+	appDeadline := time.After(3 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && snap.ApplicationCursor {
+			break
+		}
+		select {
+		case <-appDeadline:
+			t.Fatal("timed out waiting for ApplicationCursor=true in snapshot")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	model.RefreshSnapshot()
+
+	altLeft := tea.Key{Code: tea.KeyLeft, Mod: tea.ModAlt}
+	model.Update(tea.KeyPressMsg(altLeft))
+
+	wantHex := "1b5b313b3344"
+	deadline := time.After(5 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil {
+			text := snapshotPlainText(snap)
+			if idx := strings.Index(text, wantHex); idx >= 0 {
+				rest := strings.TrimSpace(strings.Replace(text, "READY", "", 1))
+				if rest != wantHex {
+					t.Fatalf("appCursor child received unexpected bytes: got %q, want exactly %q", rest, wantHex)
+				}
+				return
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for ESC[1;3D hex on real PTY")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
 // buildHexEchoProgram builds a small Unix helper that puts its stdin into
 // raw mode (no echo, no canonical processing) and writes every byte it
 // reads to stdout as two lowercase hex digits. This lets the test observe the
@@ -166,7 +266,8 @@ func main() {
 			for i := 0; i < n; i++ {
 				fmt.Printf("%02x", buf[i])
 			}
-			fmt.Println()
+			// No per-chunk newline: callers hex-compare the echo and a
+			// chunk-boundary 0x0a would be indistinguishable from payload.
 			os.Stdout.Sync()
 		}
 		if err != nil {

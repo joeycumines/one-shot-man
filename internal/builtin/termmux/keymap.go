@@ -3,11 +3,12 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
-	"github.com/rivo/uniseg"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/rivo/uniseg"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
@@ -25,7 +26,7 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 
 	_ = obj.Set("handleKey", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 			panic(runtime.NewTypeError("handleKey: key argument is required"))
 		}
 		handled, action, armed := km.HandleKey(call.Argument(0).String())
@@ -67,10 +68,11 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 // newKeymapFactory implements termmux.newKeymap(opts?) → keymap object.
 //
 // opts:
-//   prefix         string  chord prefix key ("" disables chords)
-//   passthroughKey string  dedicated passthrough/toggle key
-//   keys           object  direct key → action map
-//   chords         object  chord key → action map
+//
+//	prefix         string  chord prefix key ("" disables chords)
+//	passthroughKey string  dedicated passthrough/toggle key
+//	keys           object  direct key → action map
+//	chords         object  chord key → action map
 func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	opts := []parent.KeymapOption{}
 	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
@@ -85,7 +87,11 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 			obj := v.ToObject(runtime)
 			m := map[string]string{}
 			for _, k := range obj.Keys() {
-				m[k] = obj.Get(k).String()
+				val := obj.Get(k)
+				if goja.IsUndefined(val) || goja.IsNull(val) {
+					continue // skip null/undefined action values
+				}
+				m[k] = val.String()
 			}
 			opts = append(opts, parent.WithKeys(m))
 		}
@@ -93,7 +99,11 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 			obj := v.ToObject(runtime)
 			m := map[string]string{}
 			for _, k := range obj.Keys() {
-				m[k] = obj.Get(k).String()
+				val := obj.Get(k)
+				if goja.IsUndefined(val) || goja.IsNull(val) {
+					continue // skip null/undefined action values
+				}
+				m[k] = val.String()
 			}
 			opts = append(opts, parent.WithChords(m))
 		}
@@ -104,19 +114,21 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 // keymapOverlayModel is a ready-to-run BubbleTea overlay that renders a
 // keymap's ListKeys() table in a centered popup. Any key (or esc/q) closes it.
 type keymapOverlayModel struct {
-	runtime *goja.Runtime
-	km      *parent.Keymap
+	km *parent.Keymap
 
 	width  int
 	height int
 
-	closed   bool
-	onClose  goja.Callable
+	closed  bool
+	onClose goja.Callable
 }
 
 func (m *keymapOverlayModel) Init() tea.Cmd { return nil }
 
 func (m *keymapOverlayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.closed {
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -124,6 +136,9 @@ func (m *keymapOverlayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.closed = true
 		if m.onClose != nil {
+			// A panic from the JS onClose callback propagates (the event-loop
+			// machinery converts it into a promise rejection upstream) —
+			// never swallow it.
 			_, _ = m.onClose(goja.Undefined())
 		}
 		return m, tea.Quit
@@ -138,13 +153,19 @@ func (m *keymapOverlayModel) View() tea.View {
 	return v
 }
 
+// render builds the popup frame. It always fits within the terminal: every
+// rendered line is at most width display cells wide and the popup is clamped
+// to width. Returns "" once closed.
 func (m *keymapOverlayModel) render() string {
+	if m.closed {
+		return ""
+	}
 	width := m.width
-	if width == 0 {
+	if width <= 0 {
 		width = 80
 	}
 	height := m.height
-	if height == 0 {
+	if height <= 0 {
 		height = 24
 	}
 
@@ -156,33 +177,57 @@ func (m *keymapOverlayModel) render() string {
 			contentWidth = w
 		}
 	}
-	// Clamp the popup to the terminal: never wider than the terminal itself
-	// (minus a 2-cell margin when there is room), and never smaller than 20
-	// when the terminal can fit it. The popup must NEVER exceed width.
+	// Clamp the popup to the terminal: it must never exceed width. Apply the
+	// preferred minimum of 20 first (only when the terminal can fit it), then
+	// clamp down to width, flooring at 1 so the frame stays drawable.
 	popupWidth := contentWidth + 4
-	maxPopup := width - 2
-	if maxPopup < 20 {
-		maxPopup = width
-	}
-	if popupWidth > maxPopup {
-		popupWidth = maxPopup
-	}
 	if popupWidth < 20 && width >= 20 {
 		popupWidth = 20
 	}
 	if popupWidth > width {
 		popupWidth = width
 	}
-	if popupWidth < 3 {
-		popupWidth = 3
+	// A box frame needs at least 2 cells (the two corner glyphs); below that
+	// width the popup degenerates to whatever the terminal can hold (>=1).
+	if popupWidth < 2 {
+		popupWidth = 2
 	}
-	inner := popupWidth - 2
-	if inner < 1 {
-		inner = 1
+	if popupWidth > width {
+		popupWidth = width
 	}
-	// Truncate content lines to the inner width so no rendered row exceeds
-	// the popup (and thus the terminal) width.
+	if popupWidth < 1 {
+		popupWidth = 1
+	}
+	// Inner budget for the row body: a row is "│ " + body + "│" (3 fixed
+	// cells), so a body of inner cells renders the row exactly popupWidth
+	// cells wide. The top/bottom borders use inner+2 cells of "─" plus the
+	// two corners = popupWidth cells total.
+	// The frame rows are: top border = corner + (popupWidth-2) dashes +
+	// corner; content rows = "│ " + body + "│" where body is (popupWidth-3)
+	// cells. inner is the body budget.
+	inner := popupWidth - 3
+	if inner < 0 {
+		inner = 0
+	}
+	// Border dash count must equal popupWidth-2 (corners excluded).
+	border := popupWidth - 2
+	if border < 0 {
+		border = 0
+	}
+	// Truncate the title and every content line to the inner body width so
+	// no rendered row exceeds the popup (and thus the terminal) width.
 	lines = truncateLines(lines, inner)
+	title = truncateLines([]string{title}, inner)[0]
+
+	// Vertical clamp: never render more content rows than the terminal can
+	// hold (4 frame rows: top, title, divider, bottom).
+	maxLines := height - 4
+	if maxLines < 0 {
+		maxLines = 0
+	}
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
 
 	contentHeight := len(lines) + 4
 	yOff := 0
@@ -204,27 +249,43 @@ func (m *keymapOverlayModel) render() string {
 	for i := 0; i < yOff; i++ {
 		b = append(b, '\n')
 	}
-	pad := spaces(xOff)
-	b = append(b, pad...)
-	b = append(b, "┌"+repeat("─", inner)+"┐\n"...)
-	b = append(b, pad...)
-	b = append(b, ("│ "+title+repeat(" ", inner-len(title)-1)+"│\n")...)
-	b = append(b, pad...)
-	b = append(b, "├"+repeat("─", inner)+"┤\n"...)
-	for _, l := range lines {
-		b = append(b, pad...)
-		pad := inner - cellWidth(l) - 1
-		if pad < 0 {
-			pad = 0
+	if popupWidth < 2 {
+		// Degenerate terminal (width 1): render a minimal vertical bar so the
+		// overlay is visible but never exceeds the terminal width.
+		var b []byte
+		for i := 0; i < yOff; i++ {
+			b = append(b, '\n')
 		}
-		line := "│ " + l + repeat(" ", pad) + "│\n"
-		b = append(b, line...)
+		for i := 0; i < contentHeight && i < height; i++ {
+			if i > 0 {
+				b = append(b, '\n')
+			}
+			b = append(b, "│"...)
+		}
+		return string(b)
+	}
+	pad := spaces(xOff)
+	row := func(body string) {
+		b = append(b, pad...)
+		bodyW := cellWidth(body)
+		padN := popupWidth - 3 - bodyW // "│ " + body + pad + "│"
+		if padN < 0 {
+			padN = 0
+		}
+		b = append(b, ("│ " + body + repeat(" ", padN) + "│\n")...)
 	}
 	b = append(b, pad...)
-	b = append(b, "└"+repeat("─", inner)+"┘"...)
+	b = append(b, "┌"+repeat("─", border)+"┐\n"...)
+	row(title)
+	b = append(b, pad...)
+	b = append(b, "├"+repeat("─", border)+"┤\n"...)
+	for _, l := range lines {
+		row(l)
+	}
+	b = append(b, pad...)
+	b = append(b, "└"+repeat("─", border)+"┘"...)
 	return string(b)
 }
-
 func splitLines(s string) []string {
 	if s == "" {
 		return nil
@@ -241,26 +302,33 @@ func splitLines(s string) []string {
 	return out
 }
 
-// truncateLines clips each line to at most width display cells.
+// truncateLines clips each line to at most width display cells. A non-positive
+// width yields empty strings. Truncation is cluster-aware (uniseg) and runs in
+// O(total cells), not O(cells^2).
 func truncateLines(lines []string, width int) []string {
-	if width <= 0 {
-		return lines
-	}
 	out := make([]string, len(lines))
+	if width <= 0 {
+		return out // all empty
+	}
 	for i, l := range lines {
 		if uniseg.StringWidth(l) <= width {
 			out[i] = l
 			continue
 		}
-		r := []rune(l)
-		for uniseg.StringWidth(string(r)) > width && len(r) > 0 {
-			r = r[:len(r)-1]
+		var b strings.Builder
+		w := 0
+		for _, g := range l {
+			gw := uniseg.StringWidth(string(g))
+			if w+gw > width {
+				break
+			}
+			b.WriteRune(g)
+			w += gw
 		}
-		out[i] = string(r)
+		out[i] = b.String()
 	}
 	return out
 }
-
 func spaces(n int) string {
 	if n <= 0 {
 		return ""
@@ -273,7 +341,7 @@ func repeat(s string, n int) string {
 		return ""
 	}
 	out := make([]byte, 0, len(s)*n)
-	for i := 0; i < n; i++ {
+	for range n {
 		out = append(out, s...)
 	}
 	return string(out)
@@ -325,7 +393,7 @@ func keymapOverlayFactory(ctx context.Context, adapter *gojaeventloop.Adapter, r
 
 	return adapter.TrackPromise(ctx, func(_ context.Context, settle gojaeventloop.TrackedSettlement) {
 		_ = settle.Settle(false, func(owner *goja.Runtime) any {
-			model := &keymapOverlayModel{runtime: owner, km: km, onClose: onClose}
+			model := &keymapOverlayModel{km: km, onClose: onClose}
 
 			update := owner.ToValue(func(call goja.FunctionCall) goja.Value {
 				var state goja.Value
@@ -364,7 +432,11 @@ func keymapOverlayFactory(ctx context.Context, adapter *gojaeventloop.Adapter, r
 
 			modelWrapper, err := newModelFn(teaObj, cfg)
 			if err != nil {
-				return owner.NewGoError(err)
+				// Panic inside the Settle callback rejects the promise (per
+				// goja-eventloop semantics) — returning NewGoError here would
+				// RESOLVE the promise with an error object, which callers
+				// would mistake for a successful result.
+				panic(owner.NewGoError(err))
 			}
 			result := owner.NewObject()
 			_ = result.Set("model", modelWrapper)

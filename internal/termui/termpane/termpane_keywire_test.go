@@ -23,13 +23,13 @@ import (
 // sequence ESC[1;3D — never as a bare 'b' (the ESC-prefix legacy encoding)
 // and never split or altered.
 //
-// The child is a copy program that echoes its stdin back, so the captured
-// output contains the exact bytes the PTY received... except the terminal in
-// canonical mode echoes input with processing. To observe the RAW input
-// bytes instead, the child disables ECHO on its own terminal before
-// reading, and instead writes each input chunk length-prefixed to a side
-// channel is overkill; simpler: the child reads raw bytes in raw mode and
-// writes them hex-encoded to stdout, which we capture.
+// The child (buildHexEchoProgram) puts its own terminal into raw mode
+// (ICANON|ECHO off) so the kernel line discipline neither echoes nor
+// line-buffers the input, then writes every byte it reads to stdout as two
+// lowercase hex digits. The test waits for the child's READY sentinel before
+// sending input (avoiding a race with the child's termios setup), then asserts
+// the captured hex equals exactly "1b5b313b3344" and does not contain the
+// legacy "1b62" (ESC b) encoding.
 func TestUpdate_AltLeftWireBytes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
@@ -66,6 +66,27 @@ func TestUpdate_AltLeftWireBytes(t *testing.T) {
 	model := NewModel(sid, mgr, pasteBounds)
 	defer model.Close()
 
+	// Wait for the child to report it has entered raw mode before sending
+	// input, so the kernel line discipline (canonical+echo) cannot mangle the
+	// bytes on the way in.
+	readyDeadline := time.After(5 * time.Second)
+	for {
+		snap := mgr.Snapshot(sid)
+		if snap != nil && strings.Contains(snapshotPlainText(snap), "READY") {
+			break
+		}
+		select {
+		case <-readyDeadline:
+			snap := mgr.Snapshot(sid)
+			text := ""
+			if snap != nil {
+				text = snapshotPlainText(snap)
+			}
+			t.Fatalf("timed out waiting for child READY sentinel; capture:\n%q", text)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
 	// alt+left as BubbleTea v2 decodes it: Code=KeyLeft, Mod=ModAlt.
 	altLeft := tea.Key{Code: tea.KeyLeft, Mod: tea.ModAlt}
 	if got := altLeft.String(); got != "alt+left" {
@@ -74,17 +95,24 @@ func TestUpdate_AltLeftWireBytes(t *testing.T) {
 	model.Update(tea.KeyPressMsg(altLeft))
 
 	// The child hex-encodes every byte it reads. Wait for "1b5b313b3344"
-	// (ESC [ 1 ; 3 D) to appear in the captured output.
+	// (ESC [ 1 ; 3 D) to appear in the captured output, then assert it is the
+	// ONLY input hex present (exact match) and that the legacy ESC b
+	// encoding ("1b62") was not emitted.
 	wantHex := "1b5b313b3344"
 	deadline := time.After(5 * time.Second)
 	for {
 		snap := mgr.Snapshot(sid)
 		if snap != nil {
-			if text := snapshotPlainText(snap); strings.Contains(text, wantHex) {
-				// Assert the full sequence arrived contiguously and that no
-				// stray 'b' (0x62) was injected by a legacy encoding.
-				if !strings.Contains(text, wantHex) {
-					t.Fatalf("missing %q in %q", wantHex, text)
+			text := snapshotPlainText(snap)
+			if found := strings.Contains(text, wantHex); found {
+				// Strip the READY sentinel line, then the remainder must be
+				// exactly the hex of ESC[1;3D (plus whitespace).
+				rest := strings.TrimSpace(strings.Replace(text, "READY", "", 1))
+				if rest != wantHex {
+					t.Fatalf("child received unexpected input bytes: got hex %q, want exactly %q (legacy ESC b would appear as 1b62)", rest, wantHex)
+				}
+				if strings.Contains(rest, "1b62") {
+					t.Fatalf("legacy ESC+b encoding leaked: %q", rest)
 				}
 				return
 			}
@@ -116,22 +144,21 @@ import (
 	"fmt"
 	"os"
 
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
 
 func main() {
-	// Raw mode: disable ICANON and ECHO on stdin so bytes pass through
-	// unmodified and are not echoed by the tty line discipline.
 	fd := int(os.Stdin.Fd())
-	if old, err := unix.IoctlGetTermios(fd, unix.TIOCGETA); err == nil {
-		new := *old
-		new.Lflag &^= unix.ICANON | unix.ECHO
-		new.Iflag &^= unix.ICRNL | unix.INLCR | unix.IGNCR
-		new.Cc[unix.VMIN] = 1
-		new.Cc[unix.VTIME] = 0
-		_ = unix.IoctlSetTermios(fd, unix.TIOCSETA, &new)
-		defer unix.IoctlSetTermios(fd, unix.TIOCSETA, old)
+	old, err := term.MakeRaw(fd)
+	if err != nil {
+		// Not a terminal (shouldn't happen under a PTY) — continue anyway.
+		_ = old
+	} else {
+		defer term.Restore(fd, old)
 	}
+	// Readiness sentinel: printed AFTER raw mode is active.
+	fmt.Println("READY")
+	os.Stdout.Sync()
 	buf := make([]byte, 4096)
 	for {
 		n, err := os.Stdin.Read(buf)

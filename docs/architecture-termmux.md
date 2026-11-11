@@ -445,15 +445,16 @@ Two delivery granularities exist on the input path:
 - **Regular input** (`Input`, `InputSession`): each request is one
   `session.Write` — the typing path.
 - **Staged input** (`InputStaged`): the payload is copied once and delivered
-  as a single `Write` call (`reqInputStaged`), so large pastes are never
-  observed by the child as multiple contiguous chunks. Routed through the
-  same worker queue, so ordering with regular input is preserved.
-  `termpane.forwardPaste` uses this for bracketed-paste payloads.
+  as a single `Write` call (`reqInputStaged`), so we did not artificially
+  split the payload — delivery is one `Write` carrying the whole buffer.
+  Routed through the same worker queue, so ordering with regular input is
+  preserved. `termpane.forwardPaste` uses this for bracketed-paste payloads.
+  Every input path treats a short write (`n < len` with nil error) as an
+  error (`ErrShortWrite`) instead of silently truncating the payload.
 
 Key encoding (`input.go` `KeyToTermBytes`) maps BubbleTea key strings to
 xterm wire bytes: modified navigation/tilde keys use the CSI modifier
-parameter (`ESC[1;{mod}{letter}`, `ESC[{num};{mod}~`, SS3 in app-cursor
-mode) with `mod = 1 + shift(1) + alt(2) + ctrl(4) + meta(8)` — so
+parameter (`ESC[1;{mod}{letter}`, `ESC[{num};{mod}~`) with `mod = 1 + shift(1) + alt(2) + ctrl(4) + meta(8)` — so
 `alt+left` (macOS option+left, word-skip) is `ESC[1;3D`, not the legacy
 ESC-prefix `ESC b`.
 
@@ -1037,7 +1038,8 @@ remains a compatibility no-op.
 
 | Key Category | Example | Output (appCursor=false) | Output (appCursor=true) |
 |---|---|---|---|
-| Navigation | `"up"` | `CSI A` | `SS3 A` |
+| Navigation (unmodified) | `"up"` | `CSI A` | `SS3 A` |
+| Navigation (modified) | `"alt+left"` | `CSI 1;3D` | `CSI 1;3D` (SS3 cannot carry modifiers) |
 | Function | `"f1"` | `CSI P1` | `SS3 P1` |
 | Ctrl+letter | `"ctrl+a"` | `0x01` | — |
 | Alt+key | `"alt+a"` | `ESC a` | — |

@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -147,9 +148,12 @@ func TestKeyToTermBytes_Alt(t *testing.T) {
 	if !ok || got != "\x1b[1;3D" {
 		t.Errorf("alt+left: got %q ok=%v", got, ok)
 	}
-	// In application cursor mode, modifier+nav uses the SS3 form.
+	// In application cursor mode, MODIFIED nav keys still use the CSI form:
+	// xterm modifyCursorKeys=2 encodes modified cursor keys as ESC[1;3D in
+	// BOTH cursor modes; SS3 (ESC O) takes no parameters in ECMA-48, so an
+	// SS3+modifier form would leak the trailing letter as literal text.
 	got, ok = KeyToTermBytes("alt+left", true, false)
-	if !ok || got != "\x1bO3D" {
+	if !ok || got != "\x1b[1;3D" {
 		t.Errorf("appCursor alt+left: got %q ok=%v", got, ok)
 	}
 	// alt+up → xterm modifier form ESC[1;3A (not a double-ESC).
@@ -454,6 +458,32 @@ func TestKeyToTermBytes_ApplicationCursor(t *testing.T) {
 			}
 			if got != tt.appCursor {
 				t.Errorf("KeyToTermBytes(%q, true) = %q, want %q", tt.key, got, tt.appCursor)
+			}
+		})
+	}
+}
+
+// TestKeyToTermBytes_ModifiedNavAppCursorInvariant: modified cursor/home/end
+// keys must encode identically in normal and application-cursor mode (CSI
+// 1;mod letter), because SS3 cannot carry a modifier parameter.
+func TestKeyToTermBytes_ModifiedNavAppCursorInvariant(t *testing.T) {
+	keys := []string{
+		"alt+left", "alt+right", "alt+up", "alt+down", "alt+home", "alt+end",
+		"ctrl+left", "shift+up", "ctrl+shift+right", "meta+home",
+		"ctrl+alt+delete", "alt+shift+pgup", "shift+alt+ctrl+meta+end",
+	}
+	for _, key := range keys {
+		t.Run(key, func(t *testing.T) {
+			a, okA := KeyToTermBytes(key, false, false)
+			b, okB := KeyToTermBytes(key, true, false)
+			if !okA || !okB {
+				t.Fatalf("KeyToTermBytes(%q): ok false/true = %v/%v", key, okA, okB)
+			}
+			if a != b {
+				t.Errorf("appCursor changed modified key %q: normal=%q appCursor=%q", key, a, b)
+			}
+			if strings.HasPrefix(b, "\x1bO") {
+				t.Errorf("appCursor modified key %q emitted SS3 form %q", key, b)
 			}
 		})
 	}

@@ -199,8 +199,9 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 		}
 	}
 
-	// Modifier+navigation keys → xterm CSI sequences.
-	if s, ok := encodeModNav(key, appCursor); ok {
+	// Modifier+navigation keys → xterm CSI sequences (appCursor only affects
+	// UNMODIFIED keys, handled above).
+	if s, ok := encodeModNav(key); ok {
 		return s, true
 	}
 
@@ -242,9 +243,16 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 // encodeModNav handles modifier+navigation key combinations using the xterm
 // modifier parameter: ESC[1;{mod}{letter} for cursor-style keys and
 // ESC[{num};{mod}~ for tilde-style keys, where mod = 1 + bitmask with
-// shift=1, alt=2, ctrl=4, meta=8 (see xterm ctlseqs). Application cursor
-// mode (appCursor) uses the SS3 form ESC O {mod} {letter} instead.
-func encodeModNav(key string, appCursor bool) (string, bool) {
+// shift=1, alt=2, ctrl=4, meta=8 (see xterm ctlseqs).
+//
+// Modified cursor/home/end keys ALWAYS use the CSI form, regardless of
+// application-cursor mode (DECCKM): xterm's default modifyCursorKeys=2 (and
+// every modern terminal + VT parser, e.g. ECMA-48 SS3 which takes no
+// parameters) encodes modified keys as CSI 1;mod letter in both cursor
+// modes. The SS3 form ESC O {letter} is only for UNMODIFIED application
+// cursor keys (handled by KeyToTermBytes itself). Emitting ESC O {mod}{letter}
+// would be parsed as an unknown SS3 sequence followed by a literal letter.
+func encodeModNav(key string) (string, bool) {
 	mods := map[string]int{
 		"shift": 1,
 		"alt":   2,
@@ -280,9 +288,6 @@ func encodeModNav(key string, appCursor bool) (string, bool) {
 	xtermMod := strconv.Itoa(mod + 1)
 
 	if letter, exists := navMap[rest]; exists {
-		if appCursor {
-			return "\x1bO" + xtermMod + letter, true
-		}
 		return "\x1b[1;" + xtermMod + letter, true
 	}
 	if num, exists := tildeMap[rest]; exists {

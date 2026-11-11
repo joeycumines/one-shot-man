@@ -47,7 +47,7 @@ creating sessions and managers, plus event constants.
 | `keymapOverlay({keymap, tea, onClose?})` | function | `Promise<{model, visible, _update}>` — BubbleTea overlay rendering `keymap.listKeys()` as a centered popup; any key closes it and fires `onClose` |
 | `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
 | `handlePrefixKey({ manager, key })` | function | Execute a prefix action; returns `Promise<{action, consumed, description, result, listKeys}>` |
-| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`). Modified nav/tilde keys use the xterm modifier parameter: `alt+left` → `ESC[1;3D`, `ctrl+shift+home` → `ESC[1;6H`, `alt+pgup` → `ESC[5;3~` (mod param = 1 + shift 1 + alt 2 + ctrl 4 + meta 8); SS3 form in app-cursor mode |
+| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`). Modified nav/tilde keys use the xterm modifier parameter: `alt+left` → `ESC[1;3D`, `ctrl+shift+home` → `ESC[1;6H`, `alt+pgup` → `ESC[5;3~` (mod param = 1 + shift 1 + alt 2 + ctrl 4 + meta 8). Modified nav keys use CSI in BOTH cursor modes (xterm modifyCursorKeys=2); SS3 applies only to unmodified app-cursor keys |
 | `renderMessageBar(text, row?, cols?)` | function | Render a one-line ANSI message bar |
 | `mouseToSGR(event, offsetRow?, offsetCol?)` | function | Convert a mouse event to SGR bytes (`string\|null`) |
 | `splitLayout(...)` | function | Split layout operation |
@@ -195,7 +195,7 @@ Production pr-split code should prefer pinned SessionID access: `capture(id)` /
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
 | `inputSession(id, data)` | `SessionManager.InputSession()` | `number, string` | `Promise<void>` | rejects on error (unknown session, invalid state) |
-| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE atomic `Write` call (sponge) — use for pastes so the child never sees split contiguous chunks; ordered with other input via the same worker queue |
+| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE `Write` call (sponge) — use for pastes; the payload is handed over whole, not artificially chunked; rejects on short write (`ErrShortWrite`); ordered with other input via the same worker queue |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 | `writeToChild(data)` | `SessionManager.Input()` | `string` | `Promise<number>` (bytes) | rejects on error; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |

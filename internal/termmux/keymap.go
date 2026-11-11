@@ -51,6 +51,10 @@ type KeyBinding struct {
 //   - direct key → handled, action=<action>
 //   - anything else → not handled
 //
+// Edge case: if passthroughKey == prefix, the prefix arm wins when not
+// armed, so the passthrough action is unreachable — set them to distinct
+// keys (SetPrefix/SetPassthroughKey do not enforce this).
+//
 // Keymap is safe for concurrent use.
 type Keymap struct {
 	mu             sync.Mutex

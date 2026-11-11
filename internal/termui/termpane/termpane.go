@@ -404,8 +404,10 @@ func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 // ESC[201~ delimiters so the child's own paste handling receives it as a
 // paste; otherwise the raw content is written. The whole payload is handed
 // to the manager as a staged write: it is delivered to the PTY in a single
-// Write call, so the child never observes a paste split into multiple
-// contiguous chunks (which would defeat paste/burst detection).
+// Write call, so the code does not artificially split the paste into
+// multiple contiguous writes. (The kernel may still segment a large write
+// on the wire; bracketed-paste delimiters are what let the child reassemble
+// it — the guarantee here is "no artificial boundary", not wire atomicity.)
 func (m *Model) forwardPaste(content string) {
 	if content == "" {
 		return

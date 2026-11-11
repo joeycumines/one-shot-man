@@ -315,7 +315,7 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
-| `writeStaged(data)` | `SessionManager.InputStaged(ActiveID(), data)` | `string` | `Promise<void>` | atomic single-`Write` delivery to the active session (sponge); target resolved on the worker via `ActiveID()`; rejects with `ErrSessionNotFound` when no session is active (no silent non-staged fallback); ordered with `write` in call order |
+| `writeStaged(data)` | `SessionManager.InputStaged(ActiveID(), data)` | `string` | `Promise<void>` | single-`Write` delivery to the active session (sponge; no artificial chunking); target resolved on the worker via `ActiveID()`; rejects with `ErrSessionNotFound` when no session is active (no silent non-staged fallback); ordered with `write` in call order |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---

@@ -859,9 +859,9 @@ const (
 	reqReplaceSnapshotForTest
 
 	// reqInputStaged asks the worker to deliver data to a specific session
-	// as one atomic write (a single Write call on the session), so large
-	// payloads (e.g. pastes) are not split into multiple contiguous
-	// writes. Payload: inputSessionPayload. Reply value: nil.
+	// in a single Write call, so large payloads (e.g. pastes) are not
+	// artificially split into multiple contiguous writes. Payload:
+	// inputSessionPayload. Reply value: nil.
 	// Declared LAST in the block so its numeric value never shifts earlier
 	// kinds (not serialized anywhere, but kept stable for hygiene).
 	reqInputStaged
@@ -1688,12 +1688,15 @@ func (m *SessionManager) InputSession(id SessionID, data []byte) error {
 	return m.sendRequest(reqInputSession, inputSessionPayload{id: id, data: data}).err
 }
 
-// InputStaged delivers data to the specified session's PTY as one atomic
-// write: the payload is copied into a single buffer and handed to the
-// session in a single Write call, so the child never observes it as
-// multiple contiguous chunks (paste/burst detection stays on the typing
-// path's side of the line). Ordering with other input requests is preserved
-// because this goes through the same worker queue.
+// InputStaged delivers data to the specified session's PTY in a single
+// Write call: the payload is copied into one buffer and handed to the
+// session whole, so this code never artificially splits a large payload
+// (e.g. a paste) into multiple contiguous writes. (A single write(2) to a
+// PTY may still be segmented by the kernel for payloads larger than the
+// line-discipline buffer; the guarantee is no artificial boundary, and
+// bracketed-paste delimiters let the child reassemble.) Ordering with
+// other input requests is preserved because this goes through the same
+// worker queue.
 //
 // The payload is copied defensively at request time so the caller may reuse
 // or mutate its buffer immediately after the call returns.
@@ -2669,19 +2672,21 @@ func (m *SessionManager) handleInput(data []byte) response {
 	return response{err: writeFull(ms.session, data)}
 }
 
-// handleInputSession writes data to a specific session. The payload is
-// delivered with a single session.Write call; InputStaged differs only in
-// that the payload is defensively copied at request time (InputStaged) so the
-// caller may reuse its buffer immediately, whereas InputSession aliases the
-// caller's slice for the duration of the (blocking) request.
+// handleInputSession writes data to a specific session with a single
+// session.Write call. InputStaged differs only in that the payload is
+// defensively copied at request time (InputStaged) so the caller may reuse
+// its buffer immediately, whereas InputSession aliases the caller's slice
+// for the duration of the (blocking) request — safe today because
+// sendRequest blocks until the worker has completed the Write, but do not
+// queue the payload anywhere without copying if that ever changes.
 func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
 	return m.handleInputToSession(p.id, p.data)
 }
 
-// handleInputStaged is handleInputSession with atomic delivery: the payload
-// was copied once at request time and is written with a single
-// session.Write call, so the child observes exactly one Write carrying the
-// full payload (the sponge path for pastes).
+// handleInputStaged is handleInputSession with single-Write delivery: the
+// payload was copied once at request time and is written with one
+// session.Write call carrying the full payload (the sponge path for
+// pastes — no artificial split into contiguous chunks).
 func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
 	return m.handleInputToSession(p.id, p.data)
 }
@@ -2689,6 +2694,13 @@ func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
 // handleInputToSession is the shared worker-side input path for
 // reqInputSession and reqInputStaged: validate the session, route locked
 // input to the unlock prompt, otherwise one full Write.
+//
+// Intentional divergence from handleInput: targeted input (by explicit ID)
+// does NOT fan out to synchronized panes — Synchronize() is a property of
+// the active pane group, and a caller addressing a specific session by ID
+// (as session().writeStaged/inputStaged do) wants exactly that session.
+// handleInput (the no-ID path) resolves the active session and honors
+// Synchronize(). Covered by TestSessionManager_InputSession_SynchronizePanesIgnored.
 func (m *SessionManager) handleInputToSession(id SessionID, data []byte) response {
 	ms, ok := m.sessions[id]
 	if !ok {
@@ -2729,17 +2741,24 @@ func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
 		return response{err: fmt.Errorf("termmux: cannot send keys to locked session %d", p.id)}
 	}
 
+	// Encode with the child's own application-cursor mode so modified
+	// navigation keys land as CSI 1;mod letter exactly as they would from
+	// a physical keyboard (encodeModNav ignores appCursor, but the
+	// unmodified nav/home/end branch does not).
+	appCursor := false
+	if snap := ms.snapshot.Load(); snap != nil {
+		appCursor = snap.ApplicationCursor
+	}
 	var buf strings.Builder
 	for _, key := range p.keys {
-		seq, ok := KeyToTermBytes(key, false, false)
+		seq, ok := KeyToTermBytes(key, appCursor, false)
 		if !ok {
 			return response{err: fmt.Errorf("termmux: unrecognized key %q", key)}
 		}
 		buf.WriteString(seq)
 	}
 
-	_, err := ms.session.Write([]byte(buf.String()))
-	return response{err: err}
+	return response{err: writeFull(ms.session, []byte(buf.String()))}
 }
 
 func (m *SessionManager) handleResetActivity(id SessionID) response {

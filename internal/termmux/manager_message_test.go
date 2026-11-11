@@ -53,10 +53,18 @@ func TestSessionManager_DisplayMessage_QueueAdvanceOnExpiry(t *testing.T) {
 		t.Fatalf("DisplayMessage: %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
-
-	if got := m.ActiveMessage(id); got != "second" {
-		t.Errorf("ActiveMessage after front expiry = %q, want %q", got, "second")
+	// The front message has a 1ns expiry; poll ActiveMessage (a worker
+	// request) until the worker's clock observes the expiry — no sleeps.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got := m.ActiveMessage(id)
+		if got == "second" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ActiveMessage after front expiry = %q, want %q", got, "second")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -96,13 +104,21 @@ func TestSessionManager_DisplayMessage_SnapshotEmptyWhenExpired(t *testing.T) {
 		t.Fatalf("DisplayMessage: %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
-
-	snap := m.Snapshot(id)
-	if snap == nil {
-		t.Fatal("Snapshot returned nil")
-	}
-	if snap.Message != "" {
-		t.Errorf("Snapshot.Message after expiry = %q, want empty", snap.Message)
+	// Poll the snapshot (a worker request) until the expired message clears.
+	deadline := time.Now().Add(2 * time.Second)
+	var snap *ScreenSnapshot
+	for {
+		snap = m.Snapshot(id)
+		if snap != nil && snap.Message == "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			msg := ""
+			if snap != nil {
+				msg = snap.Message
+			}
+			t.Fatalf("snapshot still carries expired message %q", msg)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

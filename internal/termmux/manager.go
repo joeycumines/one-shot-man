@@ -562,12 +562,6 @@ const (
 	// Payload: inputSessionPayload. Reply value: nil.
 	reqInputSession
 
-	// reqInputStaged asks the worker to deliver data to a specific session
-	// as one atomic write (a single Write call on the session), so large
-	// payloads (e.g. pastes) are not split into multiple contiguous
-	// writes. Payload: inputSessionPayload. Reply value: nil.
-	reqInputStaged
-
 	reqSendKeys
 
 	// reqResetActivity resets the activity-fired flag for a session.
@@ -863,6 +857,14 @@ const (
 	// session's published snapshot. Payload: snapshotReplaceForTest. Reply
 	// value: none. Test-only; never used in production paths.
 	reqReplaceSnapshotForTest
+
+	// reqInputStaged asks the worker to deliver data to a specific session
+	// as one atomic write (a single Write call on the session), so large
+	// payloads (e.g. pastes) are not split into multiple contiguous
+	// writes. Payload: inputSessionPayload. Reply value: nil.
+	// Declared LAST in the block so its numeric value never shifts earlier
+	// kinds (not serialized anywhere, but kept stable for hygiene).
+	reqInputStaged
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -1438,6 +1440,11 @@ var ErrSessionNotFound = errors.New("termmux: session not found")
 // ErrInvalidTransition is returned when a session state transition is
 // not permitted by the lifecycle model.
 var ErrInvalidTransition = errors.New("termmux: invalid state transition")
+
+// ErrShortWrite is returned when a session Write reports success but wrote
+// fewer bytes than requested, which would silently truncate input delivered
+// to the child (possible on PTYs when the kernel buffer is full).
+var ErrShortWrite = errors.New("termmux: short write")
 
 // Run starts the SessionManager worker goroutine and blocks until ctx is
 // cancelled or Close is called. All request processing and state mutations
@@ -2640,7 +2647,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 				}
 				continue
 			}
-			if _, err := ms.session.Write(data); err != nil && firstErr == nil {
+			if err := writeFull(ms.session, data); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
@@ -2659,8 +2666,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(data, ms, activeSession)
 	}
-	_, err := ms.session.Write(data)
-	return response{err: err}
+	return response{err: writeFull(ms.session, data)}
 }
 
 func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
@@ -2674,8 +2680,7 @@ func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(p.data, ms, p.id)
 	}
-	_, err := ms.session.Write(p.data)
-	return response{err: err}
+	return response{err: writeFull(ms.session, p.data)}
 }
 
 // handleInputStaged is handleInputSession with atomic delivery: the payload
@@ -2693,8 +2698,21 @@ func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
 	}
 	// Payload was already copied once at request time; write it as-is so the
 	// child observes exactly one Write call carrying the full payload.
-	_, err := ms.session.Write(p.data)
-	return response{err: err}
+	return response{err: writeFull(ms.session, p.data)}
+}
+
+// writeFull writes data to w and reports an error on a short write (n < len
+// with nil error), which PTY writes can produce when the kernel buffer is
+// full. A silent short write would truncate input delivered to the child.
+func writeFull(w interface{ Write([]byte) (int, error) }, data []byte) error {
+	n, err := w.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return fmt.Errorf("%w: wrote %d of %d bytes", ErrShortWrite, n, len(data))
+	}
+	return nil
 }
 
 func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {

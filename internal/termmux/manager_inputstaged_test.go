@@ -5,19 +5,19 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"time"
 )
 
 // boundarySession is a controllableSession that additionally records every
 // Write call as a separate entry, so tests can assert atomic delivery (one
 // Write call per staged payload) rather than just the concatenated bytes.
 type boundarySession struct {
-	mu        sync.Mutex
-	calls     [][]byte
-	writeErr  error
-	doneCh    chan struct{}
-	readerCh  chan []byte
-	closeOnce sync.Once
+	mu         sync.Mutex
+	calls      [][]byte
+	writeErr   error
+	shortWrite int // if > 0, Write reports only this many bytes written (nil error)
+	doneCh     chan struct{}
+	readerCh   chan []byte
+	closeOnce  sync.Once
 }
 
 func newBoundarySession() *boundarySession {
@@ -39,6 +39,9 @@ func (s *boundarySession) Write(data []byte) (int, error) {
 	cp := make([]byte, len(data))
 	copy(cp, data)
 	s.calls = append(s.calls, cp)
+	if s.shortWrite > 0 {
+		return s.shortWrite, nil
+	}
 	return len(data), nil
 }
 
@@ -98,7 +101,6 @@ func TestSessionManager_InputStaged_SingleWriteCall(t *testing.T) {
 	if err := m.InputStaged(id, payload); err != nil {
 		t.Fatalf("InputStaged: %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	calls := bs.writeCalls()
 	if len(calls) != 1 {
@@ -141,7 +143,6 @@ func TestSessionManager_InputStaged_OrderingWithInput(t *testing.T) {
 	if err := m.InputStaged(id, []byte("D-staged")); err != nil {
 		t.Fatalf("InputStaged D: %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	want := []byte("AB-stagedCD-staged")
 	if got := bs.written(); !bytes.Equal(got, want) {
@@ -188,7 +189,6 @@ func TestSessionManager_InputStaged_LockedSession(t *testing.T) {
 	if err := m.InputStaged(id, []byte("pw\n")); err != nil {
 		t.Fatalf("InputStaged password: %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 	if m.IsLocked(id) {
 		t.Fatal("session should be unlocked after staged password entry")
 	}
@@ -201,7 +201,6 @@ func TestSessionManager_InputStaged_LockedSession(t *testing.T) {
 	if err := m.InputStaged(id, payload); err != nil {
 		t.Fatalf("InputStaged after unlock: %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	calls := bs.writeCalls()
 	if len(calls) != 1 || !bytes.Equal(calls[0], payload) {
 		t.Fatalf("post-unlock staged write: got %d calls, want 1 with full payload", len(calls))
@@ -248,7 +247,7 @@ func TestSessionManager_InputStaged_Concurrent(t *testing.T) {
 
 	const n = 32
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -259,7 +258,6 @@ func TestSessionManager_InputStaged_Concurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	time.Sleep(50 * time.Millisecond)
 
 	calls := bs.writeCalls()
 	if len(calls) != n {
@@ -300,10 +298,42 @@ func TestSessionManager_InputStaged_CallerBufferReuse(t *testing.T) {
 	for i := range buf {
 		buf[i] = 'X'
 	}
-	time.Sleep(20 * time.Millisecond)
 
 	calls := bs.writeCalls()
 	if len(calls) != 1 || string(calls[0]) != "original-payload" {
 		t.Fatalf("child received %q, want %q (caller buffer was mutated post-call)", calls, "original-payload")
+	}
+}
+
+// TestSessionManager_InputStaged_ShortWrite verifies a short write (n < len
+// with nil error) is surfaced as an error wrapping ErrShortWrite, not
+// silently truncating the payload delivered to the child.
+func TestSessionManager_InputStaged_ShortWrite(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	bs := newBoundarySession()
+	bs.shortWrite = 3
+	id, err := m.Register(bs, SessionTarget{Name: "short", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	payload := []byte("0123456789")
+	err = m.InputStaged(id, payload)
+	if err == nil {
+		t.Fatal("InputStaged with short write: expected error, got nil")
+	}
+	if !errors.Is(err, ErrShortWrite) {
+		t.Fatalf("InputStaged short write error = %v, want ErrShortWrite wrap", err)
+	}
+	// Same for the active-session and explicit-session paths.
+	if err := m.Input(payload); !errors.Is(err, ErrShortWrite) {
+		t.Fatalf("Input short write error = %v, want ErrShortWrite wrap", err)
+	}
+	if err := m.InputSession(id, payload); !errors.Is(err, ErrShortWrite) {
+		t.Fatalf("InputSession short write error = %v, want ErrShortWrite wrap", err)
 	}
 }

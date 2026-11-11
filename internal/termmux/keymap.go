@@ -4,6 +4,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
+
+	"github.com/rivo/uniseg"
 )
 
 // ActionPassthrough is the reserved action reported by Keymap.HandleKey when
@@ -32,16 +35,19 @@ type KeyBinding struct {
 //     key; the caller chooses.
 //   - keys: direct key → action mappings, active in the normal state.
 //   - chords: key → action mappings, active only right after the prefix.
-//   - passthroughKey: an optional dedicated key that always reports
-//     ActionPassthrough (e.g. a toggle for passthrough mode).
+//   - passthroughKey: an optional dedicated key that reports
+//     ActionPassthrough when pressed and the keymap is NOT armed (e.g. a
+//     toggle for passthrough mode). While armed, the passthrough key is
+//     treated like any other chord key.
 //
 // Semantics of HandleKey:
 //   - prefix pressed (not armed) → handled, action="", armed=true
-//   - armed + prefix again, or armed + esc → cancel: handled, action="",
-//     armed=false
-//   - armed + bound chord → handled, action=<chord action>, armed=false
+//   - armed + bound chord (including the prefix key itself) → handled,
+//     action=<chord action>, armed=false
+//   - armed + prefix again, or armed + esc, with no chord bound to them →
+//     cancel: handled, action="", armed=false
 //   - armed + unbound key → NOT handled (passes through to the child)
-//   - passthroughKey → handled, action=ActionPassthrough
+//   - passthroughKey (not armed) → handled, action=ActionPassthrough
 //   - direct key → handled, action=<action>
 //   - anything else → not handled
 //
@@ -78,19 +84,27 @@ func WithPassthroughKey(key string) KeymapOption {
 	return func(k *Keymap) { k.passthroughKey = normalizeKey(key) }
 }
 
-// WithKeys seeds the direct key→action table.
+// WithKeys seeds the direct key→action table. Empty actions are rejected so
+// a binding can never silently swallow a key without dispatching.
 func WithKeys(keys map[string]string) KeymapOption {
 	return func(k *Keymap) {
 		for key, action := range keys {
+			if action == "" {
+				continue
+			}
 			k.keys[normalizeKey(key)] = action
 		}
 	}
 }
 
-// WithChords seeds the prefix chord table.
+// WithChords seeds the prefix chord table. Empty actions are rejected so a
+// chord can never silently swallow a key without dispatching.
 func WithChords(chords map[string]string) KeymapOption {
 	return func(k *Keymap) {
 		for key, action := range chords {
+			if action == "" {
+				continue
+			}
 			k.chords[normalizeKey(key)] = action
 		}
 	}
@@ -105,18 +119,27 @@ func NewKeymapWith(opts ...KeymapOption) *Keymap {
 	return k
 }
 
-// normalizeKey lowercases the whole key string except when it is a single
-// printable character, so "Ctrl+A" and "ctrl+a" are the same binding while
-// "A" and "a" stay distinct. Key names produced by BubbleTea are already
-// lowercase, so this only affects hand-written bindings.
+// normalizeKey normalizes a key name for lookup. Modifier tokens (every
+// "+"-separated part except the last) are always lowercased, so "Ctrl+A" and
+// "ctrl+a" are the same binding. The final stem is lowercased only when it is
+// a multi-rune key NAME ("F1" -> "f1", "Enter" -> "enter"); a single-rune
+// stem is a literal character and keeps its case, so "A" and "a" stay
+// distinct and single non-ASCII runes are preserved (rune count, not byte
+// length). Key names produced by BubbleTea are already lowercase, so this
+// only affects hand-written bindings.
 func normalizeKey(key string) string {
 	if key == "" {
 		return ""
 	}
-	if len(key) == 1 {
-		return key
+	parts := strings.Split(key, "+")
+	last := len(parts) - 1
+	if utf8.RuneCountInString(parts[last]) != 1 {
+		parts[last] = strings.ToLower(parts[last])
 	}
-	return strings.ToLower(key)
+	for i := 0; i < last; i++ {
+		parts[i] = strings.ToLower(parts[i])
+	}
+	return strings.Join(parts, "+")
 }
 
 // HandleKey runs one key through the state machine. Returns
@@ -134,11 +157,13 @@ func (k *Keymap) HandleKey(key string) (handled bool, action string, armed bool)
 
 	if k.armed {
 		k.armed = false
-		if key == k.prefix || key == "esc" {
-			return true, "", false
-		}
+		// A chord bound to the pressed key (including the prefix key itself
+		// or "esc") wins over the implicit cancel.
 		if action, ok := k.chords[key]; ok {
 			return true, action, false
+		}
+		if key == k.prefix || key == "esc" {
+			return true, "", false
 		}
 		// Unbound chord key: pass through to the child, prefix disarmed.
 		return false, "", false
@@ -157,16 +182,25 @@ func (k *Keymap) HandleKey(key string) (handled bool, action string, armed bool)
 	return false, "", false
 }
 
-// Bind maps a direct key to an action. Empty action removes nothing — use
-// Unbind. Binding over an existing key replaces the action.
+// Bind maps a direct key to an action. An empty key or empty action is a
+// no-op: binding an empty action would silently swallow the key without
+// dispatching anything (indistinguishable from a chord cancel) — use Unbind
+// to remove a binding. Binding over an existing key replaces the action.
 func (k *Keymap) Bind(key, action string) {
+	if key == "" || action == "" {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.keys[normalizeKey(key)] = action
 }
 
-// BindChord maps a key (pressed after the prefix) to an action.
+// BindChord maps a key (pressed after the prefix) to an action. Empty key or
+// action is a no-op (see Bind).
 func (k *Keymap) BindChord(key, action string) {
+	if key == "" || action == "" {
+		return
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.chords[normalizeKey(key)] = action
@@ -255,44 +289,63 @@ func (k *Keymap) Bindings() []KeyBinding {
 //	key                   action
 //	ctrl+a x              chord-action   (chords shown as "prefix key")
 //
-// Suitable for displaying in a list-keys overlay. Deterministic (sorted).
+// All rows share one column layout so actions line up; widths are measured in
+// display cells (uniseg), not bytes, so non-ASCII keys align too. When no
+// prefix is set, chords are disabled and omitted entirely (they can never
+// fire). Suitable for displaying in a list-keys overlay. Deterministic
+// (sorted).
 func (k *Keymap) ListKeys() string {
 	k.mu.Lock()
-	prefix := k.prefix
-	passthrough := k.passthroughKey
-	k.mu.Unlock()
+	defer k.mu.Unlock()
 
-	bindings := k.Bindings()
 	var b strings.Builder
-	if prefix != "" {
-		b.WriteString("prefix  ")
-		b.WriteString(prefix)
-		b.WriteByte('\n')
+	// Rendered key column for each row, in output order.
+	type row struct {
+		key    string
+		action string
 	}
-	if passthrough != "" {
-		b.WriteString(passthrough)
-		b.WriteString("  ")
-		b.WriteString(ActionPassthrough)
-		b.WriteByte('\n')
+	rows := make([]row, 0, len(k.keys)+len(k.chords)+2)
+	if k.prefix != "" {
+		rows = append(rows, row{key: "prefix", action: k.prefix})
+	}
+	if k.passthroughKey != "" {
+		rows = append(rows, row{key: k.passthroughKey, action: ActionPassthrough})
+	}
+	direct := make([]KeyBinding, 0, len(k.keys))
+	for key, action := range k.keys {
+		direct = append(direct, KeyBinding{Key: key, Action: action})
+	}
+	sort.Slice(direct, func(i, j int) bool { return direct[i].Key < direct[j].Key })
+	for _, bd := range direct {
+		rows = append(rows, row{key: bd.Key, action: bd.Action})
+	}
+	if k.prefix != "" {
+		// Chords are only reachable when a prefix is set; without one they
+		// are dead entries and are not listed.
+		chords := make([]KeyBinding, 0, len(k.chords))
+		for key, action := range k.chords {
+			chords = append(chords, KeyBinding{Key: key, Action: action, Chord: true})
+		}
+		sort.Slice(chords, func(i, j int) bool { return chords[i].Key < chords[j].Key })
+		for _, bd := range chords {
+			rows = append(rows, row{key: k.prefix + " " + bd.Key, action: bd.Action})
+		}
 	}
 
-	// Column width: longest rendered key.
 	width := 0
-	rendered := make([]string, len(bindings))
-	for i, bd := range bindings {
-		if bd.Chord && prefix != "" {
-			rendered[i] = prefix + " " + bd.Key
-		} else {
-			rendered[i] = bd.Key
-		}
-		if len(rendered[i]) > width {
-			width = len(rendered[i])
+	for _, r := range rows {
+		if w := uniseg.StringWidth(r.key); w > width {
+			width = w
 		}
 	}
-	for i, bd := range bindings {
-		b.WriteString(rendered[i])
-		b.WriteString(strings.Repeat(" ", width-len(rendered[i])+2))
-		b.WriteString(bd.Action)
+	for _, r := range rows {
+		b.WriteString(r.key)
+		pad := width - uniseg.StringWidth(r.key) + 2
+		if pad < 1 {
+			pad = 1
+		}
+		b.WriteString(strings.Repeat(" ", pad))
+		b.WriteString(r.action)
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/rivo/uniseg"
 )
 
 func TestKeymap_EmptyIsOptIn(t *testing.T) {
@@ -134,9 +136,9 @@ func TestKeymap_Mutation(t *testing.T) {
 
 func TestKeymap_KeyNormalization(t *testing.T) {
 	t.Parallel()
-	k := NewKeymapWith(WithPrefix("Ctrl+A"), WithKeys(map[string]string{"f1": "help"}))
-	// "Ctrl+A" normalized to "ctrl+a".
-	if h, _, armed := k.HandleKey("ctrl+a"); !h || !armed {
+	k := NewKeymapWith(WithPrefix("Ctrl+F1"), WithKeys(map[string]string{"f1": "help"}))
+	// "Ctrl+F1" normalizes to "ctrl+f1" (multi-rune stem lowercased).
+	if h, _, armed := k.HandleKey("ctrl+f1"); !h || !armed {
 		t.Fatalf("normalized prefix: handled=%v armed=%v", h, armed)
 	}
 	// Single chars keep case: bind "A" and "a" distinctly.
@@ -167,7 +169,7 @@ func TestKeymap_ListKeys(t *testing.T) {
 	if len(lines) != 5 {
 		t.Fatalf("ListKeys lines = %d, want 5:\n%s", len(lines), got)
 	}
-	if !strings.HasPrefix(lines[0], "prefix  ctrl+a") {
+	if !strings.HasPrefix(lines[0], "prefix") || !strings.Contains(lines[0], "ctrl+a") {
 		t.Errorf("line0 = %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[1], "ctrl+]") || !strings.Contains(lines[1], ActionPassthrough) {
@@ -180,9 +182,19 @@ func TestKeymap_ListKeys(t *testing.T) {
 	if !strings.Contains(lines[3], "ctrl+a c") || !strings.Contains(lines[3], "new-window") {
 		t.Errorf("line3 (chord c) = %q", lines[3])
 	}
-	// Chords sorted after direct: line order must be f1, then c, then x — but
-	// with only one direct key, lines[2]=f1 and lines[3] is the first chord.
-	_ = lines
+	// All rows share one column layout: every action starts at the same cell.
+	actionCol := -1
+	for i, ln := range lines {
+		idx := strings.LastIndex(ln, "  ")
+		if idx < 0 {
+			t.Fatalf("line %d has no column gap: %q", i, ln)
+		}
+		if actionCol == -1 {
+			actionCol = idx
+		} else if idx != actionCol {
+			t.Errorf("line %d action column = %d, want %d (misaligned): %q", i, idx, actionCol, ln)
+		}
+	}
 	// Deterministic: sorted.
 	again := k.ListKeys()
 	if again != got {
@@ -190,15 +202,116 @@ func TestKeymap_ListKeys(t *testing.T) {
 	}
 }
 
+// TestKeymap_ListKeys_NoPrefixOmitsChords verifies that with no prefix set,
+// chords are disabled and therefore not listed (they can never fire, so
+// listing them as direct keys would be misleading).
+func TestKeymap_ListKeys_NoPrefixOmitsChords(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(WithKeys(map[string]string{"f1": "help"}), WithChords(map[string]string{"c": "ghost"}))
+	got := k.ListKeys()
+	if strings.Contains(got, "ghost") {
+		t.Fatalf("disabled chord rendered in ListKeys:\n%s", got)
+	}
+	if !strings.Contains(got, "f1") || !strings.Contains(got, "help") {
+		t.Fatalf("direct key missing from ListKeys:\n%s", got)
+	}
+}
+
+// TestKeymap_ListKeys_UnicodeAlignment verifies column alignment uses display
+// cell width (uniseg), not byte length, so non-ASCII keys align.
+func TestKeymap_ListKeys_UnicodeAlignment(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(WithKeys(map[string]string{"f1": "help", "é": "accent"}))
+	got := k.ListKeys()
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("lines = %d:\n%s", len(lines), got)
+	}
+	// The action must start at the same DISPLAY CELL in every row, even when
+	// byte indices differ (non-ASCII keys are multi-byte).
+	a := uniseg.StringWidth(lines[0][:strings.Index(lines[0], "help")])
+	b := uniseg.StringWidth(lines[1][:strings.Index(lines[1], "accent")])
+	if a != b {
+		t.Fatalf("action cell columns misaligned for non-ASCII key: %d vs %d\n%s", a, b, got)
+	}
+}
+
+// TestKeymap_ChordOnPrefixAndEsc verifies chords bound to the prefix key
+// itself or to "esc" are reachable and win over the implicit cancel.
+func TestKeymap_ChordOnPrefixAndEsc(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(
+		WithPrefix("ctrl+a"),
+		WithChords(map[string]string{"ctrl+a": "repeat-prefix", "esc": "escape-chord"}),
+	)
+	k.HandleKey("ctrl+a")
+	if h, a, armed := k.HandleKey("ctrl+a"); !h || a != "repeat-prefix" || armed {
+		t.Fatalf("chord on prefix: handled=%v action=%q armed=%v", h, a, armed)
+	}
+	k.HandleKey("ctrl+a")
+	if h, a, armed := k.HandleKey("esc"); !h || a != "escape-chord" || armed {
+		t.Fatalf("chord on esc: handled=%v action=%q armed=%v", h, a, armed)
+	}
+}
+
+// TestKeymap_NormalizeKeyRuneStem verifies modifier-only lowercasing: a
+// single-rune stem (including non-ASCII) keeps its case, so "alt+A" and
+// "alt+a" stay distinct and "alt+é" is not lowercased.
+func TestKeymap_NormalizeKeyRuneStem(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(WithKeys(map[string]string{"alt+A": "upper", "alt+a": "lower", "alt+é": "e-acute"}))
+	if _, a, _ := k.HandleKey("ALT+A"); a != "upper" {
+		t.Fatalf("alt+A (uppercased modifier) = %q, want upper", a)
+	}
+	if _, a, _ := k.HandleKey("alt+a"); a != "lower" {
+		t.Fatalf("alt+a = %q, want lower", a)
+	}
+	if _, a, _ := k.HandleKey("alt+É"); a != "" {
+		t.Fatalf("alt+É should NOT match alt+é (case preserved): %q", a)
+	}
+	if _, a, _ := k.HandleKey("alt+é"); a != "e-acute" {
+		t.Fatalf("alt+é = %q, want e-acute", a)
+	}
+}
+
+// TestKeymap_BindEmptyRejected verifies Bind/BindChord with an empty key or
+// action are no-ops (an empty action would silently swallow the key).
+func TestKeymap_BindEmptyRejected(t *testing.T) {
+	t.Parallel()
+	k := NewKeymap()
+	k.Bind("", "action")
+	k.Bind("x", "")
+	k.BindChord("", "action")
+	k.BindChord("y", "")
+	if h, _, _ := k.HandleKey("x"); h {
+		t.Fatal("Bind with empty action should not bind")
+	}
+	k.HandleKey("ctrl+a") // no prefix set: passes through
+	k.SetPrefix("ctrl+a")
+	if h, _, _ := k.HandleKey("y"); h {
+		t.Fatal("BindChord with empty action should not bind")
+	}
+	// "ctrl+a" appears in the prefix row; the unbound keys x/y must not.
+	got := k.ListKeys()
+	for _, ln := range strings.Split(got, "\n") {
+		fields := strings.Fields(ln)
+		for _, f := range fields {
+			if f == "x" || f == "y" {
+				t.Fatalf("empty binding leaked into ListKeys:\n%s", got)
+			}
+		}
+	}
+}
+
 func TestKeymap_Concurrent(t *testing.T) {
 	t.Parallel()
 	k := NewKeymapWith(WithPrefix("ctrl+a"), WithChords(map[string]string{"c": "x"}))
 	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := 0; j < 200; j++ {
+			for range 200 {
 				k.HandleKey("ctrl+a")
 				k.HandleKey("c")
 				k.Bind("f1", "help")

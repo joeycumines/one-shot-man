@@ -371,8 +371,12 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 
 		_ = sessionObj.Set("writeStaged", func(data string) goja.Value {
 			return s.managerPromise(func() (any, error) {
-				if id := s.cachedActiveID(); id != 0 {
-					return nil, s.mgr.InputStaged(parent.SessionID(id), []byte(data))
+				// Resolve the active session on the manager worker (the same
+				// resolution handleInput uses), not from the JS-side cache,
+				// which can go stale across window/pane switches or respawns.
+				id := s.mgr.ActiveID()
+				if id != 0 {
+					return nil, s.mgr.InputStaged(id, []byte(data))
 				}
 				return nil, s.mgr.Input([]byte(data))
 			})

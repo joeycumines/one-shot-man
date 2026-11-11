@@ -191,7 +191,7 @@ func TestUpdate_PasteEmptyIsNoop(t *testing.T) {
 // paste larger than the old chunk size, delivered to a child that enabled
 // bracketed paste mode, must arrive as the delimiter-wrapped payload in
 // one atomic write, byte-exact.
-func TestUpdate_PasteBracketedChunked(t *testing.T) {
+func TestUpdate_PasteBracketedStaged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -226,6 +226,15 @@ func TestUpdate_PasteBracketedChunked(t *testing.T) {
 	if !bytes.Equal(got, []byte(want)) {
 		t.Fatalf("bracketed large paste arrived corrupted: got %d bytes, want %d",
 			len(got), len(want))
+	}
+	// Atomic delivery: the delimiter-wrapped payload must arrive as exactly
+	// ONE Write call carrying the full payload (the sponge contract).
+	sizes := session.WriteSizes()
+	if len(sizes) != 1 {
+		t.Fatalf("bracketed staged paste delivered in %d writes (%v), want exactly 1 atomic write", len(sizes), sizes)
+	}
+	if sizes[0] != len(want) {
+		t.Fatalf("staged write carried %d bytes, want %d (full bracketed payload)", sizes[0], len(want))
 	}
 }
 

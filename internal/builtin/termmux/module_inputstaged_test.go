@@ -54,6 +54,10 @@ func TestInputStaged_JSBinding(t *testing.T) {
 		t.Fatalf("inputStaged script: %v", err)
 	}
 
+	// Two writes total: the staged payload (one write) + the inputSession tail.
+	if len(rec.sent) != 2 {
+		t.Fatalf("recorded %d writes, want 2 (staged payload + tail)", len(rec.sent))
+	}
 	got := strings.Join(rec.sent, "")
 	if len(got) != 100000+4 {
 		t.Fatalf("recorded %d bytes, want 100004", len(got))

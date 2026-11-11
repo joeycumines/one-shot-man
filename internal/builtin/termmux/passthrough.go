@@ -364,21 +364,25 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		})
 
 		_ = sessionObj.Set("write", func(data string) goja.Value {
-			return s.managerPromise(func() (any, error) {
+			return s.managerPromiseOrdered(func() (any, error) {
 				return nil, s.mgr.Input([]byte(data))
 			})
 		})
 
 		_ = sessionObj.Set("writeStaged", func(data string) goja.Value {
-			return s.managerPromise(func() (any, error) {
-				// Resolve the active session on the manager worker (the same
-				// resolution handleInput uses), not from the JS-side cache,
-				// which can go stale across window/pane switches or respawns.
+			// Ordered so un-awaited write/writeStaged calls land in call
+			// order. The target is resolved on the manager worker (the same
+			// resolution handleInput uses), not from the JS-side cache, which
+			// can go stale across window/pane switches or respawns. With no
+			// active session this is an explicit error: the caller asked for
+			// staged semantics and silently degrading to a non-staged Input
+			// (or writing nowhere) would be wrong.
+			return s.managerPromiseOrdered(func() (any, error) {
 				id := s.mgr.ActiveID()
-				if id != 0 {
-					return nil, s.mgr.InputStaged(id, []byte(data))
+				if id == 0 {
+					return nil, parent.ErrSessionNotFound
 				}
-				return nil, s.mgr.Input([]byte(data))
+				return nil, s.mgr.InputStaged(id, []byte(data))
 			})
 		})
 

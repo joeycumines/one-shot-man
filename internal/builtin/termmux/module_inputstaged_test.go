@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -87,5 +88,91 @@ func TestInputStaged_Errors(t *testing.T) {
 	}
 	if err := awaitJSErr(t, runtime, `await tuiMux.inputStaged()`); err == nil {
 		t.Fatal("expected type error for missing arguments")
+	}
+}
+
+// TestInputStaged_UnAwaitedCallOrder verifies that un-awaited input calls
+// (inputStaged/inputSession/input/sendKeys issued back-to-back without await)
+// still reach the manager worker in JS call order — the mgrOrder chain
+// reserves its slot synchronously on the event-loop goroutine.
+func TestInputStaged_UnAwaitedCallOrder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() { mgr.Close(); <-errCh }()
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "order", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "sid", uint64(id))
+
+	// Fire several un-awaited input calls; each returns a promise we then
+	// await in order. Call order must be preserved regardless of goroutine
+	// scheduling.
+	_, err = awaitJSValue(t, runtime, `
+		var ps = [];
+		for (var i = 0; i < 20; i++) {
+			ps.push(tuiMux.inputStaged(sid, "S" + i + ";"));
+			ps.push(tuiMux.inputSession(sid, "I" + i + ";"));
+			ps.push(tuiMux.input("A" + i + ";"));
+		}
+		return Promise.all(ps).then(function() { return true; });
+	`)
+	if err != nil {
+		t.Fatalf("un-awaited ordering script: %v", err)
+	}
+
+	got := strings.Join(rec.sent, "")
+	want := ""
+	for i := 0; i < 20; i++ {
+		want += fmt.Sprintf("S%d;I%d;A%d;", i, i, i)
+	}
+	if got != want {
+		t.Fatalf("un-awaited call order violated:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestSessionWriteStaged_NoActiveSessionRejects verifies session().writeStaged
+// rejects (ErrSessionNotFound) instead of silently degrading to a non-staged
+// write when no session is active.
+func TestSessionWriteStaged_NoActiveSessionRejects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() { mgr.Close(); <-errCh }()
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+
+	// No session registered/activated: session().writeStaged must reject.
+	if err := awaitJSErr(t, runtime, `
+		var s = tuiMux.session();
+		await s.writeStaged("payload");
+	`); err == nil {
+		t.Fatal("writeStaged with no active session should reject, got resolution")
 	}
 }

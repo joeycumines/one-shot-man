@@ -91,7 +91,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error |
-| `writeStaged(data)` | `InteractiveSession.Write()` (single call) | `string` | `Promise<void>` | one contiguous `Write` (sponge) |
+| `writeStaged(data)` | `InteractiveSession.Write()` (single call) | `string` | `Promise<void>` | one contiguous `Write` (sponge) — on this wrapper `writeStaged` is functionally identical to `write` (the payload is already a fresh single buffer); it exists for API symmetry with the manager-side `writeStaged` |
 | `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | rejects on error |
 
 **Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
@@ -195,7 +195,7 @@ Production pr-split code should prefer pinned SessionID access: `capture(id)` /
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
 | `inputSession(id, data)` | `SessionManager.InputSession()` | `number, string` | `Promise<void>` | rejects on error (unknown session, invalid state) |
-| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE `Write` call (sponge) — use for pastes; the payload is handed over whole, not artificially chunked; rejects on short write (`ErrShortWrite`); ordered with other input via the same worker queue |
+| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE `Write` call (sponge) — use for pastes; the payload is handed over whole, not artificially chunked; rejects on short write (`ErrShortWrite`); call-order linearized with `input`/`inputSession`/`sendKeys` even when un-awaited |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 | `writeToChild(data)` | `SessionManager.Input()` | `string` | `Promise<number>` (bytes) | rejects on error; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
@@ -315,7 +315,7 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
-| `writeStaged(data)` | `SessionManager.InputStaged(activeID, data)` | `string` | `Promise<void>` | atomic single-`Write` delivery to the active session (sponge) |
+| `writeStaged(data)` | `SessionManager.InputStaged(ActiveID(), data)` | `string` | `Promise<void>` | atomic single-`Write` delivery to the active session (sponge); target resolved on the worker via `ActiveID()`; rejects with `ErrSessionNotFound` when no session is active (no silent non-staged fallback); ordered with `write` in call order |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---

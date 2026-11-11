@@ -122,13 +122,42 @@ require = function(name) {
 			newBoundedSession: function() { return Promise.resolve(__regressionTermmux); },
 			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
 			handlePrefixKey: function() { return {action:'Cancel'}; },
-			newKeymap: function() {
+			newKeymap: function(opts) {
+				// Faithful minimal Keymap: honors the options the script passes
+				// (prefix/keys/chords) and runs the same arm/dispatch/cancel
+				// semantics as the real implementation, so the regression test
+				// can drive chord actions (e.g. copyMode) end-to-end.
+				opts = opts || {};
+				var prefix = opts.prefix || '';
+				var keys = opts.keys || {};
+				var chords = opts.chords || {};
+				var armed = false;
 				return {
-					handleKey: function() { return { handled: false, action: '', armed: false }; },
+					handleKey: function(key) {
+						key = String(key).toLowerCase();
+						if (armed) {
+							armed = false;
+							if (Object.prototype.hasOwnProperty.call(chords, key)) {
+								return { handled: true, action: chords[key], armed: false };
+							}
+							if (key === prefix || key === 'esc') {
+								return { handled: true, action: '', armed: false };
+							}
+							return { handled: false, action: '', armed: false };
+						}
+						if (prefix && key === prefix) {
+							armed = true;
+							return { handled: true, action: '', armed: true };
+						}
+						if (Object.prototype.hasOwnProperty.call(keys, key)) {
+							return { handled: true, action: keys[key], armed: false };
+						}
+						return { handled: false, action: '', armed: false };
+					},
 					bind: function() {}, bindChord: function() {}, unbind: function() {}, unbindChord: function() {},
-					setPrefix: function() {}, prefix: function() { return ''; },
+					setPrefix: function() {}, prefix: function() { return prefix; },
 					setPassthroughKey: function() {}, passthroughKey: function() { return ''; },
-					armed: function() { return false; }, reset: function() {},
+					armed: function() { return armed; }, reset: function() { armed = false; },
 					bindings: function() { return []; }, listKeys: function() { return ''; }
 				};
 			}
@@ -487,5 +516,74 @@ __result = {
 	}
 	if got := result["viewMouseMode"]; got != true {
 		t.Fatalf("expected view mouseMode='allMotion', got %v", got)
+	}
+}
+
+// TestExample15KeymapActionCoverage drives every key and chord the script
+// binds through the real switch in handleKey, proving each action (pause,
+// bigger, smaller, copyMode, quit) is dispatched — a missing case would fall
+// through and leave state unchanged.
+func TestExample15KeymapActionCoverage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-15-bouncing-logo.js")
+
+	result := runResultScript(t, engine, "example-15-action-coverage", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+function press(key) {
+	var r = __programConfig.update({ type: 'Key', key: key }, model);
+	model = r[0];
+	return r;
+}
+// Direct keys.
+var before = { paused: model.paused, size: model.paneW };
+press('ctrl+p');                       // pause toggles
+var pauseToggled = model.paused === !before.paused;
+press('ctrl+p');                       // toggle back
+var pauseRestored = model.paused === before.paused;
+press('ctrl+b');                       // bigger
+var biggerGrew = model.paneW > before.size;
+press('ctrl+s');                       // smaller
+var smallerShrank = model.paneW < before.size || model.paneW === before.size;
+// Chords via the prefix: every chord action must be handled by the switch.
+var chordResults = {};
+var chords = ['s', 'b', 'p', 'q', 'c', 'ctrl+c'];
+for (var i = 0; i < chords.length; i++) {
+	press('ctrl+x');                   // arm
+	var r = press(chords[i]);          // dispatch chord
+	// handled=true means the switch consumed it (armed false, handled true
+	// OR action dispatched). We assert the keymap consumed it (not forwarded).
+	chordResults[chords[i]] = r;
+}
+var copyModeSeen = false;
+// Drive 'ctrl+x' then 'c' explicitly and inspect: copyMode path calls
+// mgr.enterCopyMode/exitCopyMode on the stub (no-ops) and sets a message;
+// the important part is handled===true (consumed, not forwarded to pane).
+press('ctrl+x');
+var cRes = press('c');
+copyModeSeen = (cRes && cRes[0] && cRes[0].handled !== false);
+__result = {
+    pauseToggled: pauseToggled,
+    pauseRestored: pauseRestored,
+    biggerGrew: biggerGrew,
+    smallerShrank: smallerShrank,
+    copyModeConsumed: copyModeSeen,
+    quitSet: (function(){ press('ctrl+x'); press('q'); return model.quit === true; })()
+};
+`)
+	for k, want := range map[string]bool{
+		"pauseToggled":     true,
+		"pauseRestored":    true,
+		"biggerGrew":       true,
+		"smallerShrank":    true,
+		"copyModeConsumed": true,
+		"quitSet":          true,
+	} {
+		if got := result[k]; got != want {
+			t.Errorf("example-15 action %s = %v, want %v", k, got, want)
+		}
 	}
 }

@@ -449,8 +449,23 @@ Two delivery granularities exist on the input path:
   split the payload — delivery is one `Write` carrying the whole buffer.
   Routed through the same worker queue, so ordering with regular input is
   preserved. `termpane.forwardPaste` uses this for bracketed-paste payloads.
-  Every input path treats a short write (`n < len` with nil error) as an
-  error (`ErrShortWrite`) instead of silently truncating the payload.
+
+Every input path that writes to a child PTY treats a short write (`n < len`
+with nil error) as an error wrapping `ErrShortWrite` (which aliases
+`io.ErrShortWrite`) instead of silently truncating the payload. This covers
+the manager input paths (`Input`/`InputSession`/`InputStaged`/`SendKeys`, all
+via `WriteFull` in `write.go`), the `osm:termmux` session bindings
+(`write`/`writeStaged`/`sendKeys`), `CaptureSession.WriteString`, and the
+passthrough stdin forwarder (`forward_stdin.go`). On `ErrShortWrite` inside a
+bracketed paste the caller should resend the whole payload —
+`termpane.forwardPaste` already rebuilds the full delimiter-wrapped payload,
+so a retry cannot leave the child stuck between `ESC[200~` and `ESC[201~`.
+
+A single staged `Write` runs on the manager worker, so a payload larger than
+the kernel PTY buffer blocks that worker until the child drains input (and
+blocks other requests with it). An echoing child needs a concurrent output
+drain — the same hazard any single large `write(2)` to a PTY has; the staged
+path removes artificial yield points rather than adding new ones.
 
 Key encoding (`input.go` `KeyToTermBytes`) maps BubbleTea key strings to
 xterm wire bytes: modified navigation/tilde keys use the CSI modifier

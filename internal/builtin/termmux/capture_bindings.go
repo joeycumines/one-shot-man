@@ -422,6 +422,10 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 	_ = obj.Set("sendKeys", func(keys ...string) goja.Value {
 		var buf strings.Builder
 		for _, key := range keys {
+			// Capture sessions have no live VTerm snapshot, so keys are
+			// encoded in normal cursor/keypad mode (appCursor=appKeypad=false).
+			// Manager-routed SendKeys (mgr.sendKeys) uses the child's snapshot
+			// instead when one is available.
 			seq, ok := parent.KeyToTermBytes(key, false, false)
 			if !ok {
 				panic(runtime.NewTypeError("sendKeys: unrecognized key " + key))

@@ -313,7 +313,9 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			panic(s.runtime.NewTypeError("writeToChild: data argument is required"))
 		}
 		data := []byte(call.Argument(0).String())
-		return s.managerPromise(func() (any, error) {
+		// Ordered so un-awaited writeToChild calls land in call order
+		// against input/inputStaged/write, same as session().write.
+		return s.managerPromiseOrdered(func() (any, error) {
 			return len(data), s.mgr.Input(data)
 		})
 	})
@@ -373,11 +375,17 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			// Ordered so un-awaited write/writeStaged calls land in call
 			// order. The target is resolved on the manager worker (the same
 			// resolution handleInput uses), not from the JS-side cache, which
-			// can go stale across window/pane switches or respawns. With no
+			// can go stale across window/pane switches or respawns. Note the
+			// ActiveID lookup and the InputStaged request are two separate
+			// worker round-trips, so the resolved id is not atomic with the
+			// write — the id-targeted write itself is unchanged. With no
 			// active session this is an explicit error: the caller asked for
 			// staged semantics and silently degrading to a non-staged Input
 			// (or writing nowhere) would be wrong.
 			return s.managerPromiseOrdered(func() (any, error) {
+				if !s.mgr.IsRunning() {
+					return nil, parent.ErrManagerNotRunning
+				}
 				id := s.mgr.ActiveID()
 				if id == 0 {
 					return nil, parent.ErrSessionNotFound

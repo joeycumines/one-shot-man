@@ -35,6 +35,19 @@ func (s *muxState) managerPromise(run func() (any, error)) goja.Value {
 	})
 }
 
+// orderChainFor returns the mux's manager-order chain, lazily initializing it
+// exactly once for zero-value muxState values constructed in tests (the
+// constructor seeds it directly). The sync.Once makes the lazy path safe
+// against concurrent first use; the seeded path never touches the Once.
+func (s *muxState) orderChainFor() *orderChain {
+	s.mgrOrderOnce.Do(func() {
+		if s.mgrOrder == nil {
+			s.mgrOrder = newOrderChain()
+		}
+	})
+	return s.mgrOrder
+}
+
 // managerPromiseOrdered is managerPromise with call-order linearization: the
 // order slot is reserved synchronously on the JS/event-loop goroutine (before
 // TrackPromise spawns the worker goroutine), so two un-awaited calls like
@@ -44,12 +57,7 @@ func (s *muxState) managerPromiseOrdered(run func() (any, error)) goja.Value {
 	if s.adapter == nil {
 		panic(s.runtime.NewTypeError("termmux: event loop adapter unavailable"))
 	}
-	chain := s.mgrOrder
-	if chain == nil {
-		chain = newOrderChain() // defensive: zero-value muxState in tests
-		s.mgrOrder = chain
-	}
-	return trackOrdered(s.ctx, s.adapter, s.runtime, chain, run)
+	return trackOrdered(s.ctx, s.adapter, s.runtime, s.orderChainFor(), run)
 }
 
 // copyModeSearchAdapter lets a JS function satisfy parent.ScreenSearcher.

@@ -8,8 +8,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	goja "github.com/joeycumines/goja"
+
+	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
 
 // buildStdinToFileProgram builds a cross-platform binary that appends every
@@ -166,4 +171,104 @@ func pad2(v int) string {
 		return "0" + itoa(v)
 	}
 	return itoa(v)
+}
+
+// TestWriteToChild_OrderingAgainstInput verifies that un-awaited
+// writeToChild calls interleaved with input/inputStaged reach the child in
+// JS call order (writeToChild now routes through managerPromiseOrdered, the
+// same mgrOrder chain as the other manager input calls).
+func TestWriteToChild_OrderingAgainstInput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() { mgr.Close(); <-errCh }()
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "order-mix", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "sid", uint64(id))
+
+	_, err = awaitJSValue(t, runtime, `
+		var ps = [];
+		for (var i = 0; i < 15; i++) {
+			ps.push(tuiMux.writeToChild("W" + i + ";"));
+			ps.push(tuiMux.input("A" + i + ";"));
+			ps.push(tuiMux.inputStaged(sid, "S" + i + ";"));
+		}
+		return Promise.all(ps).then(function() { return true; });
+	`)
+	if err != nil {
+		t.Fatalf("mixed ordering script: %v", err)
+	}
+
+	got := strings.Join(rec.sent, "")
+	want := ""
+	for i := 0; i < 15; i++ {
+		want += fmt.Sprintf("W%d;A%d;S%d;", i, i, i)
+	}
+	if got != want {
+		t.Fatalf("mixed call order violated:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestSessionWriteStaged_ManagerNotRunningRejects verifies session().writeStaged
+// rejects with ErrManagerNotRunning (rather than hanging or degrading) when
+// the SessionManager worker has stopped.
+func TestSessionWriteStaged_ManagerNotRunningRejects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "staged-stop", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := mgr.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+
+	// Stop the manager; writeStaged must now reject with ErrManagerNotRunning.
+	mgr.Close()
+	<-errCh
+
+	err = awaitJSErr(t, runtime, `
+		var s = tuiMux.session();
+		await s.writeStaged("payload");
+	`)
+	if err == nil {
+		t.Fatal("writeStaged on a stopped manager should reject, got resolution")
+	}
+	if !strings.Contains(err.Error(), parent.ErrManagerNotRunning.Error()) {
+		t.Fatalf("writeStaged rejection = %q, want it to wrap %q", err.Error(), parent.ErrManagerNotRunning)
+	}
 }

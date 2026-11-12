@@ -1300,6 +1300,11 @@ type SessionManager struct {
 	readerCtx    context.Context
 	readerCancel context.CancelFunc
 
+	// running reports whether the worker goroutine is active (set true
+	// when Run starts processing, false when Run returns). Read via
+	// IsRunning; safe from any goroutine.
+	running atomic.Bool
+
 	// --- Fields below are owned exclusively by the worker goroutine. ---
 	// They are listed here for documentation but MUST NOT be accessed
 	// outside the worker's select loop.
@@ -1448,6 +1453,8 @@ var ErrInvalidTransition = errors.New("termmux: invalid state transition")
 func (m *SessionManager) Run(ctx context.Context) error {
 	defer close(m.done)
 	defer m.eventBus.Close()
+	defer m.running.Store(false)
+	m.running.Store(true)
 
 	m.reqMu.Lock()
 	if m.closed {
@@ -1514,6 +1521,14 @@ func (m *SessionManager) Close() {
 //	mgr.Register(...)
 func (m *SessionManager) Started() <-chan struct{} {
 	return m.started
+}
+
+// IsRunning reports whether the worker goroutine is currently active — true
+// after Run has started processing and false once Run has returned (via
+// Close or context cancellation). It lets callers distinguish a stopped
+// manager from other error conditions without issuing a request.
+func (m *SessionManager) IsRunning() bool {
+	return m.running.Load()
 }
 
 // Done returns a channel that is closed when Run returns and all manager
@@ -2723,17 +2738,20 @@ func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
 		return response{err: fmt.Errorf("termmux: cannot send keys to locked session %d", p.id)}
 	}
 
-	// Encode with the child's own application-cursor mode so modified
-	// navigation keys land as CSI 1;mod letter exactly as they would from
-	// a physical keyboard (encodeModNav ignores appCursor, but the
-	// unmodified nav/home/end branch does not).
+	// Encode with the child's own application-cursor AND application-keypad
+	// modes from the latest published snapshot, so keypad keys and nav keys
+	// land exactly as they would from a physical keyboard (encodeModNav
+	// ignores appCursor, but the unmodified nav/home/end branch and the
+	// keypad branch do not).
 	appCursor := false
+	appKeypad := false
 	if snap := ms.snapshot.Load(); snap != nil {
 		appCursor = snap.ApplicationCursor
+		appKeypad = snap.KeypadApplication
 	}
 	var buf strings.Builder
 	for _, key := range p.keys {
-		seq, ok := KeyToTermBytes(key, appCursor, false)
+		seq, ok := KeyToTermBytes(key, appCursor, appKeypad)
 		if !ok {
 			return response{err: fmt.Errorf("termmux: unrecognized key %q", key)}
 		}

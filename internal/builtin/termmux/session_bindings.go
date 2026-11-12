@@ -344,6 +344,9 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		if len(call.Arguments) < 1 {
 			panic(s.runtime.NewTypeError("input requires 1 argument (data)"))
 		}
+		if goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(s.runtime.NewTypeError("input: data must not be null or undefined"))
+		}
 		data := []byte(call.Argument(0).String())
 		return s.managerPromiseOrdered(func() (any, error) {
 			return nil, s.mgr.Input(data)
@@ -353,6 +356,9 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("inputSession", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(s.runtime.NewTypeError("inputSession requires at least 2 arguments (sessionID, data)"))
+		}
+		if goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
+			panic(s.runtime.NewTypeError("inputSession: data must not be null or undefined"))
 		}
 		id := parent.SessionID(call.Argument(0).ToInteger())
 		data := []byte(call.Argument(1).String())
@@ -364,6 +370,9 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 	_ = obj.Set("inputStaged", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(s.runtime.NewTypeError("inputStaged requires at least 2 arguments (sessionID, data)"))
+		}
+		if goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
+			panic(s.runtime.NewTypeError("inputStaged: data must not be null or undefined"))
 		}
 		id := parent.SessionID(call.Argument(0).ToInteger())
 		data := []byte(call.Argument(1).String())

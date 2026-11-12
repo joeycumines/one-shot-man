@@ -176,3 +176,46 @@ func TestSessionWriteStaged_NoActiveSessionRejects(t *testing.T) {
 		t.Fatal("writeStaged with no active session should reject, got resolution")
 	}
 }
+
+// TestInputStaged_NullDataRejects verifies input/inputSession/inputStaged all
+// reject a null or undefined data argument with a TypeError (thrown
+// synchronously) instead of coercing it to the literal "null".
+func TestInputStaged_NullDataRejects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx := t.Context()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	defer func() { mgr.Close(); <-errCh }()
+
+	runtime := goja.New()
+	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
+	setOnLoop(t, runtime, "tuiMux", tuiMux)
+	setOnLoop(t, runtime, "sid", uint64(1))
+
+	v, err := sessionRun(t, runtime, `(function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		var out = [];
+		out.push(expectTypeError(function(){ tuiMux.input(null); }));
+		out.push(expectTypeError(function(){ tuiMux.input(undefined); }));
+		out.push(expectTypeError(function(){ tuiMux.input(); }));
+		out.push(expectTypeError(function(){ tuiMux.inputSession(sid, null); }));
+		out.push(expectTypeError(function(){ tuiMux.inputSession(sid); }));
+		out.push(expectTypeError(function(){ tuiMux.inputStaged(sid, undefined); }));
+		out.push(expectTypeError(function(){ tuiMux.inputStaged(sid); }));
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("null-data script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("null/undefined data must throw TypeError on input/inputSession/inputStaged")
+	}
+}

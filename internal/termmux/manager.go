@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -1696,7 +1697,7 @@ func (m *SessionManager) InputSession(id SessionID, data []byte) error {
 // The payload is copied defensively at request time so the caller may reuse
 // or mutate its buffer immediately after the call returns.
 func (m *SessionManager) InputStaged(id SessionID, data []byte) error {
-	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: append([]byte(nil), data...)}).err
+	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: bytes.Clone(data)}).err
 }
 
 // SendKeys converts named keys to terminal bytes and writes them to the

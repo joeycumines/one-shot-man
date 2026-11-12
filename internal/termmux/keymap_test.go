@@ -274,6 +274,85 @@ func TestKeymap_NormalizeKeyRuneStem(t *testing.T) {
 	}
 }
 
+// TestKeymap_NormalizeKeyCtrlStem verifies that a single-rune ASCII letter stem
+// under a ctrl modifier is lowercased (ctrl+A and ctrl+a both encode to 0x01
+// on the wire, so they must be the same binding), while bare printables and
+// alt-modified letters keep their case.
+func TestKeymap_NormalizeKeyCtrlStem(t *testing.T) {
+	t.Parallel()
+	if got := normalizeKey("Ctrl+Q"); got != "ctrl+q" {
+		t.Errorf("normalizeKey(Ctrl+Q) = %q, want ctrl+q", got)
+	}
+	if got := normalizeKey("ctrl+alt+A"); got != "ctrl+alt+a" {
+		t.Errorf("normalizeKey(ctrl+alt+A) = %q, want ctrl+alt+a", got)
+	}
+	if got := normalizeKey("A"); got != "A" {
+		t.Errorf("normalizeKey(A) = %q, want A (bare stem keeps case)", got)
+	}
+	if got := normalizeKey("alt+A"); got != "alt+A" {
+		t.Errorf("normalizeKey(alt+A) = %q, want alt+A (alt+letter is case-sensitive)", got)
+	}
+	k := NewKeymapWith(WithKeys(map[string]string{"ctrl+q": "quit"}))
+	if h, a, _ := k.HandleKey("Ctrl+Q"); !h || a != "quit" {
+		t.Fatalf("HandleKey(Ctrl+Q) = (%v, %q), want (true, quit)", h, a)
+	}
+}
+
+// TestKeymap_WithKeysEmptyKeyRejected verifies WithKeys/WithChords skip empty
+// keys exactly like Bind/BindChord (a {"": "action"} entry must not land).
+func TestKeymap_WithKeysEmptyKeyRejected(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(
+		WithPrefix("ctrl+a"),
+		WithKeys(map[string]string{"": "ghost", "f1": "help"}),
+		WithChords(map[string]string{"": "ghost-chord", "c": "new-window"}),
+	)
+	bs := k.Bindings()
+	for _, b := range bs {
+		if b.Key == "" {
+			t.Fatalf("empty-key binding recorded: %+v (all: %+v)", b, bs)
+		}
+	}
+	if len(bs) != 2 {
+		t.Fatalf("Bindings() = %+v, want f1 + chord c only", bs)
+	}
+}
+
+// TestKeymap_Bindings verifies Bindings() ordering (direct keys first, then
+// chords, each sorted by key), the Chord flag, and that chords are omitted
+// entirely when no prefix is set (they can never fire — same rule as
+// ListKeys).
+func TestKeymap_Bindings(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(
+		WithPrefix("ctrl+a"),
+		WithKeys(map[string]string{"f1": "help", "a": "alpha"}),
+		WithChords(map[string]string{"x": "close", "c": "new-window"}),
+	)
+	bs := k.Bindings()
+	want := []KeyBinding{
+		{Key: "a", Action: "alpha"},
+		{Key: "f1", Action: "help"},
+		{Key: "c", Action: "new-window", Chord: true},
+		{Key: "x", Action: "close", Chord: true},
+	}
+	if len(bs) != len(want) {
+		t.Fatalf("Bindings() = %+v, want %+v", bs, want)
+	}
+	for i := range want {
+		if bs[i] != want[i] {
+			t.Fatalf("Bindings()[%d] = %+v, want %+v", i, bs[i], want[i])
+		}
+	}
+
+	// No prefix: chords are dead entries and omitted.
+	k2 := NewKeymapWith(WithKeys(map[string]string{"f1": "help"}), WithChords(map[string]string{"c": "x"}))
+	bs2 := k2.Bindings()
+	if len(bs2) != 1 || bs2[0].Key != "f1" || bs2[0].Chord {
+		t.Fatalf("Bindings() without prefix = %+v, want only f1", bs2)
+	}
+}
+
 // TestKeymap_BindEmptyRejected verifies Bind/BindChord with an empty key or
 // action are no-ops (an empty action would silently swallow the key).
 func TestKeymap_BindEmptyRejected(t *testing.T) {

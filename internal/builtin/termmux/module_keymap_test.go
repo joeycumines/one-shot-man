@@ -317,3 +317,83 @@ func TestNewKeymap_HandleKeyNullRejects(t *testing.T) {
 		t.Fatalf("handleKey(null) = %q, want TypeError", v.String())
 	}
 }
+
+// TestKeymapObject_NullArgHandling verifies the mutator contract:
+// setPrefix/setPassthroughKey treat null/undefined as "" (disable), bind and
+// bindChord skip a null/undefined action, and bind/unbind/bindChord/unbindChord
+// reject a null/undefined KEY with a TypeError instead of coercing to "null".
+func TestKeymapObject_NullArgHandling(t *testing.T) {
+	t.Parallel()
+
+	runtime, exports := testRequire(t)
+	setOnLoop(t, runtime, "tm", exports)
+
+	v, err := sessionRun(t, runtime, `(function(){
+		var km = tm.newKeymap({ keys: { "f1": "help" } });
+		var out = [];
+		// null/undefined action on bind/bindChord: no-op, existing binding kept.
+		km.bind("f1", null);
+		out.push(km.handleKey("f1").action === "help");
+		km.bind("f2", undefined);
+		out.push(km.handleKey("f2").handled === false);
+		km.bindChord("c", null);
+		km.setPrefix("ctrl+a");
+		km.handleKey("ctrl+a");
+		out.push(km.handleKey("c").handled === false);
+		// setPrefix(null) disables the prefix (clears it).
+		km.setPrefix(null);
+		out.push(km.prefix() === "");
+		km.setPrefix("ctrl+a");
+		km.setPassthroughKey(undefined);
+		out.push(km.passthroughKey() === "");
+		km.setPassthroughKey(null);
+		out.push(km.passthroughKey() === "");
+		// null/undefined KEY must throw TypeError.
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		out.push(expectTypeError(function(){ km.bind(null, "x"); }));
+		out.push(expectTypeError(function(){ km.bind(undefined, "x"); }));
+		out.push(expectTypeError(function(){ km.bindChord(null, "x"); }));
+		out.push(expectTypeError(function(){ km.unbind(null); }));
+		out.push(expectTypeError(function(){ km.unbindChord(undefined); }));
+		// missing key arg also TypeError.
+		out.push(expectTypeError(function(){ km.bind(); }));
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("null-arg script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("keymap null/undefined argument handling incorrect")
+	}
+}
+
+// TestNewKeymap_NonStringActionRejects verifies a non-string, non-null action
+// value in keys/chords (e.g. a number or object) panics with a TypeError
+// rather than being coerced to a string.
+func TestNewKeymap_NonStringActionRejects(t *testing.T) {
+	t.Parallel()
+
+	runtime, exports := testRequire(t)
+	setOnLoop(t, runtime, "tm", exports)
+
+	v, err := sessionRun(t, runtime, `(function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		var out = [];
+		out.push(expectTypeError(function(){ tm.newKeymap({ keys: { "f1": 0 } }); }));
+		out.push(expectTypeError(function(){ tm.newKeymap({ keys: { "f1": {} } }); }));
+		out.push(expectTypeError(function(){ tm.newKeymap({ chords: { "c": true } }); }));
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("non-string action script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("non-string action values should throw TypeError")
+	}
+}

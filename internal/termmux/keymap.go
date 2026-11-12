@@ -88,12 +88,13 @@ func WithPassthroughKey(key string) KeymapOption {
 	return func(k *Keymap) { k.passthroughKey = normalizeKey(key) }
 }
 
-// WithKeys seeds the direct key→action table. Empty actions are rejected so
-// a binding can never silently swallow a key without dispatching.
+// WithKeys seeds the direct key→action table. Empty keys and empty actions
+// are rejected so a binding can never silently swallow a key without
+// dispatching (matching Bind).
 func WithKeys(keys map[string]string) KeymapOption {
 	return func(k *Keymap) {
 		for key, action := range keys {
-			if action == "" {
+			if key == "" || action == "" {
 				continue
 			}
 			k.keys[normalizeKey(key)] = action
@@ -101,12 +102,12 @@ func WithKeys(keys map[string]string) KeymapOption {
 	}
 }
 
-// WithChords seeds the prefix chord table. Empty actions are rejected so a
-// chord can never silently swallow a key without dispatching.
+// WithChords seeds the prefix chord table. Empty keys and empty actions are
+// rejected (matching BindChord).
 func WithChords(chords map[string]string) KeymapOption {
 	return func(k *Keymap) {
 		for key, action := range chords {
-			if action == "" {
+			if key == "" || action == "" {
 				continue
 			}
 			k.chords[normalizeKey(key)] = action
@@ -124,24 +125,38 @@ func NewKeymapWith(opts ...KeymapOption) *Keymap {
 }
 
 // normalizeKey normalizes a key name for lookup. Modifier tokens (every
-// "+"-separated part except the last) are always lowercased, so "Ctrl+A" and
-// "ctrl+a" are the same binding. The final stem is lowercased only when it is
+// "+"-separated part except the last) are always lowercased, so "Ctrl+F1" and
+// "ctrl+f1" are the same binding. The final stem is lowercased only when it is
 // a multi-rune key NAME ("F1" -> "f1", "Enter" -> "enter"); a single-rune
 // stem is a literal character and keeps its case, so "A" and "a" stay
 // distinct and single non-ASCII runes are preserved (rune count, not byte
-// length). Key names produced by BubbleTea are already lowercase, so this
-// only affects hand-written bindings.
+// length). Exception: a single-rune ASCII letter stem under a ctrl modifier
+// is lowercased, because ctrl+A and ctrl+a encode to the same control byte
+// (0x01) on the wire and can never be distinguished by the child. Key names
+// produced by BubbleTea are already lowercase, so this only affects
+// hand-written bindings.
 func normalizeKey(key string) string {
 	if key == "" {
 		return ""
 	}
 	parts := strings.Split(key, "+")
 	last := len(parts) - 1
-	if utf8.RuneCountInString(parts[last]) != 1 {
-		parts[last] = strings.ToLower(parts[last])
-	}
+	stem := parts[last]
+	hasCtrl := false
 	for i := 0; i < last; i++ {
+		if strings.EqualFold(parts[i], "ctrl") {
+			hasCtrl = true
+		}
 		parts[i] = strings.ToLower(parts[i])
+	}
+	if utf8.RuneCountInString(stem) != 1 {
+		parts[last] = strings.ToLower(stem)
+	} else if hasCtrl {
+		// ctrl+<letter> is case-insensitive on the wire (both encode to
+		// 0x01..0x1A), so lowercase a single-rune letter stem under ctrl.
+		if c := stem[0]; (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			parts[last] = strings.ToLower(stem)
+		}
 	}
 	return strings.Join(parts, "+")
 }
@@ -267,16 +282,25 @@ func (k *Keymap) Reset() {
 	k.armed = false
 }
 
-// Bindings returns all bindings (direct and chord), sorted by key.
+// Bindings returns all bindings sorted by key, direct keys first then chords.
+// Chord entries are only reachable when a prefix is set, so they are omitted
+// when prefix is "" (matching ListKeys) — otherwise a UI consuming this would
+// show dead chords.
 func (k *Keymap) Bindings() []KeyBinding {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	out := make([]KeyBinding, 0, len(k.keys)+len(k.chords))
+	chordCap := 0
+	if k.prefix != "" {
+		chordCap = len(k.chords)
+	}
+	out := make([]KeyBinding, 0, len(k.keys)+chordCap)
 	for key, action := range k.keys {
 		out = append(out, KeyBinding{Key: key, Action: action})
 	}
-	for key, action := range k.chords {
-		out = append(out, KeyBinding{Key: key, Action: action, Chord: true})
+	if k.prefix != "" {
+		for key, action := range k.chords {
+			out = append(out, KeyBinding{Key: key, Action: action, Chord: true})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Chord != out[j].Chord {
@@ -344,10 +368,8 @@ func (k *Keymap) ListKeys() string {
 	}
 	for _, r := range rows {
 		b.WriteString(r.key)
+		// width is the max key-cell-width across all rows, so pad >= 2 always.
 		pad := width - uniseg.StringWidth(r.key) + 2
-		if pad < 1 {
-			pad = 1
-		}
 		b.WriteString(strings.Repeat(" ", pad))
 		b.WriteString(r.action)
 		b.WriteByte('\n')

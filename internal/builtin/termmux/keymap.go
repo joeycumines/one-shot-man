@@ -37,13 +37,60 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 		return result
 	})
 
-	_ = obj.Set("bind", func(key, action string) { km.Bind(key, action) })
-	_ = obj.Set("bindChord", func(key, action string) { km.BindChord(key, action) })
-	_ = obj.Set("unbind", func(key string) { km.Unbind(key) })
-	_ = obj.Set("unbindChord", func(key string) { km.UnbindChord(key) })
-	_ = obj.Set("setPrefix", func(prefix string) { km.SetPrefix(prefix) })
+	// stringArg returns the string value of call.Arguments[i], treating
+	// null/undefined as "" (used by setPrefix/setPassthroughKey where null
+	// means "disable").
+	stringArg := func(call goja.FunctionCall, i int) string {
+		if len(call.Arguments) <= i {
+			return ""
+		}
+		v := call.Argument(i)
+		if goja.IsUndefined(v) || goja.IsNull(v) {
+			return ""
+		}
+		return v.String()
+	}
+	// requiredStringArg panics with a TypeError on null/undefined (used for
+	// key arguments, where coercing to the literal "null" would be a bug).
+	requiredStringArg := func(call goja.FunctionCall, i int, name string) string {
+		if len(call.Arguments) <= i || goja.IsUndefined(call.Argument(i)) || goja.IsNull(call.Argument(i)) {
+			panic(runtime.NewTypeError(name + ": argument must not be null or undefined"))
+		}
+		return call.Argument(i).String()
+	}
+
+	_ = obj.Set("bind", func(call goja.FunctionCall) goja.Value {
+		key := requiredStringArg(call, 0, "bind: key")
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			km.Bind(key, call.Argument(1).String())
+		}
+		// null/undefined action: no-op (skip), consistent with newKeymapFactory.
+		return goja.Undefined()
+	})
+	_ = obj.Set("bindChord", func(call goja.FunctionCall) goja.Value {
+		key := requiredStringArg(call, 0, "bindChord: key")
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			km.BindChord(key, call.Argument(1).String())
+		}
+		return goja.Undefined()
+	})
+	_ = obj.Set("unbind", func(call goja.FunctionCall) goja.Value {
+		km.Unbind(requiredStringArg(call, 0, "unbind: key"))
+		return goja.Undefined()
+	})
+	_ = obj.Set("unbindChord", func(call goja.FunctionCall) goja.Value {
+		km.UnbindChord(requiredStringArg(call, 0, "unbindChord: key"))
+		return goja.Undefined()
+	})
+	_ = obj.Set("setPrefix", func(call goja.FunctionCall) goja.Value {
+		km.SetPrefix(stringArg(call, 0))
+		return goja.Undefined()
+	})
 	_ = obj.Set("prefix", func() string { return km.Prefix() })
-	_ = obj.Set("setPassthroughKey", func(key string) { km.SetPassthroughKey(key) })
+	_ = obj.Set("setPassthroughKey", func(call goja.FunctionCall) goja.Value {
+		km.SetPassthroughKey(stringArg(call, 0))
+		return goja.Undefined()
+	})
 	_ = obj.Set("passthroughKey", func() string { return km.PassthroughKey() })
 	_ = obj.Set("armed", func() bool { return km.Armed() })
 	_ = obj.Set("reset", func() { km.Reset() })
@@ -91,6 +138,9 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 				if goja.IsUndefined(val) || goja.IsNull(val) {
 					continue // skip null/undefined action values
 				}
+				if _, isStr := val.Export().(string); !isStr {
+					panic(runtime.NewTypeError("newKeymap: keys." + k + " action must be a string"))
+				}
 				m[k] = val.String()
 			}
 			opts = append(opts, parent.WithKeys(m))
@@ -102,6 +152,9 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 				val := obj.Get(k)
 				if goja.IsUndefined(val) || goja.IsNull(val) {
 					continue // skip null/undefined action values
+				}
+				if _, isStr := val.Export().(string); !isStr {
+					panic(runtime.NewTypeError("newKeymap: chords." + k + " action must be a string"))
 				}
 				m[k] = val.String()
 			}

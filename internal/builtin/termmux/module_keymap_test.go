@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 )
@@ -241,13 +242,27 @@ func TestKeymapOverlay_NewModelErrorObjectRejects(t *testing.T) {
 	`); err == nil {
 		t.Fatal("expected keymapOverlay to REJECT when tea.newModel returns an error object, got resolution")
 	}
-	// And with the real tea module but an intentionally broken config path is
-	// unreachable here; instead verify the real newModel error-object path via
-	// a config missing 'update' through the genuine module.
-	btMgr := bubbletea.NewManager(context.Background(), nil, nil, &bubbletea.SyncJSRunner{Runtime: runtime}, nil, nil)
-	teaModuleObj := runtime.NewObject()
-	bubbletea.Require(context.Background(), btMgr)(runtime, teaModuleObj)
-	setOnLoop(t, runtime, "tea", teaModuleObj.Get("exports"))
+	// And with the real tea module: verify the real newModel error-object
+	// path by monkey-patching newModel to delegate to the real one with a
+	// broken config (no update fn → {error, errorCode} object). The real
+	// module's Require must run ON the event loop (the runtime is live), so
+	// route it through setOnLoop's submit barrier.
+	done := make(chan struct{})
+	loop := loopForRuntime(t, runtime)
+	if err := loop.Submit(func() {
+		defer close(done)
+		btMgr := bubbletea.NewManager(context.Background(), nil, nil, &bubbletea.SyncJSRunner{Runtime: runtime}, nil, nil)
+		teaModuleObj := runtime.NewObject()
+		bubbletea.Require(context.Background(), btMgr)(runtime, teaModuleObj)
+		_ = runtime.Set("tea", teaModuleObj.Get("exports"))
+	}); err != nil {
+		t.Fatalf("submit tea module setup: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out setting up real tea module on loop")
+	}
 	if err := awaitJSErr(t, runtime, `
 		// Real tea.newModel returns an error object for a config without
 		// update — but keymapOverlay always supplies one, so instead assert

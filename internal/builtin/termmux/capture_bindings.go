@@ -404,19 +404,18 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 
 	_ = obj.Set("write", func(data string) goja.Value {
 		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
-			_, err := session.Write([]byte(data))
-			return nil, err
+			return nil, parent.WriteFull(session, []byte(data))
 		})
 	})
 
 	// writeStaged delivers the whole payload as one contiguous Write call on
 	// the underlying session (the sponge path) — useful for pastes. It is a
-	// single Write of the full payload (no intermediate copy), matching the
-	// behavior of write.
+	// single Write of the full payload; the JS string→bytes conversion is
+	// the only copy here, and a short write is reported as an error wrapping
+	// parent.ErrShortWrite (never silently truncated).
 	_ = obj.Set("writeStaged", func(data string) goja.Value {
 		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
-			_, err := session.Write([]byte(data))
-			return nil, err
+			return nil, parent.WriteFull(session, []byte(data))
 		})
 	})
 
@@ -430,8 +429,7 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 			buf.WriteString(seq)
 		}
 		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
-			_, err := session.Write([]byte(buf.String()))
-			return nil, err
+			return nil, parent.WriteFull(session, []byte(buf.String()))
 		})
 	})
 

@@ -69,6 +69,36 @@ func TestForwardStdin_WriteError(t *testing.T) {
 	}
 }
 
+// TestForwardStdin_ShortWriteError uses shortWriteWriter (write_test.go) to
+// force n < len(p) with a nil error — the shape a PTY write can produce when
+// the kernel buffer is full. forwardStdin must treat it as ExitError wrapping
+// ErrShortWrite, never silently truncate child input.
+func TestForwardStdin_ShortWriteError(t *testing.T) {
+	stdin := strings.NewReader("data")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resultCh := make(chan forwardResult, 1)
+	go forwardStdin(ctx, resultCh, forwardConfig{
+		Stdin:     stdin,
+		Writer:    &shortWriteWriter{n: 2},
+		ToggleKey: 0x1d,
+	})
+
+	select {
+	case r := <-resultCh:
+		if r.reason != ExitError {
+			t.Errorf("reason: got %v, want ExitError", r.reason)
+		}
+		if !errors.Is(r.err, ErrShortWrite) {
+			t.Errorf("err: got %v, want ErrShortWrite wrap", r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for short-write error")
+	}
+}
+
 func TestForwardStdin_ContextCancel(t *testing.T) {
 	// stdin that blocks until done is closed, and signals when the read is
 	// actually in flight so the test never depends on a sleep.

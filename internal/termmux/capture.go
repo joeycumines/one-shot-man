@@ -730,9 +730,10 @@ func (cs *CaptureSession) Write(data []byte) (int, error) {
 }
 
 // WriteString sends string data to the child process's stdin via the PTY.
+// A short write (n < len with nil error) is reported as an error wrapping
+// ErrShortWrite, never silently truncated.
 func (cs *CaptureSession) WriteString(data string) error {
-	_, err := cs.Write([]byte(data))
-	return err
+	return WriteFull(cs, []byte(data))
 }
 
 // SendEOF sends EOF (Ctrl-D) to the child process via the PTY.

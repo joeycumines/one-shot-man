@@ -455,7 +455,7 @@ func (s *ScreenSnapshot) WriteCapture(w io.Writer, kind CaptureKind) error {
 		return err
 	}
 	if n != len(text) {
-		return fmt.Errorf("%w: wrote %d of %d bytes", io.ErrShortWrite, n, len(text))
+		return fmt.Errorf("%w: wrote %d of %d bytes", ErrShortWrite, n, len(text))
 	}
 	return nil
 }
@@ -1440,11 +1440,6 @@ var ErrSessionNotFound = errors.New("termmux: session not found")
 // ErrInvalidTransition is returned when a session state transition is
 // not permitted by the lifecycle model.
 var ErrInvalidTransition = errors.New("termmux: invalid state transition")
-
-// ErrShortWrite is returned when a session Write reports success but wrote
-// fewer bytes than requested, which would silently truncate input delivered
-// to the child (possible on PTYs when the kernel buffer is full).
-var ErrShortWrite = errors.New("termmux: short write")
 
 // Run starts the SessionManager worker goroutine and blocks until ctx is
 // cancelled or Close is called. All request processing and state mutations
@@ -2650,7 +2645,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 				}
 				continue
 			}
-			if err := writeFull(ms.session, data); err != nil && firstErr == nil {
+			if err := WriteFull(ms.session, data); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
@@ -2669,7 +2664,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(data, ms, activeSession)
 	}
-	return response{err: writeFull(ms.session, data)}
+	return response{err: WriteFull(ms.session, data)}
 }
 
 // handleInputSession writes data to a specific session with a single
@@ -2712,21 +2707,7 @@ func (m *SessionManager) handleInputToSession(id SessionID, data []byte) respons
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(data, ms, id)
 	}
-	return response{err: writeFull(ms.session, data)}
-}
-
-// writeFull writes data to w and reports an error on a short write (n < len
-// with nil error), which PTY writes can produce when the kernel buffer is
-// full. A silent short write would truncate input delivered to the child.
-func writeFull(w interface{ Write([]byte) (int, error) }, data []byte) error {
-	n, err := w.Write(data)
-	if err != nil {
-		return err
-	}
-	if n != len(data) {
-		return fmt.Errorf("%w: wrote %d of %d bytes", ErrShortWrite, n, len(data))
-	}
-	return nil
+	return response{err: WriteFull(ms.session, data)}
 }
 
 func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
@@ -2758,7 +2739,7 @@ func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
 		buf.WriteString(seq)
 	}
 
-	return response{err: writeFull(ms.session, []byte(buf.String()))}
+	return response{err: WriteFull(ms.session, []byte(buf.String()))}
 }
 
 func (m *SessionManager) handleResetActivity(id SessionID) response {

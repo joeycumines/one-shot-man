@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1912,6 +1913,7 @@ type mockInteractiveSession struct {
 	writes                        []string
 	resizes                       [][2]int
 	writeErr, resizeErr, closeErr error
+	shortWrite                    int // if > 0, Write reports only this many bytes written (nil error)
 }
 
 func (m *mockInteractiveSession) Write(p []byte) (int, error) {
@@ -1919,6 +1921,9 @@ func (m *mockInteractiveSession) Write(p []byte) (int, error) {
 		return 0, m.writeErr
 	}
 	m.writes = append(m.writes, string(p))
+	if m.shortWrite > 0 {
+		return m.shortWrite, nil
+	}
 	return len(p), nil
 }
 
@@ -2022,6 +2027,33 @@ func TestWrapInteractiveSession_WriteError(t *testing.T) {
 	_, err := awaitJSValue(t, runtime, `return await s.write("x")`)
 	if err == nil {
 		t.Error("expected error from write failure")
+	}
+}
+
+// TestWrapInteractiveSession_ShortWriteRejects verifies that write,
+// writeStaged, and sendKeys all reject when the underlying session reports a
+// short write (n < len with nil error) — a silent short write would truncate
+// input delivered to the child, so it must surface as an ErrShortWrite error.
+func TestWrapInteractiveSession_ShortWriteRejects(t *testing.T) {
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
+	sess := &mockInteractiveSession{done: make(chan struct{}), shortWrite: 2}
+	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	setOnLoop(t, runtime, "s", wrapped)
+
+	for _, call := range []string{
+		`await s.write("hello")`,
+		`await s.writeStaged("hello")`,
+		`await s.sendKeys("left", "right")`,
+	} {
+		err := awaitJSErr(t, runtime, `return `+call)
+		if err == nil {
+			t.Errorf("%s: expected rejection on short write, got resolution", call)
+			continue
+		}
+		if !strings.Contains(err.Error(), parent.ErrShortWrite.Error()) {
+			t.Errorf("%s: error %q does not wrap ErrShortWrite (%q)", call, err.Error(), parent.ErrShortWrite)
+		}
 	}
 }
 

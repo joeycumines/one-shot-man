@@ -148,24 +148,45 @@ func TestKeymapOverlay_JSBinding(t *testing.T) {
 
 	// The overlay's VIEW (what the user actually sees) contains the rendered
 	// bindings table — not merely km.listKeys(). Drive a WindowSize so the
-	// model has dimensions, then read the view content through the model.
+	// model has dimensions, then read the view content through the public
+	// ov.view() accessor.
 	v2, err := awaitJSValue(t, runtime, `
 		var km = termmux.newKeymap({ prefix: "ctrl+a", chords: { "c": "new-window" }, keys: { "f1": "help" } });
 		var ov = await termmux.keymapOverlay({ keymap: km, tea: tea });
 		ov._update({type: 'WindowSize', width: 80, height: 24});
-		var goModel = ov.model._getModel();
-		var view = goModel.View();
-		return typeof view.Content === "string"
-			&& view.Content.indexOf("new-window") >= 0
-			&& view.Content.indexOf("help") >= 0
-			&& view.Content.indexOf("ctrl+a") >= 0
-			&& view.Content.indexOf("┌") >= 0;
+		var view = ov.view();
+		var render = ov.render();
+		return typeof view.content === "string"
+			&& typeof render === "string"
+			&& render === view.content
+			&& view.content.indexOf("new-window") >= 0
+			&& view.content.indexOf("help") >= 0
+			&& view.content.indexOf("ctrl+a") >= 0
+			&& view.content.indexOf("┌") >= 0;
 	`)
 	if err != nil {
 		t.Fatalf("overlay view check: %v", err)
 	}
 	if !v2.ToBoolean() {
 		t.Fatalf("overlay view content missing bindings or frame: %v", v2)
+	}
+
+	// An unrecognized key string (one bubbletea.ParseKey cannot resolve, e.g.
+	// a modified non-letter) must still close the overlay — the "any key
+	// closes" contract.
+	v3, err := awaitJSValue(t, runtime, `
+		var km = termmux.newKeymap({ keys: { "f1": "help" } });
+		var ov = await termmux.keymapOverlay({ keymap: km, tea: tea });
+		ov._update({type: 'WindowSize', width: 80, height: 24});
+		var before = ov.visible();
+		ov._update({type: 'Key', key: 'alt+,'});
+		return before === true && ov.visible() === false && ov.render() === "";
+	`)
+	if err != nil {
+		t.Fatalf("unrecognized-key close script: %v", err)
+	}
+	if !v3.ToBoolean() {
+		t.Fatal("overlay must close on an unrecognized key string")
 	}
 }
 
@@ -192,6 +213,51 @@ func TestKeymapOverlay_NewModelErrorRejects(t *testing.T) {
 		await termmux.keymapOverlay({ keymap: globalThis.__km, tea: teaBad });
 	`); err == nil {
 		t.Fatal("expected keymapOverlay to REJECT when tea.newModel throws, got resolution")
+	}
+}
+
+// TestKeymapOverlay_NewModelErrorObjectRejects verifies that when
+// tea.newModel RETURNS an error object (its invalid-config path returns
+// {error, errorCode} instead of throwing), keymapOverlay still REJECTS the
+// promise rather than resolving with {model: {error, ...}}.
+func TestKeymapOverlay_NewModelErrorObjectRejects(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: needs bubbletea module + event loop")
+	}
+
+	runtime, termmux := testRequire(t)
+	setOnLoop(t, runtime, "termmux", termmux)
+
+	if _, err := awaitJSValue(t, runtime, `
+		globalThis.__km = termmux.newKeymap({ keys: { "f1": "help" } });
+		return true;
+	`); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// tea.newModel returns an error object when config.update is missing.
+	if err := awaitJSErr(t, runtime, `
+		var teaBad = { newModel: function(cfg) { return { error: "invalid args: update must be a function", errorCode: "invalidArgs" }; } };
+		await termmux.keymapOverlay({ keymap: globalThis.__km, tea: teaBad });
+	`); err == nil {
+		t.Fatal("expected keymapOverlay to REJECT when tea.newModel returns an error object, got resolution")
+	}
+	// And with the real tea module but an intentionally broken config path is
+	// unreachable here; instead verify the real newModel error-object path via
+	// a config missing 'update' through the genuine module.
+	btMgr := bubbletea.NewManager(context.Background(), nil, nil, &bubbletea.SyncJSRunner{Runtime: runtime}, nil, nil)
+	teaModuleObj := runtime.NewObject()
+	bubbletea.Require(context.Background(), btMgr)(runtime, teaModuleObj)
+	setOnLoop(t, runtime, "tea", teaModuleObj.Get("exports"))
+	if err := awaitJSErr(t, runtime, `
+		// Real tea.newModel returns an error object for a config without
+		// update — but keymapOverlay always supplies one, so instead assert
+		// the error-object DETECTION works by monkey-patching newModel to
+		// delegate to the real one with a broken config.
+		var realNewModel = tea.newModel;
+		tea.newModel = function(cfg) { return realNewModel({}); };
+		await termmux.keymapOverlay({ keymap: globalThis.__km, tea: tea });
+	`); err == nil {
+		t.Fatal("expected keymapOverlay to REJECT via the real newModel error-object path")
 	}
 }
 

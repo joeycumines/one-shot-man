@@ -136,10 +136,13 @@ func (m *keymapOverlayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.closed = true
 		if m.onClose != nil {
-			// A panic from the JS onClose callback propagates (the event-loop
-			// machinery converts it into a promise rejection upstream) —
-			// never swallow it.
-			_, _ = m.onClose(goja.Undefined())
+			// Update runs synchronously from the _update JS function, so a
+			// JS exception from onClose surfaces as a panic that unwinds the
+			// JS call frame — never swallow it (same convention as the
+			// unsubscribe binding in session_bindings.go).
+			if _, err := m.onClose(goja.Undefined()); err != nil {
+				panic(err)
+			}
 		}
 		// No tea.Quit: this overlay is a sub-model driven via _update inside
 		// the host's event loop (same contract as chooseTree), so quitting
@@ -158,8 +161,9 @@ func (m *keymapOverlayModel) View() tea.View {
 }
 
 // render builds the popup frame. It always fits within the terminal: every
-// rendered line is at most width display cells wide and the popup is clamped
-// to width. Returns "" once closed.
+// rendered line is at most width display cells wide, all frame rows share
+// one width, and the total number of emitted lines never exceeds height.
+// Returns "" once closed.
 func (m *keymapOverlayModel) render() string {
 	if m.closed {
 		return ""
@@ -173,7 +177,10 @@ func (m *keymapOverlayModel) render() string {
 		height = 24
 	}
 
-	lines := splitLines(m.km.ListKeys())
+	lines := strings.Split(m.km.ListKeys(), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
 	title := "Keys"
 	contentWidth := uniseg.StringWidth(title)
 	for _, l := range lines {
@@ -183,18 +190,10 @@ func (m *keymapOverlayModel) render() string {
 	}
 	// Clamp the popup to the terminal: it must never exceed width. Apply the
 	// preferred minimum of 20 first (only when the terminal can fit it), then
-	// clamp down to width, flooring at 1 so the frame stays drawable.
+	// clamp down to width, flooring at 1 so something stays drawable.
 	popupWidth := contentWidth + 4
 	if popupWidth < 20 && width >= 20 {
 		popupWidth = 20
-	}
-	if popupWidth > width {
-		popupWidth = width
-	}
-	// A box frame needs at least 2 cells (the two corner glyphs); below that
-	// width the popup degenerates to whatever the terminal can hold (>=1).
-	if popupWidth < 2 {
-		popupWidth = 2
 	}
 	if popupWidth > width {
 		popupWidth = width
@@ -204,27 +203,25 @@ func (m *keymapOverlayModel) render() string {
 	}
 	// Inner budget for the row body: a row is "│ " + body + "│" (3 fixed
 	// cells), so a body of inner cells renders the row exactly popupWidth
-	// cells wide. The top/bottom borders use inner+2 cells of "─" plus the
+	// cells wide. The top/bottom borders use popupWidth-2 dashes plus the
 	// two corners = popupWidth cells total.
-	// The frame rows are: top border = corner + (popupWidth-2) dashes +
-	// corner; content rows = "│ " + body + "│" where body is (popupWidth-3)
-	// cells. inner is the body budget.
 	inner := popupWidth - 3
 	if inner < 0 {
 		inner = 0
 	}
-	// Border dash count must equal popupWidth-2 (corners excluded).
 	border := popupWidth - 2
 	if border < 0 {
 		border = 0
 	}
 	// Truncate the title and every content line to the inner body width so
 	// no rendered row exceeds the popup (and thus the terminal) width.
-	lines = truncateLines(lines, inner)
-	title = truncateLines([]string{title}, inner)[0]
+	for i, l := range lines {
+		lines[i] = parent.TruncateCells(l, inner)
+	}
+	title = parent.TruncateCells(title, inner)
 
-	// Vertical clamp: never render more content rows than the terminal can
-	// hold (4 frame rows: top, title, divider, bottom).
+	// Vertical clamp: never render more lines than the terminal can hold.
+	// The full frame is 4 rows (top, title, divider, bottom) plus content.
 	maxLines := height - 4
 	if maxLines < 0 {
 		maxLines = 0
@@ -253,105 +250,40 @@ func (m *keymapOverlayModel) render() string {
 	for i := 0; i < yOff; i++ {
 		b = append(b, '\n')
 	}
-	if popupWidth < 2 {
-		// Degenerate terminal (width 1): render a minimal vertical bar so the
-		// overlay is visible but never exceeds the terminal width.
-		var b []byte
-		for i := 0; i < yOff; i++ {
-			b = append(b, '\n')
-		}
+	if popupWidth < 3 || height < 4 {
+		// Degenerate terminal: a box frame needs at least 3 cells of width
+		// and 4 rows of height. Render a minimal vertical bar, capped at the
+		// terminal height, so the overlay stays visible without overflowing.
 		for i := 0; i < contentHeight && i < height; i++ {
-			if i > 0 {
+			if i > 0 || yOff > 0 {
 				b = append(b, '\n')
 			}
 			b = append(b, "│"...)
 		}
 		return string(b)
 	}
-	pad := spaces(xOff)
+	pad := strings.Repeat(" ", xOff)
 	row := func(body string) {
 		b = append(b, pad...)
-		bodyW := cellWidth(body)
+		bodyW := uniseg.StringWidth(body)
 		padN := popupWidth - 3 - bodyW // "│ " + body + pad + "│"
 		if padN < 0 {
 			padN = 0
 		}
-		b = append(b, ("│ " + body + repeat(" ", padN) + "│\n")...)
+		b = append(b, ("│ " + body + strings.Repeat(" ", padN) + "│\n")...)
 	}
 	b = append(b, pad...)
-	b = append(b, "┌"+repeat("─", border)+"┐\n"...)
+	b = append(b, ("┌"+strings.Repeat("─", border)+"┐\n")...)
 	row(title)
 	b = append(b, pad...)
-	b = append(b, "├"+repeat("─", border)+"┤\n"...)
+	b = append(b, ("├"+strings.Repeat("─", border)+"┤\n")...)
 	for _, l := range lines {
 		row(l)
 	}
 	b = append(b, pad...)
-	b = append(b, "└"+repeat("─", border)+"┘"...)
+	b = append(b, "└"+strings.Repeat("─", border)+"┘"...)
 	return string(b)
 }
-func splitLines(s string) []string {
-	if s == "" {
-		return nil
-	}
-	out := []string{}
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	out = append(out, s[start:])
-	return out
-}
-
-// truncateLines clips each line to at most width display cells. A non-positive
-// width yields empty strings. Truncation is cluster-aware (uniseg) and runs in
-// O(total cells), not O(cells^2).
-func truncateLines(lines []string, width int) []string {
-	out := make([]string, len(lines))
-	if width <= 0 {
-		return out // all empty
-	}
-	for i, l := range lines {
-		if uniseg.StringWidth(l) <= width {
-			out[i] = l
-			continue
-		}
-		var b strings.Builder
-		w := 0
-		for _, g := range l {
-			gw := uniseg.StringWidth(string(g))
-			if w+gw > width {
-				break
-			}
-			b.WriteRune(g)
-			w += gw
-		}
-		out[i] = b.String()
-	}
-	return out
-}
-func spaces(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	return repeat(" ", n)
-}
-
-func repeat(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	out := make([]byte, 0, len(s)*n)
-	for range n {
-		out = append(out, s...)
-	}
-	return string(out)
-}
-
-func cellWidth(s string) int { return uniseg.StringWidth(s) }
 
 // keymapOverlayFactory implements termmux.keymapOverlay({ keymap, tea, onClose? })
 // → { model, visible, _update } (same shape as chooseTree).
@@ -442,10 +374,30 @@ func keymapOverlayFactory(ctx context.Context, adapter *gojaeventloop.Adapter, r
 				// would mistake for a successful result.
 				panic(owner.NewGoError(err))
 			}
+			// tea.newModel signals invalid config by RETURNING an error object
+			// ({error, errorCode}), not by throwing — detect that shape and
+			// reject the promise instead of resolving with it.
+			if w := modelWrapper.ToObject(owner); w != nil {
+				if ev := w.Get("error"); ev != nil && !goja.IsUndefined(ev) && !goja.IsNull(ev) {
+					panic(owner.NewGoError(fmt.Errorf("keymapOverlay: tea.newModel failed: %s", ev.String())))
+				}
+			}
 			result := owner.NewObject()
 			_ = result.Set("model", modelWrapper)
 			_ = result.Set("visible", owner.ToValue(func() bool { return !model.closed }))
 			_ = result.Set("_update", update)
+			// Public render accessors: hosts drive the overlay as a sub-model
+			// and need to read what it would draw without reaching into
+			// test-only helpers.
+			_ = result.Set("view", owner.ToValue(func(goja.FunctionCall) goja.Value {
+				view := model.View()
+				res := owner.NewObject()
+				_ = res.Set("content", view.Content)
+				_ = res.Set("altScreen", view.AltScreen)
+				_ = res.Set("windowTitle", view.WindowTitle)
+				return res
+			}))
+			_ = result.Set("render", owner.ToValue(func() string { return model.render() }))
 			return result
 		})
 	})

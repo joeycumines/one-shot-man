@@ -74,8 +74,8 @@ func TestKeymapOverlay_RenderFitsTerminal(t *testing.T) {
 		parent.WithKeys(map[string]string{"f1": "help", "a-very-long-direct-key-name": "an-even-longer-action-name"}),
 		parent.WithChords(map[string]string{"c": "new-window", "x": "close-pane"}),
 	)
-	for _, width := range []int{80, 40, 30, 22, 21, 20, 15, 10, 7, 5, 3, 1} {
-		for _, height := range []int{24, 10, 6, 4, 2, 1} {
+	for _, width := range []int{80, 40, 30, 22, 21, 20, 15, 10, 7, 5, 3, 2, 1} {
+		for _, height := range []int{24, 10, 6, 4, 3, 2, 1} {
 			name := fmt.Sprintf("w%d_h%d", width, height)
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
@@ -112,8 +112,13 @@ func TestKeymapOverlay_RenderFitsTerminal(t *testing.T) {
 						}
 					}
 				}
+				// The render must never emit more lines than the terminal has
+				// rows (height), counting the yOff blank lines.
+				if len(lines) > height {
+					t.Fatalf("width=%d height=%d: render emitted %d lines > height %d:\n%s", width, height, len(lines), height, out)
+				}
 				// A full frame needs 4 rows, but tiny terminals (height < 4)
-				// legitimately clamp fewer rows; the degenerate width==1 case
+				// legitimately clamp fewer rows; the degenerate width<3 case
 				// renders a single-cell bar. Only require the frame when there
 				// is room for it.
 				if width >= 3 && height >= 4 && nonEmpty < 4 {
@@ -123,6 +128,69 @@ func TestKeymapOverlay_RenderFitsTerminal(t *testing.T) {
 					t.Fatalf("width=%d height=%d: render produced no visible lines:\n%q", width, height, out)
 				}
 			})
+		}
+	}
+}
+
+// TestKeymapOverlay_RenderUnicodeKeys verifies that truncation is
+// grapheme-cluster aware: multi-rune clusters (variation selector U+FE0F,
+// ZWJ emoji) are never split mid-cluster and their width is counted as a
+// whole, so rendered rows never exceed the popup width.
+func TestKeymapOverlay_RenderUnicodeKeys(t *testing.T) {
+	t.Parallel()
+
+	km := parent.NewKeymapWith(
+		parent.WithPrefix("ctrl+a"),
+		parent.WithKeys(map[string]string{
+			"⌨\uFE0F": "keyboard-with-vs16", // 2 cells as a cluster, 1+0 per rune
+			"👨\u200d💻": "dev-emoji",         // ZWJ sequence, 2 cells as a cluster
+			"é":       "e-acute",             // combining form would split per rune
+		}),
+	)
+	for _, width := range []int{80, 30, 24, 20, 12, 8, 6, 5, 4, 3, 2, 1} {
+		m := &keymapOverlayModel{km: km, width: width, height: 24}
+		out := m.View().Content
+		for line := range strings.SplitSeq(out, "\n") {
+			if w := uniseg.StringWidth(line); w > width {
+				t.Fatalf("width=%d: line %d cells wide > %d: %q", width, w, width, line)
+			}
+		}
+	}
+	// At a wide terminal the full ZWJ cluster must survive intact (never
+	// split into a dangling ZWJ).
+	m := &keymapOverlayModel{km: km, width: 80, height: 24}
+	if out := m.View().Content; !strings.Contains(out, "👨\u200d💻") {
+		t.Fatalf("wide render must contain the intact ZWJ cluster:\n%s", out)
+	}
+}
+
+// TestTruncateCells_Clusters verifies the shared core truncation helper:
+// cluster-boundary truncation, exact cell width, zero/negative width.
+func TestTruncateCells_Clusters(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 3, "hel"},
+		{"⌨\uFE0Fx", 2, "⌨\uFE0F"},   // VS16 cluster counts 2 as one unit
+		{"⌨\uFE0Fx", 1, ""},           // a 2-cell cluster does not fit in 1
+		{"👨\u200d💻ab", 2, "👨\u200d💻"}, // ZWJ emoji kept whole at width 2
+		{"👨\u200d💻ab", 3, "👨\u200d💻a"},
+		{"e\u0301x", 1, "e\u0301"},    // combining mark stays with its base
+		{"abc", 0, ""},
+		{"abc", -5, ""},
+	}
+	for _, c := range cases {
+		got := parent.TruncateCells(c.in, c.width)
+		if got != c.want {
+			t.Errorf("TruncateCells(%q, %d) = %q, want %q", c.in, c.width, got, c.want)
+		}
+		if w := uniseg.StringWidth(got); w > c.width && c.width > 0 {
+			t.Errorf("TruncateCells(%q, %d) = %q is %d cells wide", c.in, c.width, got, w)
 		}
 	}
 }
@@ -161,4 +229,26 @@ func TestKeymapOverlay_RenderClosed(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("onClose re-fired: %d calls, want 1", calls)
 	}
+}
+
+// TestKeymapOverlay_OnCloseThrowPropagates verifies that a JS exception
+// thrown by onClose is NOT swallowed: Update panics with it so the JS call
+// frame driving _update unwinds with the error.
+func TestKeymapOverlay_OnCloseThrowPropagates(t *testing.T) {
+	t.Parallel()
+
+	km := parent.NewKeymapWith(parent.WithKeys(map[string]string{"f1": "help"}))
+	m := &keymapOverlayModel{km: km, width: 80, height: 24}
+	runtime := goja.New()
+	fn, _ := goja.AssertFunction(runtime.ToValue(func() goja.Value {
+		panic(runtime.NewGoError(fmt.Errorf("onClose boom")))
+	}))
+	m.onClose = fn
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Update did not propagate the onClose panic")
+		}
+	}()
+	m.Update(tea.KeyPressMsg{Code: 'q'})
 }

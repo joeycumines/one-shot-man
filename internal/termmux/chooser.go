@@ -1,6 +1,11 @@
 package termmux
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/rivo/uniseg"
+)
 
 // ChooserItem represents a selectable session or pane in the chooser.
 type ChooserItem struct {
@@ -72,6 +77,32 @@ func (c *Chooser) Selected() (ChooserItem, bool) {
 }
 
 // Render returns the chooser content as a string for display.
+// TruncateCells clips s to at most width display cells. A non-positive width
+// yields "". Truncation is grapheme-cluster aware (uniseg): multi-rune
+// clusters (combining marks, variation selectors, ZWJ emoji) are never split,
+// and each cluster's width is measured as a whole. Runs in O(total cells).
+func TruncateCells(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if uniseg.StringWidth(s) <= width {
+		return s
+	}
+	var b strings.Builder
+	w := 0
+	g := uniseg.NewGraphemes(s)
+	for g.Next() {
+		gw := uniseg.StringWidth(g.Str())
+		if w+gw > width {
+			break
+		}
+		b.WriteString(g.Str())
+		w += gw
+	}
+	return b.String()
+}
+
+// Render renders the chooser items as lines no wider than width display cells.
 func (c *Chooser) Render(width int) string {
 	if !c.visible || len(c.items) == 0 {
 		return ""
@@ -87,9 +118,7 @@ func (c *Chooser) Render(width int) string {
 			marker = ">"
 		}
 		line := fmt.Sprintf("%s%s [%d] %s (%s)", marker, prefix, item.Index, item.Name, item.Kind)
-		if len(line) > width {
-			line = line[:width]
-		}
+		line = TruncateCells(line, width)
 		buf = append(buf, line...)
 		if i < len(c.items)-1 {
 			buf = append(buf, '\n')

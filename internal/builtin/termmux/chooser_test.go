@@ -2,10 +2,13 @@ package termmux
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	"github.com/rivo/uniseg"
 
 	btea "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
@@ -67,6 +70,68 @@ func assertQuitCmd(t *testing.T, cmd tea.Cmd) {
 	msg := cmd()
 	if _, ok := msg.(tea.QuitMsg); !ok {
 		t.Fatalf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+// TestChooseTreeModel_RenderFitsTerminal proves the chooser popup fits any
+// terminal: every rendered line is at most width cells, all frame rows share
+// one width, and the total line count never exceeds height — including
+// widths below the old 24-cell floor (28 was the overflow threshold) and
+// heights below the 4-row frame.
+func TestChooseTreeModel_RenderFitsTerminal(t *testing.T) {
+	t.Parallel()
+
+	items := []parent.ChooserItem{
+		{ID: 1, Name: "alpha", Kind: "pty", Index: 0},
+		{ID: 2, Name: "a-very-long-session-name-that-exceeds-narrow-widths", Kind: "pty", Index: 1},
+		{ID: 3, Name: "gämma-\u00e9\u0301-\U0001F468\u200d\U0001F4BB", Kind: "pty", Index: 2},
+	}
+	chooser := parent.NewChooser(items, 1)
+	runtime := goja.New()
+
+	for _, width := range []int{80, 50, 40, 30, 28, 27, 24, 20, 15, 10, 7, 5, 3, 2, 1} {
+		for _, height := range []int{24, 10, 6, 5, 4, 3, 2, 1} {
+			name := fmt.Sprintf("w%d_h%d", width, height)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				m := newChooseTreeModel(runtime, chooser, nil, nil)
+				m.width = width
+				m.height = height
+				out := m.View().Content
+				if out == "" {
+					t.Fatalf("width=%d height=%d: empty render", width, height)
+				}
+				lines := strings.Split(out, "\n")
+				nonEmpty := 0
+				refWidth := -1
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
+					nonEmpty++
+					w := uniseg.StringWidth(line)
+					if w > width {
+						t.Fatalf("width=%d height=%d: line %d cells > %d: %q", width, height, w, width, line)
+					}
+					if strings.ContainsAny(line, "┌┐└┘├┤│") {
+						if refWidth == -1 {
+							refWidth = w
+						} else if w != refWidth {
+							t.Fatalf("width=%d height=%d: frame width %d != %d: %q", width, height, w, refWidth, line)
+						}
+					}
+				}
+				if len(lines) > height {
+					t.Fatalf("width=%d height=%d: emitted %d lines > height:\n%s", width, height, len(lines), out)
+				}
+				if width >= 3 && height >= 4 && nonEmpty < 4 {
+					t.Fatalf("width=%d height=%d: frame incomplete (%d lines):\n%s", width, height, nonEmpty, out)
+				}
+				if nonEmpty < 1 {
+					t.Fatalf("width=%d height=%d: no visible lines: %q", width, height, out)
+				}
+			})
+		}
 	}
 }
 

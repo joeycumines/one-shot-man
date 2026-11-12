@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
@@ -106,14 +107,18 @@ func (m *chooseTreeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmed = true
 			m.chooser.Hide()
 			if m.onSelect != nil {
-				_, _ = m.onSelect(goja.Undefined(), m.Selected())
+				if _, err := m.onSelect(goja.Undefined(), m.Selected()); err != nil {
+					panic(err)
+				}
 			}
 			return m, tea.Quit
 		case "esc", "q":
 			m.canceled = true
 			m.chooser.Hide()
 			if m.onCancel != nil {
-				_, _ = m.onCancel(goja.Undefined())
+				if _, err := m.onCancel(goja.Undefined()); err != nil {
+					panic(err)
+				}
 			}
 			return m, tea.Quit
 		}
@@ -129,77 +134,113 @@ func (m *chooseTreeModel) View() tea.View {
 	return v
 }
 
-// render draws the centered popup.
+// render draws the centered popup. It always fits within the terminal: every
+// rendered line is at most width display cells wide, all frame rows share one
+// width, and the total number of emitted lines never exceeds height.
 func (m *chooseTreeModel) render() string {
 	if m.chooser == nil || !m.chooser.Visible() {
 		return ""
 	}
 
 	width := m.width
-	if width == 0 {
+	if width <= 0 {
 		width = 80
 	}
 	height := m.height
-	if height == 0 {
+	if height <= 0 {
 		height = 24
 	}
 
-	popupWidth := 50
-	if width-4 < popupWidth {
-		popupWidth = min(width-4, popupWidth)
+	// Clamp the popup to the terminal first: the frame must never exceed
+	// width. Preferred width 50 (with 4 cells of margin) when it fits.
+	popupWidth := min(width-4, 50)
+	if popupWidth < 1 {
+		popupWidth = 1
 	}
-	if popupWidth < 24 {
-		popupWidth = 24
+	if popupWidth > width {
+		popupWidth = width
 	}
-	inner := popupWidth - 2
+	inner := popupWidth - 3 // body budget of a "│ " + body + "│" row
+	if inner < 0 {
+		inner = 0
+	}
+	border := popupWidth - 2
+	if border < 0 {
+		border = 0
+	}
 
 	items := m.chooser.Render(inner)
 	itemLines := strings.Split(items, "\n")
-	contentHeight := len(itemLines) + 4 // border, title, separator, bottom border
+	if len(itemLines) == 1 && itemLines[0] == "" {
+		itemLines = nil
+	}
+	contentHeight := len(itemLines) + 4 // border, title, separator, bottom
+
+	// Vertical clamp: never emit more lines than the terminal can hold.
+	maxItems := height - 4
+	if maxItems < 0 {
+		maxItems = 0
+	}
+	if len(itemLines) > maxItems {
+		itemLines = itemLines[:maxItems]
+		contentHeight = len(itemLines) + 4
+	}
 
 	yOff := 0
 	if height > contentHeight {
 		yOff = (height - contentHeight) / 2
 	}
-
 	xOff := 0
 	if width > popupWidth {
 		xOff = (width - popupWidth) / 2
 	}
+	if xOff+popupWidth > width {
+		xOff = width - popupWidth
+		if xOff < 0 {
+			xOff = 0
+		}
+	}
 
 	var b strings.Builder
-	b.WriteString(strings.Repeat("\n", yOff))
+	for i := 0; i < yOff; i++ {
+		b.WriteByte('\n')
+	}
+	if popupWidth < 3 || height < 4 {
+		// Degenerate terminal: a box frame needs at least 3 cells of width
+		// and 4 rows of height. Render a minimal vertical bar, capped at the
+		// terminal height, so the overlay stays visible without overflowing.
+		for i := 0; i < contentHeight && i < height; i++ {
+			if i > 0 || yOff > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString("│")
+		}
+		return b.String()
+	}
 
 	pad := strings.Repeat(" ", xOff)
-
-	top := "┌" + strings.Repeat("─", inner) + "┐"
-	fmt.Fprintf(&b, "%s%s\n", pad, top)
-
-	title := "Choose tree"
-	titleLine := "│ " + title + strings.Repeat(" ", inner-len(title)-1) + "│"
-	fmt.Fprintf(&b, "%s%s\n", pad, titleLine)
-
-	sep := "├" + strings.Repeat("─", inner) + "┤"
-	fmt.Fprintf(&b, "%s%s\n", pad, sep)
-
-	for _, line := range itemLines {
-		line = padCellRight(line, inner)
-		fmt.Fprintf(&b, "%s│ %s │\n", pad, line)
+	row := func(body string) {
+		bodyW := uniseg.StringWidth(body)
+		padN := inner - bodyW
+		if padN < 0 {
+			padN = 0
+		}
+		fmt.Fprintf(&b, "%s│ %s%s│\n", pad, body, strings.Repeat(" ", padN))
 	}
 
-	bottom := "└" + strings.Repeat("─", inner) + "┘"
-	fmt.Fprintf(&b, "%s%s", pad, bottom)
+	title := parent.TruncateCells("Choose tree", inner)
+	b.WriteString(pad)
+	b.WriteString("┌" + strings.Repeat("─", border) + "┐\n")
+	row(title)
+	b.WriteString(pad)
+	b.WriteString("├" + strings.Repeat("─", border) + "┤\n")
+	for _, line := range itemLines {
+		row(parent.TruncateCells(line, inner))
+	}
+	b.WriteString(pad)
+	b.WriteString("└" + strings.Repeat("─", border) + "┘")
 
 	return b.String()
-}
-
-// padCellRight pads s with spaces to reach the given cell width.
-func padCellRight(s string, width int) string {
-	sw := uniseg.StringWidth(s)
-	if sw >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-sw)
 }
 
 // handleJSMsg applies a single JS BubbleTea message to the model and returns
@@ -233,11 +274,16 @@ func jsToTeaMsg(runtime *goja.Runtime, msgObj *goja.Object) tea.Msg {
 		if key == "" {
 			return nil
 		}
-		k, ok := bubbletea.ParseKey(key)
-		if !ok {
-			return nil
+		if k, ok := bubbletea.ParseKey(key); ok {
+			return k
 		}
-		return k
+		// Fall back to a text key so overlays that close on ANY key still
+		// fire for key strings ParseKey cannot resolve (e.g. modified
+		// non-letters like alt+, which ParseKey reports as ambiguous).
+		if r, _ := utf8.DecodeRuneInString(key); r != utf8.RuneError {
+			return tea.KeyPressMsg{Code: r, Text: key}
+		}
+		return tea.KeyPressMsg{Text: key}
 
 	case "WindowSize":
 		w := int(msgObj.Get("width").ToInteger())
@@ -326,6 +372,13 @@ func buildChooseTreeResult(runtime *goja.Runtime, model *chooseTreeModel, teaObj
 	if err != nil {
 		return nil, err
 	}
+	// tea.newModel returns an error OBJECT (not a throw) for invalid config;
+	// detect it so the factory reports a real error.
+	if w := modelWrapper.ToObject(runtime); w != nil {
+		if ev := w.Get("error"); ev != nil && !goja.IsUndefined(ev) && !goja.IsNull(ev) {
+			return nil, fmt.Errorf("chooseTree: tea.newModel failed: %s", ev.String())
+		}
+	}
 	result := runtime.NewObject()
 	_ = result.Set("model", modelWrapper)
 	_ = result.Set("selected", runtime.ToValue(func(goja.FunctionCall) goja.Value {
@@ -411,7 +464,9 @@ func chooseTreeFactory(ctx context.Context, adapter *gojaeventloop.Adapter, runt
 			model := newChooseTreeModel(owner, chooser, onSelect, onCancel)
 			result, err := buildChooseTreeResult(owner, model, teaObj, newModelFn)
 			if err != nil {
-				return owner.NewGoError(err)
+				// Panic inside the Settle callback rejects the promise; a
+				// returned NewGoError would RESOLVE with an error object.
+				panic(owner.NewGoError(err))
 			}
 			return result
 		})

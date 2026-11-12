@@ -275,33 +275,68 @@ func TestSessionManager_InputStaged_Concurrent(t *testing.T) {
 	}
 }
 
+// blockingSession is a boundarySession whose Write blocks until released,
+// so a test can hold the manager worker inside the write while it mutates the
+// caller-side buffer from another goroutine.
+type blockingSession struct {
+	*boundarySession
+	gate    chan struct{}
+	started chan struct{}
+}
+
+func newBlockingSession() *blockingSession {
+	bs := newBoundarySession()
+	return &blockingSession{
+		boundarySession: bs,
+		gate:            make(chan struct{}),
+		started:         make(chan struct{}),
+	}
+}
+
+func (s *blockingSession) Write(data []byte) (int, error) {
+	select {
+	case <-s.started:
+	default:
+		close(s.started)
+	}
+	<-s.gate // block until the test releases the write
+	return s.boundarySession.Write(data)
+}
+
 // TestSessionManager_InputStaged_CallerBufferReuse verifies the payload is
-// copied at request time: mutating the caller's buffer after InputStaged
-// returns must not change what the child receives.
+// cloned at request time (bytes.Clone in InputStaged), so a caller mutating
+// its buffer WHILE the staged write is still in flight cannot change what the
+// child receives.
 func TestSessionManager_InputStaged_CallerBufferReuse(t *testing.T) {
 	t.Parallel()
 
 	m, cleanup := startManager(t, WithTermSize(24, 80))
 	defer cleanup()
 
-	bs := newBoundarySession()
+	bs := newBlockingSession()
 	id, err := m.Register(bs, SessionTarget{Name: "staged-reuse", Kind: SessionKindPTY})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
 	buf := []byte("original-payload")
-	if err := m.InputStaged(id, buf); err != nil {
-		t.Fatalf("InputStaged: %v", err)
-	}
-	// Mutate the caller's buffer immediately after the call.
+	writeDone := make(chan error, 1)
+	go func() { writeDone <- m.InputStaged(id, buf) }()
+
+	// Wait until the manager worker is blocked inside the session Write,
+	// then mutate the caller's buffer while the write is in flight.
+	<-bs.started
 	for i := range buf {
 		buf[i] = 'X'
+	}
+	close(bs.gate) // release the write
+	if err := <-writeDone; err != nil {
+		t.Fatalf("InputStaged: %v", err)
 	}
 
 	calls := bs.writeCalls()
 	if len(calls) != 1 || string(calls[0]) != "original-payload" {
-		t.Fatalf("child received %q, want %q (caller buffer was mutated post-call)", calls, "original-payload")
+		t.Fatalf("child received %q, want %q (caller buffer was mutated while the write was in flight)", calls, "original-payload")
 	}
 }
 

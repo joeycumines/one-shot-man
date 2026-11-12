@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
@@ -81,9 +82,9 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 		close: function() {},
 		activeID: function() { return sid; },
 		sessions: function() { return [{ target: {name:'',kind:'',id:''}, state:'attached', isActive:true, id:sid }]; },
-		enterCopyMode: function() {},
-		exitCopyMode: function() {},
-		isCopyModeActive: function() { return false; }
+		enterCopyMode: function() { return Promise.resolve(); },
+		exitCopyMode: function() { return Promise.resolve(); },
+		isCopyModeActive: function() { return Promise.resolve(false); }
 	};
 	return { session: session, mgr: mgr, sid: sid };
 })();
@@ -127,6 +128,11 @@ require = function(name) {
 				// (prefix/keys/chords) and runs the same arm/dispatch/cancel
 				// semantics as the real implementation, so the regression test
 				// can drive chord actions (e.g. copyMode) end-to-end.
+				// NOTE: this stub lowercases keys via String(key).ToLowerCase,
+				// which diverges from the real normalizeKey for bare/alt-modified
+				// letters (case-sensitive there); only ctrl+letter normalization
+				// matches. Acceptable here because the test only drives
+				// ctrl+<letter> chords.
 				opts = opts || {};
 				var prefix = opts.prefix || '';
 				var keys = opts.keys || {};
@@ -219,6 +225,19 @@ func runResultScript(t *testing.T, engine *Engine, name, source string) map[stri
 	script := engine.LoadScriptString(name, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", name, err)
+	}
+	// Flush pending microtasks (promise .then continuations scheduled by the
+	// script) via a no-op barrier on the event loop: goja runs queued
+	// microtasks before the next submitted callback, so by the time the
+	// barrier runs, deferred __result mutations have landed.
+	flushDone := make(chan error, 1)
+	if err := engine.Loop().Submit(func() { flushDone <- nil }); err != nil {
+		t.Fatalf("submit flush barrier: %v", err)
+	}
+	select {
+	case <-flushDone:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out flushing microtasks after %s", name)
 	}
 	val := engine.GetGlobal("__result")
 	result, ok := val.(map[string]any)
@@ -545,45 +564,45 @@ var pauseToggled = model.paused === !before.paused;
 press('ctrl+p');                       // toggle back
 var pauseRestored = model.paused === before.paused;
 press('ctrl+b');                       // bigger
-var biggerGrew = model.paneW > before.size;
+var afterBigger = model.paneW;
+var biggerGrew = afterBigger > before.size;
 press('ctrl+s');                       // smaller
-var smallerShrank = model.paneW < before.size || model.paneW === before.size;
-// Chords via the prefix: every chord action must be handled by the switch.
-var chordResults = {};
-var chords = ['s', 'b', 'p', 'q', 'c', 'ctrl+c'];
-for (var i = 0; i < chords.length; i++) {
-	press('ctrl+x');                   // arm
-	var r = press(chords[i]);          // dispatch chord
-	// handled=true means the switch consumed it (armed false, handled true
-	// OR action dispatched). We assert the keymap consumed it (not forwarded).
-	chordResults[chords[i]] = r;
-}
-var copyModeSeen = false;
-// Drive 'ctrl+x' then 'c' explicitly and inspect: copyMode path calls
-// mgr.enterCopyMode/exitCopyMode on the stub (no-ops) and sets a message;
-// the important part is handled===true (consumed, not forwarded to pane).
+var smallerShrank = model.paneW < afterBigger;
+// copyMode chord: ctrl+x arms, 'c' dispatches the copyMode action, whose
+// handler sets the status message to 'copyMode' once the (stubbed) pane
+// operation promise chain settles — flush the microtask queue, then read.
 press('ctrl+x');
-var cRes = press('c');
-copyModeSeen = (cRes && cRes[0] && cRes[0].handled !== false);
+press('c');
+var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
 __result = {
     pauseToggled: pauseToggled,
     pauseRestored: pauseRestored,
     biggerGrew: biggerGrew,
     smallerShrank: smallerShrank,
-    copyModeConsumed: copyModeSeen,
-    quitSet: (function(){ press('ctrl+x'); press('q'); return model.quit === true; })()
+    // Filled in by the microtask flush after ExecuteScript, once the
+    // copyMode promise chain has settled and setMessage('copyMode') ran.
+    copyModeMessage: '',
+    quitSet: quitSet
 };
+	Promise.resolve().then(function() { return Promise.resolve(); }).then(function() {
+		__result.copyModeMessage = model.message;
+	});
 `)
 	for k, want := range map[string]bool{
-		"pauseToggled":     true,
-		"pauseRestored":    true,
-		"biggerGrew":       true,
-		"smallerShrank":    true,
-		"copyModeConsumed": true,
-		"quitSet":          true,
+		"pauseToggled":  true,
+		"pauseRestored": true,
+		"biggerGrew":    true,
+		"smallerShrank": true,
+		"quitSet":       true,
 	} {
 		if got := result[k]; got != want {
 			t.Errorf("example-15 action %s = %v, want %v", k, got, want)
 		}
+	}
+	// The copyMode chord's real side effect: the action handler calls
+	// setMessage('copyMode') after the stubbed enter/exitCopyMode promise
+	// settles, so model.message must read exactly 'copyMode'.
+	if got := result["copyModeMessage"]; got != "copyMode" {
+		t.Errorf("example-15 copyMode side effect: model.message = %v, want 'copyMode'", got)
 	}
 }

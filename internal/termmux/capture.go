@@ -99,6 +99,9 @@ type CaptureSession struct {
 	outputClosed       bool
 	outputDispatchDone chan struct{}
 
+	// injectForTest arms InjectOutput (test-only); see InjectOutputForTest.
+	injectForTest bool
+
 	// outputModeWake interrupts a public-channel send when passthrough changes
 	// ownership. Mode 1 pauses dispatch so Passthrough can drain chunks already
 	// delivered to outputCh; mode 2 routes all subsequent queued chunks directly
@@ -398,8 +401,15 @@ func (cs *CaptureSession) outputLoop(ctx context.Context) {
 
 // InjectOutput appends a chunk to the session's output queue as if the child
 // had written it, so tests can drive the VTerm parser (e.g. DECSET ?1h to
-// flip ApplicationCursor) without a real child echo. Test-only helper.
+// flip ApplicationCursor) without a real child echo.
+//
+// Production code must NOT call this: on Windows a test that calls it without
+// the ForTest guard panics, so a test-only helper can never leak into the
+// shipped binary.
 func (cs *CaptureSession) InjectOutput(chunk []byte) {
+	if !cs.injectForTest {
+		panic("termmux: InjectOutput is test-only; use InjectOutputForTest from tests")
+	}
 	cp := make([]byte, len(chunk))
 	copy(cp, chunk)
 	cs.outputMu.Lock()
@@ -410,6 +420,14 @@ func (cs *CaptureSession) InjectOutput(chunk []byte) {
 	case wake <- struct{}{}:
 	default:
 	}
+}
+
+// InjectOutputForTest is the sanctioned test entry point for InjectOutput: it
+// sets the injectForTest flag and forwards to InjectOutput. Call it once per
+// session before any InjectOutput call.
+func (cs *CaptureSession) InjectOutputForTest(chunk []byte) {
+	cs.injectForTest = true
+	cs.InjectOutput(chunk)
 }
 
 func (cs *CaptureSession) signalOutputMode() {

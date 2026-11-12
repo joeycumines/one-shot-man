@@ -97,7 +97,7 @@ Caller goroutine          Worker goroutine
 - ScrollToTop / ScrollToBottom
 
 ### Prefix Key System
-- Configurable prefix key (default: Ctrl+B)
+- Configurable prefix key (default: empty — no prefix unless the caller sets one; chords are disabled while the prefix is empty)
 - Command table: c=new-window, n=next, p=prev, d=detach, z=zoom, x=close-pane, %=split-h, "=split-v, [=copy-mode
 
 ### Keymap (unopinionated mux keys)

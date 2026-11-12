@@ -20,7 +20,28 @@ The subsystem is the foundation for interactive TUI workflows (code review, prom
 - **Lossless control-event fan-out** — `EventBus` broadcasts over one shared unbuffered channel (`ChanPubSub`). Every subscriber receives every control event; there is no drop path. Subscribers acknowledge each event promptly, so an unacknowledged subscriber blocks publishers by design rather than losing events.
 - **Conflated output signal** — Session output is deliberately NOT a bus event. It is a stateful, capacity-1 wake-up that consumers resolve against the published snapshot, so a burst coalesces and a slow consumer can never be overrun or overrun the producer.
 
-## 2. Package Structure
+## 2. Feature Surface
+
+The multiplexer feature inventory, all driven through `SessionManager` public methods (see §4.5) and exposed to JS via `osm:termmux` (see §11 and [the JS API reference](reference/termmux-js-api.md)):
+
+- **Windows** (`window.go`) — tab-like windows, each with its own pane layout: `NewWindow`, `NextWindow`, `PrevWindow`, `RenameWindow`, `CloseWindow`, `MoveWindow`, `SwapWindows`, plus `BreakPane`/`JoinPane` to move panes between windows. The active window shows in the status bar.
+- **Panes and layout** (`pane_manager.go`, `layout.go`) — per-window `LayoutEngine` with modes `tiled`, `stacked`, `horizontal`, `vertical`, `main-horizontal`, `main-vertical` and a configurable main-pane ratio; `NewPane`/`SplitPaneHorizontal`/`SplitPaneVertical`, `ClosePane`, `FocusPane`/`FocusNextPane`/`FocusAt`, `SwapPanes`, `ZoomPane`/`ToggleZoom`, `ResizePane`/`ResizePaneAt`/`ResizePaneDelta`, and pane borders (`borders.go`).
+- **Copy mode** (`copy_mode_keys.go`, `searcher.go`) — vi-like navigation via `HandleCopyModeKey`, `EnterCopyMode`/`ExitCopyMode`, `ScrollCopyMode`, `SelectStart`/`SelectEnd`/`CopySelection`, and `SearchForward`/`SearchBackward` with match highlighting.
+- **Prefix key commands** (`prefix_keys.go`) — `PrefixKeyHandler` + `PrefixDispatcher`: an optional caller-set prefix key arms a one-key command table (`c` new window, `n`/`p` next/prev, `d` detach, `z` zoom, `x` close pane, `%`/`"` split, `[` copy mode, `?` list keys, `,` rename window, `esc` cancel), exposed to JS as `newPrefixKeyHandler`/`handlePrefixKey`.
+- **Keymap** (`keymap.go`) — the unopinionated mux key state machine: optional prefix, direct key→action map, chord map, and passthrough key. `HandleKey(key)` returns `(handled, action, armed)`; a chord bound to `esc` or the prefix itself wins over the implicit cancel, and unbound chord keys pass through to the child. `ListKeys()` renders the sorted binding table; `osm:termmux` adds `newKeymap` and a `keymapOverlay` BubbleTea popup. With an empty prefix (the default) chords are disabled entirely.
+- **Staged (atomic) input** — `SessionManager.InputStaged(id, data)` copies the payload at request time and delivers it as a single `Write` call on the worker (ordering with regular input preserved); JS: `mgr.inputStaged(id, data)` and `session.writeStaged(data)`; used by `termpane.forwardPaste` for bracketed-paste payloads. See §5.2.
+- **Mouse** (`input.go`, `sgrmouse.go`, `mouse_drag.go`) — `MouseToSGR` SGR 1006 encoding, click-to-focus and drag-to-resize hit-testing against pane geometries, and the `enableMouseForward`/`mouseDrag` JS bindings.
+- **Monitoring** (`monitor.go`) — per-session `MonitorConfig` for bell, background activity, and silence (with thresholds), plus visual bell flash state; `CheckSilenceMonitors` drives silence timers.
+- **Synchronized panes** — `SetSynchronizePanes` broadcasts input to all panes.
+- **Remain-on-exit / respawn** — per-pane `SetPaneRemainOnExit` keeps an exited pane visible; `RespawnSession` starts a fresh session in the same pane.
+- **Pipe pane** — tee raw PTY output to a file (`SetPipeFile`) or command (`PipePaneCommand`), `ClearPipe` to stop.
+- **Display message** (`message_overlay.go`) — transient overlay via `DisplayMessage`, read via `ActiveMessage`.
+- **Chooser** (`chooser.go`) — navigable session/pane tree popup (`NewChooser`, `chooseTree` overlay in JS).
+- **Capture pane** — ranged capture via `CaptureScreen` (see §4.7) and `CopyPaneToClipboard` (OSC 52).
+- **Session lock** (`lock.go`) — bcrypt-based `LockSession`/`UnlockSession`/`IsLocked` with an unlock prompt path.
+- **Status bar** (`statusbar/`) — configurable left/center/right sections, window indicators with active highlighting, top/bottom position.
+
+## 3. Package Structure
 
 ```
 internal/termmux/                    # Main package (termmux)
@@ -92,9 +113,9 @@ internal/termmux/                    # Main package (termmux)
 
 **File count**: ~100 Go source files across the termmux package tree (including tests).
 
-## 3. Core Abstractions
+## 4. Core Abstractions
 
-### 3.1 VTerm (`vt/vt.go`)
+### 4.1 VTerm (`vt/vt.go`)
 
 The virtual terminal emulator is a concurrent-safe VT220/xterm emulator. Each `VTerm` owns two `Screen` instances (primary + alternate) and an ANSI state machine parser.
 
@@ -136,7 +157,7 @@ VTerm
 
 **Fast path** (`vt.go`, lines 128–140): In `StateGround` with no special modes, the writer batches contiguous printable ASCII bytes (0x20–0x7E) directly into `Screen.PutASCII()`, bypassing the per-byte parser dispatch, UTF-8 checks, and charset mapping.
 
-### 3.2 Screen (`vt/screen.go`)
+### 4.2 Screen (`vt/screen.go`)
 
 The cell grid and mode state for a terminal viewport.
 
@@ -175,7 +196,7 @@ type Cell struct {
 
 **Dirty region tracking**: Every cell write marks the cell as dirty. `DirtyRange()` returns the inclusive `[minRow, maxRow]` range of modified rows. `ClearDirty()` resets the tracking; `VTerm.Snapshot()` consumes it so incremental copies can reuse clean rows.
 
-### 3.3 Parser (`vt/parser.go`)
+### 4.3 Parser (`vt/parser.go`)
 
 A table-driven ANSI escape sequence state machine with 7 states:
 
@@ -203,7 +224,7 @@ StateGround → StateDCS (on ESC P) → DCS sequences (sixel, DECSTRQSS)
 
 **Constraints**: Maximum protocol length of 4096 bytes for OSC and DCS sequences (prevents unbounded buffer growth from hostile input).
 
-### 3.4 InteractiveSession (`session.go`)
+### 4.4 InteractiveSession (`session.go`)
 
 The minimal interface for terminal endpoints managed by `SessionManager`:
 
@@ -221,7 +242,7 @@ type InteractiveSession interface {
 - `CaptureSession` — PTY-backed command execution (`capture.go`)
 - `StringIOSession` — String-based agent handle adapter (`stringio_session.go`)
 
-### 3.5 SessionManager (`manager.go`)
+### 4.5 SessionManager (`manager.go`)
 
 The central orchestrator. Manages multiple `InteractiveSession` instances through a **single worker goroutine**.
 
@@ -288,7 +309,7 @@ for {
 }
 ```
 
-### 3.6 ScreenSnapshot (`manager.go`)
+### 4.6 ScreenSnapshot (`manager.go`)
 
 An immutable, concurrent-safe point-in-time capture of a VTerm screen:
 
@@ -333,7 +354,7 @@ caches, so a ranged clone can render a different range without disturbing the
 published snapshot. The `Gen` field increments with each snapshot, enabling
 consumers to detect stale data.
 
-### 3.7 Capture semantics (`CaptureScreen`)
+### 4.7 Capture semantics (`CaptureScreen`)
 
 `SessionManager.CaptureScreen(id, CaptureOptions)` is the single read surface:
 
@@ -354,7 +375,7 @@ consumers to detect stale data.
 - A missing session reports `ErrSessionNotFound`; a session without a
   published snapshot reports `ErrSnapshotUnavailable`.
 
-### 3.8 freezeterm composition
+### 4.8 freezeterm composition
 
 `internal/freezeterm` and `internal/builtin/freezeterm` never import termmux.
 The Go package discovers and runs the external `freeze` CLI (feeding captured
@@ -368,9 +389,9 @@ var cap = termmux.capture(id);                 // osm:termmux read
 var svg = await freezeterm.renderText(cap.ansi); // osm:freezeterm render
 ```
 
-## 4. Data Flow
+## 5. Data Flow
 
-### 4.1 Output Pipeline
+### 5.1 Output Pipeline
 
 ```
 Child Process
@@ -411,7 +432,7 @@ Child Process
 └─────────────────────────────────────────────┘
 ```
 
-### 4.2 Input Pipeline
+### 5.2 Input Pipeline
 
 ```
 User stdin (raw terminal mode)
@@ -479,7 +500,7 @@ optional chord prefix, direct key→action map, chord map, passthrough key;
 binding table. The `osm:termmux` binding adds `newKeymap` and a
 `keymapOverlay` BubbleTea popup for listing keys.
 
-### 4.3 Snapshot Publication
+### 5.3 Snapshot Publication
 
 ```
 handleSessionOutput(so)
@@ -499,9 +520,9 @@ handleSessionOutput(so)
     └── (if passthroughActive) → writeSo(so) to stdout
 ```
 
-## 5. Session Lifecycle
+## 6. Session Lifecycle
 
-### 5.1 State Machine
+### 6.1 State Machine
 
 ```
 SessionCreated
@@ -526,7 +547,7 @@ SessionCreated
 | Exited → Closed | `handleUnregister` |
 | Any → Closed | `Close()` called on manager |
 
-### 5.2 Registration Flow
+### 6.2 Registration Flow
 
 ```
 SessionManager.Register(session, target)
@@ -551,7 +572,7 @@ SessionManager.Register(session, target)
     └── EventBus.Publish(EventSessionRegistered, sessionID)
 ```
 
-### 5.3 Reader Goroutine Pattern
+### 6.3 Reader Goroutine Pattern
 
 Each registered session gets a dedicated reader goroutine:
 
@@ -581,7 +602,7 @@ go func() {
 }()
 ```
 
-### 5.4 Termination
+### 6.4 Termination
 
 ```
 Close()
@@ -595,11 +616,11 @@ Close()
     └── Close reqChan
 ```
 
-## 6. Passthrough Mode
+## 7. Passthrough Mode
 
 Passthrough enters raw terminal I/O mode, taking over the terminal for direct stdin→PTY and PTY→stdout forwarding while the worker goroutine continues processing output through VTerm for snapshot capture.
 
-### 6.1 SessionManager.Passthrough (`passthrough.go`)
+### 7.1 SessionManager.Passthrough (`passthrough.go`)
 
 **Entry sequence**:
 
@@ -625,7 +646,7 @@ Passthrough enters raw terminal I/O mode, taking over the terminal for direct st
 | Signal watcher | SIGTSTP (Unix only) | `ExitSuspended` |
 | Context | `ctx.Done()` | `ExitContext` |
 
-### 6.2 CaptureSession.Passthrough (`capture.go`, lines 520–621)
+### 7.2 CaptureSession.Passthrough (`capture.go`, lines 520–621)
 
 A simpler variant of `SessionManager.Passthrough` used for standalone capture sessions:
 
@@ -634,7 +655,7 @@ A simpler variant of `SessionManager.Passthrough` used for standalone capture se
 - Reader loop continues during passthrough, forwarding chunks to `passthroughOutput` (stdout) when `passthroughActive` is true
 - Returns immediately on `ctx.Done()`
 
-### 6.3 stdin→PTY Forwarding (`forward_stdin.go`)
+### 7.3 stdin→PTY Forwarding (`forward_stdin.go`)
 
 ```
 forwardStdin(ctx, resultCh, cfg)
@@ -654,7 +675,7 @@ forwardStdin(ctx, resultCh, cfg)
     └── On ctx.Done or error: send forwardResult{reason, err} to resultCh
 ```
 
-### 6.4 SGR Mouse Filtering for Status Bar (`sgrmouse.go`)
+### 7.4 SGR Mouse Filtering for Status Bar (`sgrmouse.go`)
 
 When a status bar is rendered, mouse clicks targeting the status bar row must be intercepted before being forwarded to the child process (which would "poison" its PTY stdin buffer).
 
@@ -675,7 +696,7 @@ filterMouseForStatusBar(buf, termRows, statusBarLines) → (filtered, partial, c
     └── Overflow guard: reject SGR mouse values > MaxCoord (10000) to prevent 32-bit overflow
 ```
 
-### 6.5 Signal Forwarding
+### 7.5 Signal Forwarding
 
 **Unix** (`passthrough_signal_unix.go`):
 
@@ -691,7 +712,7 @@ watchSignals(ctx, sigResultCh, signalChild)
 
 No SIGTSTP support (ConPTY does not support process suspension). Only SIGINT and SIGQUIT.
 
-### 6.6 Exit Reasons (`side.go`)
+### 7.6 Exit Reasons (`side.go`)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -701,11 +722,11 @@ No SIGTSTP support (ConPTY does not support process suspension). Only SIGINT and
 | `ExitError` | 3 | I/O error occurred |
 | `ExitSuspended` | 4 | Child process stopped (SIGTSTP, Unix only) |
 
-## 7. Capture Mode
+## 8. Capture Mode
 
 `CaptureSession` is a standalone PTY-backed command executor with real-time output capture. It provides a simplified alternative to `SessionManager` for cases where only raw output forwarding is needed — no terminal multiplexing, toggle keys, status bar, or raw-mode management.
 
-### 7.1 Configuration (`CaptureConfig`)
+### 8.1 Configuration (`CaptureConfig`)
 
 | Field | Default | Description |
 |---|---|---|
@@ -718,7 +739,7 @@ No SIGTSTP support (ConPTY does not support process suspension). Only SIGINT and
 | `DrainTimeout` | 5s | Max wait time for reader to exit after PTY close |
 | `SkipDrain` | `false` | Skip the drain wait (useful after `Kill()`) |
 
-### 7.2 Lifecycle
+### 8.2 Lifecycle
 
 ```
 NewCaptureSession(cfg)
@@ -757,7 +778,7 @@ NewCaptureSession(cfg)
             └── Wait on <-cs.done with DrainTimeout
 ```
 
-### 7.3 Drain Timeout and SkipDrain
+### 8.3 Drain Timeout and SkipDrain
 
 `Close()` waits for the reader goroutine to finish after the PTY fd is closed. This is necessary because the reader loop needs to process any remaining buffered output before the process exits.
 
@@ -765,13 +786,13 @@ NewCaptureSession(cfg)
 - **`SkipDrain = true`**: Skips the wait entirely. Use this after `Kill()` when you don't care about remaining output.
 - **The timeout is a safety net**: `proc.Close()` closes the PTY fd, which causes `BufferedReader.ReadLoop` to exit, which closes the output channel, which causes `readerLoop` to exit. The timeout handles edge cases where fd closure doesn't unblock immediately.
 
-### 7.4 Output Dropping
+### 8.4 Output Dropping
 
 When `outputCh` is full (the SessionManager consumer is slow), chunks are silently dropped and counted via `atomic.Int64` (`droppedOutput`). This prevents the reader loop from stalling, which would block the PTY and potentially deadlock the child process.
 
-## 8. Platform Differences
+## 9. Platform Differences
 
-### 8.1 PTY Allocation
+### 9.1 PTY Allocation
 
 | Platform | Backend | Key File | Features |
 |---|---|---|---|
@@ -785,7 +806,7 @@ When `outputCh` is full (the SessionManager consumer is slow), chunks are silent
 - PTY writer is the input pipe handle (`ConIn`)
 - Windows does not support process suspension → `Pause()`/`Resume()` return `ErrPauseNotSupported` / `ErrResumeNotSupported`
 
-### 8.2 Signal Handling
+### 9.2 Signal Handling
 
 | Signal | Unix | Windows |
 |---|---|---|
@@ -795,30 +816,30 @@ When `outputCh` is full (the SessionManager consumer is slow), chunks are silent
 | SIGWINCH | Handled by `watchResize` | Not available (handled differently) |
 | SIGTTOU/SIGTTIN | Ignored in `init()` | N/A |
 
-### 8.3 Blocking Guard
+### 9.3 Blocking Guard
 
 | Platform | File | Behavior |
 |---|---|---|
 | Unix | `ptyio/blocking_unix.go` | `UnixBlockingGuard` uses `fcntl` to clear O_NONBLOCK on the fd. `EnsureBlocking()` saves flags and clears O_NONBLOCK. |
 | Windows | `ptyio/blocking_windows.go` | No-op. Windows console I/O is always blocking. |
 
-### 8.4 Persistence
+### 9.4 Persistence
 
 | Platform | File | Behavior |
 |---|---|---|
 | Unix | `persistence_unix.go` | Uses `os.Getwd()` for current directory resolution. |
 | Windows | `persistence_windows.go` | Uses `os.Getwd()` with Windows path handling. |
 
-### 8.5 Resize Handling
+### 9.5 Resize Handling
 
 | Platform | File | Behavior |
 |---|---|---|
 | Unix | `resize_unix.go` | Listens for SIGWINCH via `watchResize`. Calls resize callback with new terminal dimensions. |
 | Windows | `resize_windows.go` | No SIGWINCH support. Resize handled through other mechanisms (e.g., Bubble Tea resize messages). |
 
-## 9. Event System
+## 10. Event System
 
-### 9.1 EventBus (`eventbus.go`)
+### 10.1 EventBus (`eventbus.go`)
 
 Lossless, totally-ordered event fan-out built on
 `github.com/joeycumines/go-bigbuff.ChanPubSub`.
@@ -871,7 +892,7 @@ can never block, and one consumer can never starve another. Watcher lifecycle
 follows `time.Ticker`: dropping the handle releases it via a finalizer, and
 `Release` exists for deterministic teardown.
 
-### 9.2 EventKinds (`eventbus.go`, lines 14–47)
+### 10.2 EventKinds (`eventbus.go`, lines 14–47)
 
 | Kind | Data Type | Description |
 |---|---|---|
@@ -885,7 +906,7 @@ follows `time.Ticker`: dropping the handle releases it via a finalizer, and
 | `EventWorkingDirectory` | `string` | Working directory (OSC 7, as URI) |
 | `EventClipboard` | `string` | Clipboard content (OSC 52, base64 payload) |
 
-### 9.3 Typed Accessors
+### 10.3 Typed Accessors
 
 ```go
 func (e Event) DataAsDims() ([2]int, bool)     // For EventResize
@@ -893,9 +914,9 @@ func (e Event) DataAsDims() ([2]int, bool)     // For EventResize
 
 There is no byte accessor: output is not carried on the bus.
 
-## 10. JS Binding Layer
+## 11. JS Binding Layer
 
-### 10.1 Module Registration (`builtin/termmux/module.go`)
+### 11.1 Module Registration (`builtin/termmux/module.go`)
 
 The package is registered as the native module `osm:termmux` via the `Require` function:
 
@@ -903,7 +924,7 @@ The package is registered as the native module `osm:termmux` via the `Require` f
 func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, input io.Reader, output io.Writer) func(*goja.Runtime, *goja.Object)
 ```
 
-### 10.2 Constants Exposed to JS
+### 11.2 Constants Exposed to JS
 
 | JS Constant | Go Value | Description |
 |---|---|---|
@@ -924,7 +945,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 | `EVENT_CLOSED` | `"closed"` | Session closed |
 | `EVENT_TERMINAL_RESIZE` | `"terminal-resize"` | Terminal resized |
 
-### 10.3 Factory Functions
+### 11.3 Factory Functions
 
 **`newCaptureSession(command, args?, opts?)`** — Creates a `CaptureSession` and wraps it as a JS object:
 
@@ -949,7 +970,7 @@ const mgr = termmux.newSessionManager({
 });
 ```
 
-### 10.4 CaptureSession JS Wrapper (17 methods)
+### 11.4 CaptureSession JS Wrapper (17 methods)
 
 | Method | Description |
 |---|---|
@@ -971,7 +992,7 @@ const mgr = termmux.newSessionManager({
 | `readAvailable()` → `string|null` | Non-blocking drain of buffered chunks |
 | `sendKeys(...keys)` → `Promise<void>` | Translate and write key sequences |
 
-### 10.5 SessionManager JS Wrapper (35+ methods)
+### 11.5 SessionManager JS Wrapper (35+ methods)
 
 **Core session management**: `run`, `started`, `close`, `register`, `unregister`, `activate`, `input`, `resize`, `resizeSession`, `termSize`, `capture`, `activeID`, `isDone`, `sessions`, `subscribe`, `unsubscribe`, `passthrough`
 
@@ -979,7 +1000,7 @@ const mgr = termmux.newSessionManager({
 
 **Persistence**: `exportState`, `saveState`, `loadState`, `restoreState`, `removeState`, `processAlive`
 
-### 10.6 Event Bus → JS Bridge
+### 11.6 Event Bus → JS Bridge
 
 A goroutine subscribes to the `SessionManager`'s `EventBus`, updates the
 wrapper caches, and submits translated `CustomEvent`s to the event-loop
@@ -1027,7 +1048,7 @@ event loop. The bridge subscribes only while JavaScript holds at least one
 listener, and unsubscribes when the last is removed. The legacy `pollEvents()`
 wrapper method is a compatibility no-op.
 
-### 10.7 JS Event Listener System
+### 11.7 JS Event Listener System
 
 The wrapper exposes both DOM-style listeners and the legacy numeric-ID API:
 
@@ -1047,7 +1068,7 @@ its own prompt-subscriber goroutine and a private, lossless event queue;
 `pollEvents()` drains that queue. `pollEvents()` on the manager wrapper itself
 remains a compatibility no-op.
 
-### 10.8 Input Encoding Utilities
+### 11.8 Input Encoding Utilities
 
 **`keyToTermBytes(key, appCursor?, appKeypad?)`** — Converts BubbleTea-style key names to terminal byte sequences:
 
@@ -1068,7 +1089,7 @@ ESC [ < Ps ; Px ; Py M/m
 
 Where `Ps = button + modifiers` (Shift+4, Alt+8, Ctrl+16, Motion+32, Release suffix m) and `Px`/`Py` are column/row coordinates with optional offset.
 
-### 10.9 Layout Utilities
+### 11.9 Layout Utilities
 
 **`splitLayout(config)`** — Creates a `SplitLayout` from config:
 
@@ -1086,7 +1107,7 @@ const { top, bottom } = layout.compute(rows, cols, 0.5);
 // top/bottom: { row, col, rows, cols, offsetMouse(screenRow, screenCol) }
 ```
 
-### 10.10 Go ↔ JS Type Mapping
+### 11.10 Go ↔ JS Type Mapping
 
 | Go Type | JS Type | Notes |
 |---|---|---|

@@ -416,12 +416,31 @@ func (m *Model) forwardPaste(content string) {
 	bracketed := m.snap != nil && m.snap.BracketedPaste
 	m.mu.Unlock()
 
+	deliverPaste(func(data []byte) error {
+		return m.manager.InputStaged(m.sessionID, data)
+	}, bracketed, content)
+}
+
+// deliverPaste sends one paste to a session through the staged single-Write
+// path. When the payload is bracketed and the staged write fails, the
+// end-of-paste delimiter ESC[201~ is sent best-effort as a second staged
+// write: WriteFull does not report how many bytes landed, so resending the
+// payload could duplicate bytes, but leaving the child inside ESC[200~ would
+// corrupt all subsequent input. The terminator is idempotent, so sending it
+// after a failed (possibly partial) write is safe. A raw (non-bracketed)
+// paste sends no terminator.
+func deliverPaste(input func(data []byte) error, bracketed bool, content string) {
 	payload := content
 	if bracketed {
 		payload = "\x1b[200~" + content + "\x1b[201~"
 	}
-	if err := m.manager.InputStaged(m.sessionID, []byte(payload)); err != nil {
+	if err := input([]byte(payload)); err != nil {
 		slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
+		if bracketed {
+			if terr := input([]byte("\x1b[201~")); terr != nil {
+				slog.Warn("termpane paste terminator failed", "error", terr)
+			}
+		}
 	}
 }
 

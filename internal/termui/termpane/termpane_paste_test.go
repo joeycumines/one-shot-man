@@ -3,6 +3,7 @@ package termpane
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -357,4 +358,48 @@ func firstDivergence(got, want []byte) string {
 		return "length mismatch"
 	}
 	return "none"
+}
+
+// TestDeliverPaste_ClosesBracketOnStagedError pins R3-5: when a bracketed
+// paste's staged write fails, the end-of-paste delimiter ESC[201~ is sent
+// best-effort so the child is not left stuck inside ESC[200~. A raw
+// (non-bracketed) paste must NOT send any terminator.
+func TestDeliverPaste_ClosesBracketOnStagedError(t *testing.T) {
+	t.Parallel()
+	var calls [][]byte
+	failWrites := true
+	input := func(data []byte) error {
+		calls = append(calls, append([]byte(nil), data...))
+		if failWrites {
+			return errors.New("staged write failed")
+		}
+		return nil
+	}
+
+	// Bracketed: payload write fails -> terminator must follow.
+	deliverPaste(input, true, "payload")
+	if len(calls) != 2 {
+		t.Fatalf("bracketed failing paste made %d writes %q, want 2 (payload + terminator)", len(calls), calls)
+	}
+	if string(calls[0]) != "\x1b[200~payload\x1b[201~" {
+		t.Errorf("first write = %q, want full bracketed payload", calls[0])
+	}
+	if string(calls[1]) != "\x1b[201~" {
+		t.Errorf("second write = %q, want bare ESC[201~ terminator", calls[1])
+	}
+
+	// Non-bracketed: payload write fails -> no terminator.
+	calls = nil
+	deliverPaste(input, false, "payload")
+	if len(calls) != 1 || string(calls[0]) != "payload" {
+		t.Errorf("raw failing paste made writes %q, want exactly [\"payload\"]", calls)
+	}
+
+	// Bracketed, write succeeds: exactly one write, no extra terminator.
+	failWrites = false
+	calls = nil
+	deliverPaste(input, true, "ok")
+	if len(calls) != 1 || string(calls[0]) != "\x1b[200~ok\x1b[201~" {
+		t.Errorf("successful bracketed paste made writes %q, want exactly the payload", calls)
+	}
 }

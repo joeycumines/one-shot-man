@@ -2,7 +2,9 @@ package termmux
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -184,16 +186,34 @@ func TestSessionManager_InputStaged_LockedSession(t *testing.T) {
 		t.Fatalf("LockSession: %v", err)
 	}
 
-	// While locked, staged input must not reach the child; it feeds the
-	// password prompt instead (same as handleInputSession).
-	if err := m.InputStaged(id, []byte("pw\n")); err != nil {
-		t.Fatalf("InputStaged password: %v", err)
+	// While locked, staged input must be REJECTED, not fed to the unlock
+	// prompt: a bracketed paste would otherwise append ESC[200~/ESC[201~
+	// and the payload bytes to the password buffer and leak its length via
+	// the prompt's mask. (InputSession keeps prompt semantics.)
+	err = m.InputStaged(id, []byte("pw\n"))
+	if err == nil {
+		t.Fatal("staged input to a locked session must be rejected, got nil error")
 	}
-	if m.IsLocked(id) {
-		t.Fatal("session should be unlocked after staged password entry")
+	if !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("staged locked error = %v, want it to mention locked", err)
+	}
+	if !m.IsLocked(id) {
+		t.Fatal("session must still be locked after rejected staged input")
 	}
 	if got := bs.written(); len(got) != 0 {
 		t.Fatalf("child received input while locked: %q", got)
+	}
+	// The unlock prompt buffer must not have absorbed the staged bytes.
+	if up := m.UnlockPrompt(id); up.maskLen != 0 {
+		t.Fatalf("unlock prompt mask len = %d, want 0 (staged input leaked into password)", up.maskLen)
+	}
+
+	// Unlock via the regular input path (prompt semantics preserved).
+	if err := m.InputSession(id, []byte("pw\n")); err != nil {
+		t.Fatalf("InputSession password: %v", err)
+	}
+	if m.IsLocked(id) {
+		t.Fatal("session should be unlocked after password entry via InputSession")
 	}
 
 	// After unlock, staged input reaches the child as one write.
@@ -370,5 +390,141 @@ func TestSessionManager_InputStaged_ShortWrite(t *testing.T) {
 	}
 	if err := m.InputSession(id, payload); !errors.Is(err, ErrShortWrite) {
 		t.Fatalf("InputSession short write error = %v, want ErrShortWrite wrap", err)
+	}
+}
+
+// TestSessionManager_InputStagedActive_ResolvesLikeHandleInput verifies the
+// single-request active staged write resolves the target exactly like
+// handleInput: with an active window, the pane manager's active session wins
+// over m.activeID.
+func TestSessionManager_InputStagedActive_ResolvesLikeHandleInput(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	plain := newBoundarySession()
+	plainID, err := m.Register(plain, SessionTarget{Name: "plain"})
+	if err != nil {
+		t.Fatalf("Register plain: %v", err)
+	}
+	if err := m.Activate(plainID); err != nil {
+		t.Fatalf("Activate plain: %v", err)
+	}
+
+	// Create a window and add a pane; switching to the window makes the
+	// pane manager's active session the input target, diverging from
+	// m.activeID.
+	wID, err := m.NewWindow("w1")
+	if err != nil {
+		t.Fatalf("NewWindow: %v", err)
+	}
+	paneSess := newBoundarySession()
+	_, err = m.AddPaneToWindow(paneSess, SessionTarget{Name: "pane"}, wID, SplitRight)
+	if err != nil {
+		t.Fatalf("AddPaneToWindow: %v", err)
+	}
+	if _, err := m.NextWindow(), error(nil); err != nil {
+		t.Fatalf("NextWindow: %v", err)
+	}
+	_ = wID
+
+	// The active session per handleInput rules is now the pane in w1, not
+	// plainID. InputStagedActive must write there, in one Write call.
+	if err := m.InputStagedActive([]byte("staged-active")); err != nil {
+		t.Fatalf("InputStagedActive: %v", err)
+	}
+	if got := paneSess.written(); string(got) != "staged-active" {
+		t.Fatalf("pane session got %q, want %q", got, "staged-active")
+	}
+	if got := plain.written(); len(got) != 0 {
+		t.Fatalf("plain session got %q, want nothing (misrouted staged write)", got)
+	}
+	calls := paneSess.writeCalls()
+	if len(calls) != 1 {
+		t.Fatalf("staged active write: got %d Write calls, want 1", len(calls))
+	}
+
+	// Same resolution as Input (active path): both land on the pane.
+	if err := m.Input([]byte("regular")); err != nil {
+		t.Fatalf("Input: %v", err)
+	}
+	if got := paneSess.written(); string(got) != "staged-activeregular" {
+		t.Fatalf("pane session got %q, want concatenated staged+regular", got)
+	}
+}
+
+// TestSessionManager_InputStagedActive_NoActive verifies the active staged
+// write reports ErrSessionNotFound when nothing is active.
+func TestSessionManager_InputStagedActive_NoActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.InputStagedActive([]byte("x"))
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("InputStagedActive with no active session = %v, want ErrSessionNotFound", err)
+	}
+}
+
+// TestSessionManager_InputStagedActive_LockedRejects verifies staged active
+// input to a locked session is rejected, not fed to the unlock prompt.
+func TestSessionManager_InputStagedActive_LockedRejects(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	bs := newBoundarySession()
+	id, err := m.Register(bs, SessionTarget{Name: "active-locked"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if err := m.Activate(id); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	if err := m.LockSession(id, "pw"); err != nil {
+		t.Fatalf("LockSession: %v", err)
+	}
+
+	if err := m.InputStagedActive([]byte("\x1b[200~secret\x1b[201~")); err == nil {
+		t.Fatal("staged active input to locked session must be rejected")
+	} else if !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("error = %v, want it to mention locked", err)
+	}
+	if up := m.UnlockPrompt(id); up.maskLen != 0 {
+		t.Fatalf("unlock prompt mask len = %d, want 0 (paste leaked into password)", up.maskLen)
+	}
+	if got := bs.written(); len(got) != 0 {
+		t.Fatalf("child received %q while locked", got)
+	}
+}
+
+// TestSessionManager_IsRunning_Lifecycle verifies IsRunning is true only
+// after the worker has published startup, and flips false as soon as Close
+// begins shutdown — never true while every request would fail with
+// ErrManagerNotRunning.
+func TestSessionManager_IsRunning_Lifecycle(t *testing.T) {
+	m := NewSessionManager()
+	if m.IsRunning() {
+		t.Fatal("IsRunning before Run must be false")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
+	if !m.IsRunning() {
+		t.Fatal("IsRunning after Started must be true")
+	}
+	m.Close()
+	<-errCh
+	if m.IsRunning() {
+		t.Fatal("IsRunning after Close must be false")
+	}
+	// A request now fails with ErrManagerNotRunning, and IsRunning agrees.
+	if err := m.Input([]byte("x")); !errors.Is(err, ErrManagerNotRunning) {
+		t.Fatalf("Input after close = %v, want ErrManagerNotRunning", err)
 	}
 }

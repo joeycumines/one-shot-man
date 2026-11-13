@@ -39,7 +39,6 @@ func TestSessionManager_InputSession_TargetedRouting(t *testing.T) {
 		t.Fatalf("InputSession(s2): %v", err)
 	}
 
-
 	if got := string(s2.Written()); got != "targeted-to-s2" {
 		t.Errorf("s2 received %q, want %q", got, "targeted-to-s2")
 	}
@@ -51,7 +50,6 @@ func TestSessionManager_InputSession_TargetedRouting(t *testing.T) {
 	if err := m.InputSession(id1, []byte("targeted-to-s1")); err != nil {
 		t.Fatalf("InputSession(s1): %v", err)
 	}
-
 
 	if got := string(s1.Written()); got != "targeted-to-s1" {
 		t.Errorf("s1 received %q, want %q", got, "targeted-to-s1")

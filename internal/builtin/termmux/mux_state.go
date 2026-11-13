@@ -92,8 +92,8 @@ type muxState struct {
 	// Seeded by the constructor; mgrOrderOnce lazily initializes it for
 	// zero-value muxState values constructed in tests, without a racy write
 	// to the field itself.
-	mgrOrder     *orderChain
-	mgrOrderOnce sync.Once
+	mgrOrder      *orderChain
+	mgrOrderOnce  sync.Once
 	persistenceMu sync.Mutex
 	mu            sync.RWMutex
 	inPassthrough bool

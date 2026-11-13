@@ -312,6 +312,9 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 		if len(call.Arguments) == 0 {
 			panic(s.runtime.NewTypeError("writeToChild: data argument is required"))
 		}
+		if goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(s.runtime.NewTypeError("writeToChild: data must not be null or undefined"))
+		}
 		data := []byte(call.Argument(0).String())
 		// Ordered so un-awaited writeToChild calls land in call order
 		// against input/inputStaged/write, same as session().write.
@@ -365,32 +368,34 @@ func registerPassthroughMethods(obj *goja.Object, s *muxState) {
 			return goja.Undefined()
 		})
 
-		_ = sessionObj.Set("write", func(data string) goja.Value {
+		_ = sessionObj.Set("write", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+				panic(s.runtime.NewTypeError("write: data must not be null or undefined"))
+			}
+			data := []byte(call.Argument(0).String())
 			return s.managerPromiseOrdered(func() (any, error) {
-				return nil, s.mgr.Input([]byte(data))
+				return nil, s.mgr.Input(data)
 			})
 		})
 
-		_ = sessionObj.Set("writeStaged", func(data string) goja.Value {
+		_ = sessionObj.Set("writeStaged", func(call goja.FunctionCall) goja.Value {
 			// Ordered so un-awaited write/writeStaged calls land in call
-			// order. The target is resolved on the manager worker (the same
-			// resolution handleInput uses), not from the JS-side cache, which
-			// can go stale across window/pane switches or respawns. Note the
-			// ActiveID lookup and the InputStaged request are two separate
-			// worker round-trips, so the resolved id is not atomic with the
-			// write — the id-targeted write itself is unchanged. With no
-			// active session this is an explicit error: the caller asked for
-			// staged semantics and silently degrading to a non-staged Input
-			// (or writing nowhere) would be wrong.
+			// order. The target is resolved ON THE MANAGER WORKER inside the
+			// same request as the write (InputStagedActive), using the same
+			// active-session resolution handleInput uses (active window's
+			// pane manager when a window is active) — so an Activate or
+			// window switch cannot misroute the bytes between resolution
+			// and write, unlike a separate ActiveID()+InputStaged() pair.
+			// With no active session this rejects ErrSessionNotFound; a
+			// locked active session is rejected (staged payloads must never
+			// feed the unlock prompt); a stopped manager rejects
+			// ErrManagerNotRunning.
+			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+				panic(s.runtime.NewTypeError("writeStaged: data must not be null or undefined"))
+			}
+			data := []byte(call.Argument(0).String())
 			return s.managerPromiseOrdered(func() (any, error) {
-				if !s.mgr.IsRunning() {
-					return nil, parent.ErrManagerNotRunning
-				}
-				id := s.mgr.ActiveID()
-				if id == 0 {
-					return nil, parent.ErrSessionNotFound
-				}
-				return nil, s.mgr.InputStaged(id, []byte(data))
+				return nil, s.mgr.InputStagedActive(data)
 			})
 		})
 

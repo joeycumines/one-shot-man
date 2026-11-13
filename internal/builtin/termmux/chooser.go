@@ -152,8 +152,14 @@ func (m *chooseTreeModel) render() string {
 	}
 
 	// Clamp the popup to the terminal first: the frame must never exceed
-	// width. Preferred width 50 (with 4 cells of margin) when it fits.
+	// width. Preferred width 50 (with 4 cells of margin) when it fits. On a
+	// narrow terminal (3 <= width < 7) the margin subtraction alone would
+	// force the degenerate 1-cell bar even though the terminal can fit a
+	// minimal box frame, so clamp the popup UP to the available width.
 	popupWidth := min(width-4, 50)
+	if popupWidth < 3 && width >= 3 {
+		popupWidth = width
+	}
 	if popupWidth < 1 {
 		popupWidth = 1
 	}
@@ -172,7 +178,14 @@ func (m *chooseTreeModel) render() string {
 	items := m.chooser.Render(inner)
 	itemLines := strings.Split(items, "\n")
 	if len(itemLines) == 1 && itemLines[0] == "" {
-		itemLines = nil
+		// A visible chooser with items always renders at least one (possibly
+		// truncated-to-empty at inner==0) row per item; only a truly empty
+		// chooser collapses to zero rows.
+		if len(m.chooser.Items()) > 0 {
+			itemLines = []string{""}
+		} else {
+			itemLines = nil
+		}
 	}
 	contentHeight := len(itemLines) + 4 // border, title, separator, bottom
 
@@ -209,10 +222,16 @@ func (m *chooseTreeModel) render() string {
 		// Degenerate terminal: a box frame needs at least 3 cells of width
 		// and 4 rows of height. Render a minimal vertical bar, capped at the
 		// terminal height, so the overlay stays visible without overflowing.
-		for i := 0; i < contentHeight && i < height; i++ {
-			if i > 0 || yOff > 0 {
+		// The yOff loop above already emitted the leading newlines, so the
+		// first bar needs no separator; every line is padded by xOff so the
+		// bar stays centered like the box frame. The loop bound yOff+i <
+		// height keeps the total emitted lines within the terminal.
+		pad := strings.Repeat(" ", xOff)
+		for i := 0; i < contentHeight && yOff+i < height; i++ {
+			if i > 0 {
 				b.WriteByte('\n')
 			}
+			b.WriteString(pad)
 			b.WriteString("│")
 		}
 		return b.String()
@@ -280,10 +299,16 @@ func jsToTeaMsg(runtime *goja.Runtime, msgObj *goja.Object) tea.Msg {
 		// Fall back to a text key so overlays that close on ANY key still
 		// fire for key strings ParseKey cannot resolve (e.g. modified
 		// non-letters like alt+, which ParseKey reports as ambiguous).
-		if r, _ := utf8.DecodeRuneInString(key); r != utf8.RuneError {
-			return tea.KeyPressMsg{Code: r, Text: key}
+		if r, size := utf8.DecodeRuneInString(key); r != utf8.RuneError && size == len(key) {
+			// Single-rune key string ParseKey could not resolve: keep the rune
+			// as the code, but do NOT put the key NAME in Text — Text is the
+			// literal text a key produces, and consumers (termpane.forwardKey)
+			// forward it verbatim to the child.
+			return tea.KeyPressMsg{Code: r}
 		}
-		return tea.KeyPressMsg{Text: key}
+		// Multi-rune unrecognized key (e.g. "alt+,"): still a key press so
+		// overlays that close on ANY key fire, but with no Code and no Text.
+		return tea.KeyPressMsg{Text: ""}
 
 	case "WindowSize":
 		w := int(msgObj.Get("width").ToInteger())
@@ -373,7 +398,11 @@ func buildChooseTreeResult(runtime *goja.Runtime, model *chooseTreeModel, teaObj
 		return nil, err
 	}
 	// tea.newModel returns an error OBJECT (not a throw) for invalid config;
-	// detect it so the factory reports a real error.
+	// detect it so the factory reports a real error. A null/undefined return
+	// is likewise a failure — guard before ToObject, which would panic.
+	if modelWrapper == nil || goja.IsUndefined(modelWrapper) || goja.IsNull(modelWrapper) {
+		return nil, fmt.Errorf("chooseTree: tea.newModel returned no model")
+	}
 	if w := modelWrapper.ToObject(runtime); w != nil {
 		if ev := w.Get("error"); ev != nil && !goja.IsUndefined(ev) && !goja.IsNull(ev) {
 			return nil, fmt.Errorf("chooseTree: tea.newModel failed: %s", ev.String())

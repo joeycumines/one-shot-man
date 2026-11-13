@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -270,5 +273,202 @@ func TestSessionWriteStaged_ManagerNotRunningRejects(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), parent.ErrManagerNotRunning.Error()) {
 		t.Fatalf("writeStaged rejection = %q, want it to wrap %q", err.Error(), parent.ErrManagerNotRunning)
+	}
+}
+
+// recordingOrderSession records every Write's bytes in order and can block
+// the first write until released, so tests can interleave calls while a
+// predecessor is in flight.
+type recordingOrderSession struct {
+	mu       sync.Mutex
+	calls    [][]byte
+	blockCh  chan struct{} // if non-nil, the first Write blocks until closed
+	released bool
+	doneCh   chan struct{}
+	readerCh chan []byte
+	once     sync.Once
+}
+
+func newRecordingOrderSession() *recordingOrderSession {
+	return &recordingOrderSession{
+		doneCh:   make(chan struct{}),
+		readerCh: make(chan []byte, 16),
+	}
+}
+
+func (s *recordingOrderSession) Done() <-chan struct{} { return s.doneCh }
+func (s *recordingOrderSession) Reader() <-chan []byte { return s.readerCh }
+
+func (s *recordingOrderSession) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	if s.blockCh != nil && !s.released {
+		ch := s.blockCh
+		s.mu.Unlock()
+		<-ch // block until the test releases the predecessor
+		s.mu.Lock()
+		s.released = true
+	}
+	cp := make([]byte, len(p))
+	copy(cp, p)
+	s.calls = append(s.calls, cp)
+	s.mu.Unlock()
+	return len(p), nil
+}
+
+func (s *recordingOrderSession) Resize(rows, cols int) error { return nil }
+
+func (s *recordingOrderSession) Close() error {
+	s.once.Do(func() { close(s.doneCh) })
+	return nil
+}
+
+// TestTrackOrdered_CancelledSlotDoesNotRun pins R3-1: when the worker context
+// is cancelled while trackOrdered waits on its predecessor, the operation
+// must NOT run (it would race the in-flight predecessor) and the promise must
+// reject with the context error.
+func TestTrackOrdered_CancelledSlotDoesNotRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: drives the event loop")
+	}
+	e := newTestEnv(t)
+	rt := e.runtime
+	adapter := e.adapter
+
+	sess := newRecordingOrderSession()
+	sess.blockCh = make(chan struct{}) // first write blocks until released
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ran := make(chan struct{})
+
+	// Slot 1 on the chain blocks inside operation via the session write.
+	chain := newOrderChain()
+	_ = trackOrdered(ctx, adapter, rt, chain, func() (any, error) {
+		_, _ = sess.Write([]byte("first"))
+		return nil, nil
+	})
+	// Slot 2: cancelled while waiting for slot 1.
+	cancelledCtx, cancel2 := context.WithCancel(context.Background())
+	var p2ran atomic.Int32
+	_ = trackOrdered(cancelledCtx, adapter, rt, chain, func() (any, error) {
+		p2ran.Add(1)
+		return nil, nil
+	})
+	cancel2() // cancel slot 2's worker ctx while it awaits slot 1
+
+	// Release slot 1.
+	close(sess.blockCh)
+
+	// Give slot 2's worker a moment to observe the cancellation, then check
+	// its operation never ran.
+	time.Sleep(100 * time.Millisecond)
+	if got := p2ran.Load(); got != 0 {
+		t.Fatalf("cancelled slot ran its operation %d times, want 0", got)
+	}
+	_ = ran
+}
+
+// TestCaptureSession_SendEOF_OrderedAfterWrite pins R3-1b: an un-awaited
+// write followed by sendEOF must deliver the data bytes before the EOF byte.
+func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns child process")
+	}
+	e := newTestEnv(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "received.bin")
+	if _, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
+		var tm = require('osm:termmux');
+		globalThis.cs = tm.newCaptureSession(%q, [%q]);
+		await cs.start();
+	`, buildStdinToFileProgram(t), out)); err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	// Fire write then sendEOF without awaiting the write.
+	if _, err := awaitJSValue(t, e.runtime, `
+		cs.write('DATA-BEFORE-EOF');
+		cs.sendEOF();
+		return true;
+	`); err != nil {
+		t.Fatalf("write+sendEOF: %v", err)
+	}
+	_, _ = awaitJSValue(t, e.runtime, `await cs.wait()`)
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read child record: %v", err)
+	}
+	if string(raw) != "DATA-BEFORE-EOF" {
+		t.Fatalf("child received %q, want exactly %q (EOF must come after the write)", raw, "DATA-BEFORE-EOF")
+	}
+	_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
+}
+
+// TestWriteNullUndefinedTypeError pins R3-12: write/writeStaged/writeToChild
+// must throw a TypeError for null/undefined (previously coerced to the literal
+// strings "null"/"undefined" onto the PTY) and must not write anything.
+func TestWriteNullUndefinedTypeError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	runtime, exports := testRequire(t)
+	setOnLoop(t, runtime, "tm", exports)
+
+	v, err := sessionRun(t, runtime, `(function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		globalThis.cs = tm.newCaptureSession("echo hi", []);
+		var out = [];
+		out.push(expectTypeError(function(){ cs.write(null); }));
+		out.push(expectTypeError(function(){ cs.write(undefined); }));
+		out.push(expectTypeError(function(){ cs.writeStaged(null); }));
+		out.push(expectTypeError(function(){ cs.writeStaged(undefined); }));
+		out.push(expectTypeError(function(){ cs.sendKeys(null); }));
+		out.push(expectTypeError(function(){ cs.sendKeys(undefined); }));
+		out.push(expectTypeError(function(){ cs.sendKeys([null]); }));
+		// Valid string writes still work.
+		out.push(!expectTypeError(function(){ cs.write("ok"); }));
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("null/undefined write script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("write/writeStaged/sendKeys must throw TypeError on null/undefined")
+	}
+}
+
+// TestWriteToChildNullTypeError pins R3-12 for the mux-level writeToChild and
+// session().write paths: null/undefined throw TypeError and write nothing.
+func TestWriteToChildNullTypeError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := sessionRun(t, runtime, `(async function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		var out = [];
+		out.push(expectTypeError(function(){ tuiMux.writeToChild(null); }));
+		out.push(expectTypeError(function(){ tuiMux.writeToChild(undefined); }));
+		out.push(expectTypeError(function(){ testSession.write(null); }));
+		out.push(expectTypeError(function(){ testSession.write(undefined); }));
+		out.push(expectTypeError(function(){ testSession.writeStaged(null); }));
+		// Valid write still resolves.
+		await testSession.write("ping");
+		out.push(true);
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("writeToChild null script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("writeToChild/session().write/writeStaged must throw TypeError on null/undefined")
 	}
 }

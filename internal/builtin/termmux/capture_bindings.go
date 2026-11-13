@@ -73,10 +73,17 @@ func trackOrdered(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *
 	}
 	wait, done := chain.reserve()
 	return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
+		// close(done) always releases the next slot in the chain, whether
+		// this operation runs, fails, or is cancelled while waiting.
 		defer close(done)
 		select {
 		case <-wait:
 		case <-workerCtx.Done():
+			// Cancelled while the predecessor was still in flight: do NOT
+			// run the operation (it would race the predecessor and violate
+			// call-order serialization) — reject with the context error.
+			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(workerCtx.Err()) })
+			return
 		}
 		value, err := operation()
 		if err != nil {
@@ -181,7 +188,8 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 // via module_capture_test.go. Screen reads go through SessionManager
 // snapshots via the _buildVerifyProxy in JS (Task 48).
 func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
-	obj := wrapInteractiveSession(ctx, adapter, runtime, cs, parent.SessionKindCapture).ToObject(runtime)
+	wrapped, order := wrapInteractiveSessionWithOrder(ctx, adapter, runtime, cs, parent.SessionKindCapture)
+	obj := wrapped.ToObject(runtime)
 
 	// ── CaptureSession-specific methods (not part of InteractiveSession) ──
 
@@ -279,8 +287,11 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	})
 
 	// ── sendEOF() ────────────────────────────────────────
+	// sendEOF must land after any previously issued write (0x04 closes the
+	// child's stdin), so it goes through the same orderChain as write —
+	// un-awaited cs.write(data); cs.sendEOF() delivers in call order.
 	_ = obj.Set("sendEOF", func() goja.Value {
-		return trackSessionOperation(ctx, adapter, runtime, func() (any, error) {
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
 			return nil, cs.SendEOF()
 		})
 	})
@@ -375,19 +386,16 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	return obj
 }
 
-// wrapInteractiveSession wraps a [parent.InteractiveSession] into a Goja
-// object with JavaScript-callable methods. This is the shared base for both
-// [SessionManager] session wrappers (via [WrapSessionManager].session())
-// and [CaptureSession] wrappers (via [WrapCaptureSession]).
-//
-// Exported methods (6 total, matching the trimmed InteractiveSession interface):
-//
-//	resize, write, close, isDone, readAvailable.
+// wrapInteractiveSessionWithOrder wraps a [parent.InteractiveSession] into a
+// Goja object with JavaScript-callable methods (the shared base for both
+// [SessionManager] session wrappers and [CaptureSession] wrappers), plus the
+// orderChain it created, so capture-session-specific methods that must
+// serialize with writes (sendEOF) can join the same chain.
 //
 // CaptureSession wrappers add concrete-type-specific methods
 // (start, interrupt, kill, pause, resume, isPaused, wait, sendEOF,
 // pid, exitCode, passthrough).
-func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
+func wrapInteractiveSessionWithOrder(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) (goja.Value, *orderChain) {
 	obj := runtime.NewObject()
 	order := newOrderChain()
 
@@ -402,9 +410,13 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 		})
 	})
 
-	_ = obj.Set("write", func(data string) goja.Value {
+	_ = obj.Set("write", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(runtime.NewTypeError("write: data must not be null or undefined"))
+		}
+		data := []byte(call.Argument(0).String())
 		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
-			return nil, parent.WriteFull(session, []byte(data))
+			return nil, parent.WriteFull(session, data)
 		})
 	})
 
@@ -413,13 +425,31 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 	// single Write of the full payload; the JS string→bytes conversion is
 	// the only copy here, and a short write is reported as an error wrapping
 	// parent.ErrShortWrite (never silently truncated).
-	_ = obj.Set("writeStaged", func(data string) goja.Value {
+	_ = obj.Set("writeStaged", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(runtime.NewTypeError("writeStaged: data must not be null or undefined"))
+		}
+		data := []byte(call.Argument(0).String())
 		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
-			return nil, parent.WriteFull(session, []byte(data))
+			return nil, parent.WriteFull(session, data)
 		})
 	})
 
-	_ = obj.Set("sendKeys", func(keys ...string) goja.Value {
+	_ = obj.Set("sendKeys", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("sendKeys: at least one key is required"))
+		}
+		keys := make([]string, 0, len(call.Arguments))
+		for i := 0; i < len(call.Arguments); i++ {
+			v := call.Argument(i)
+			if goja.IsUndefined(v) || goja.IsNull(v) {
+				panic(runtime.NewTypeError("sendKeys: keys must not be null or undefined"))
+			}
+			if _, isStr := v.Export().(string); !isStr {
+				panic(runtime.NewTypeError("sendKeys: keys must be strings"))
+			}
+			keys = append(keys, v.String())
+		}
 		var buf strings.Builder
 		for _, key := range keys {
 			// Capture sessions have no live VTerm snapshot, so keys are
@@ -478,7 +508,7 @@ func wrapInteractiveSession(ctx context.Context, adapter *gojaeventloop.Adapter,
 		}
 	})
 
-	return obj
+	return obj, order
 }
 
 // unwrapInteractiveSession retrieves the Go InteractiveSession stored on a

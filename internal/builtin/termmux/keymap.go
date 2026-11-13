@@ -3,6 +3,7 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -61,7 +62,13 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 
 	_ = obj.Set("bind", func(call goja.FunctionCall) goja.Value {
 		key := requiredStringArg(call, 0, "bind: key")
+		if _, isStr := call.Argument(0).Export().(string); !isStr {
+			panic(runtime.NewTypeError("bind: key must be a string"))
+		}
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			if _, isStr := call.Argument(1).Export().(string); !isStr {
+				panic(runtime.NewTypeError("bind: action must be a string"))
+			}
 			km.Bind(key, call.Argument(1).String())
 		}
 		// null/undefined action: no-op (skip), consistent with newKeymapFactory.
@@ -69,16 +76,28 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 	})
 	_ = obj.Set("bindChord", func(call goja.FunctionCall) goja.Value {
 		key := requiredStringArg(call, 0, "bindChord: key")
+		if _, isStr := call.Argument(0).Export().(string); !isStr {
+			panic(runtime.NewTypeError("bindChord: key must be a string"))
+		}
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			if _, isStr := call.Argument(1).Export().(string); !isStr {
+				panic(runtime.NewTypeError("bindChord: action must be a string"))
+			}
 			km.BindChord(key, call.Argument(1).String())
 		}
 		return goja.Undefined()
 	})
 	_ = obj.Set("unbind", func(call goja.FunctionCall) goja.Value {
+		if _, isStr := call.Argument(0).Export().(string); !isStr {
+			panic(runtime.NewTypeError("unbind: key must be a string"))
+		}
 		km.Unbind(requiredStringArg(call, 0, "unbind: key"))
 		return goja.Undefined()
 	})
 	_ = obj.Set("unbindChord", func(call goja.FunctionCall) goja.Value {
+		if _, isStr := call.Argument(0).Export().(string); !isStr {
+			panic(runtime.NewTypeError("unbindChord: key must be a string"))
+		}
 		km.UnbindChord(requiredStringArg(call, 0, "unbindChord: key"))
 		return goja.Undefined()
 	})
@@ -102,7 +121,7 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 			_ = entry.Set("key", b.Key)
 			_ = entry.Set("action", b.Action)
 			_ = entry.Set("chord", b.Chord)
-			_ = list.Set(fmt.Sprintf("%d", i), entry)
+			_ = list.Set(strconv.Itoa(i), entry)
 		}
 		return list
 	})
@@ -132,6 +151,9 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 		}
 		if v := cfg.Get("keys"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			obj := v.ToObject(runtime)
+			if obj == nil || obj.ClassName() != "Object" {
+				panic(runtime.NewTypeError("newKeymap: keys must be a plain object"))
+			}
 			m := map[string]string{}
 			for _, k := range obj.Keys() {
 				val := obj.Get(k)
@@ -147,6 +169,9 @@ func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value 
 		}
 		if v := cfg.Get("chords"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			obj := v.ToObject(runtime)
+			if obj == nil || obj.ClassName() != "Object" {
+				panic(runtime.NewTypeError("newKeymap: chords must be a plain object"))
+			}
 			m := map[string]string{}
 			for _, k := range obj.Keys() {
 				val := obj.Get(k)
@@ -201,6 +226,15 @@ func (m *keymapOverlayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the host's event loop (same contract as chooseTree), so quitting
 		// here would tear down the host application. Closing is signaled via
 		// m.closed / visible() / onClose instead.
+		return m, nil
+	case tea.KeyReleaseMsg:
+		// Any key event (press or release) closes the overlay.
+		m.closed = true
+		if m.onClose != nil {
+			if _, err := m.onClose(goja.Undefined()); err != nil {
+				panic(err)
+			}
+		}
 		return m, nil
 	}
 	return m, nil
@@ -307,10 +341,16 @@ func (m *keymapOverlayModel) render() string {
 		// Degenerate terminal: a box frame needs at least 3 cells of width
 		// and 4 rows of height. Render a minimal vertical bar, capped at the
 		// terminal height, so the overlay stays visible without overflowing.
-		for i := 0; i < contentHeight && i < height; i++ {
-			if i > 0 || yOff > 0 {
+		// The yOff loop above already emitted the leading newlines, so the
+		// first bar needs no separator; every line is padded by xOff so the
+		// bar stays centered like the box frame. The loop bound yOff+i <
+		// height keeps the total emitted lines within the terminal.
+		pad := strings.Repeat(" ", xOff)
+		for i := 0; i < contentHeight && yOff+i < height; i++ {
+			if i > 0 {
 				b = append(b, '\n')
 			}
+			b = append(b, pad...)
 			b = append(b, "│"...)
 		}
 		return string(b)
@@ -326,10 +366,10 @@ func (m *keymapOverlayModel) render() string {
 		b = append(b, ("│ " + body + strings.Repeat(" ", padN) + "│\n")...)
 	}
 	b = append(b, pad...)
-	b = append(b, ("┌"+strings.Repeat("─", border)+"┐\n")...)
+	b = append(b, ("┌" + strings.Repeat("─", border) + "┐\n")...)
 	row(title)
 	b = append(b, pad...)
-	b = append(b, ("├"+strings.Repeat("─", border)+"┤\n")...)
+	b = append(b, ("├" + strings.Repeat("─", border) + "┤\n")...)
 	for _, l := range lines {
 		row(l)
 	}
@@ -429,7 +469,12 @@ func keymapOverlayFactory(ctx context.Context, adapter *gojaeventloop.Adapter, r
 			}
 			// tea.newModel signals invalid config by RETURNING an error object
 			// ({error, errorCode}), not by throwing — detect that shape and
-			// reject the promise instead of resolving with it.
+			// reject the promise instead of resolving with it. A
+			// null/undefined return is likewise a failure; guard before
+			// ToObject, which would panic on it.
+			if modelWrapper == nil || goja.IsUndefined(modelWrapper) || goja.IsNull(modelWrapper) {
+				panic(owner.NewGoError(fmt.Errorf("keymapOverlay: tea.newModel returned no model")))
+			}
 			if w := modelWrapper.ToObject(owner); w != nil {
 				if ev := w.Get("error"); ev != nil && !goja.IsUndefined(ev) && !goja.IsNull(ev) {
 					panic(owner.NewGoError(fmt.Errorf("keymapOverlay: tea.newModel failed: %s", ev.String())))

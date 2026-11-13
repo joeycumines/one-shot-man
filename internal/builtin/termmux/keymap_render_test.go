@@ -142,9 +142,9 @@ func TestKeymapOverlay_RenderUnicodeKeys(t *testing.T) {
 	km := parent.NewKeymapWith(
 		parent.WithPrefix("ctrl+a"),
 		parent.WithKeys(map[string]string{
-			"⌨\uFE0F": "keyboard-with-vs16", // 2 cells as a cluster, 1+0 per rune
-			"👨\u200d💻": "dev-emoji",         // ZWJ sequence, 2 cells as a cluster
-			"é":       "e-acute",             // combining form would split per rune
+			"⌨\uFE0F":  "keyboard-with-vs16", // 2 cells as a cluster, 1+0 per rune
+			"👨\u200d💻": "dev-emoji",          // ZWJ sequence, 2 cells as a cluster
+			"é":        "e-acute",            // combining form would split per rune
 		}),
 	)
 	for _, width := range []int{80, 30, 24, 20, 12, 8, 6, 5, 4, 3, 2, 1} {
@@ -176,11 +176,11 @@ func TestTruncateCells_Clusters(t *testing.T) {
 	}{
 		{"hello", 10, "hello"},
 		{"hello", 3, "hel"},
-		{"⌨\uFE0Fx", 2, "⌨\uFE0F"},   // VS16 cluster counts 2 as one unit
+		{"⌨\uFE0Fx", 2, "⌨\uFE0F"},    // VS16 cluster counts 2 as one unit
 		{"⌨\uFE0Fx", 1, ""},           // a 2-cell cluster does not fit in 1
 		{"👨\u200d💻ab", 2, "👨\u200d💻"}, // ZWJ emoji kept whole at width 2
 		{"👨\u200d💻ab", 3, "👨\u200d💻a"},
-		{"e\u0301x", 1, "e\u0301"},    // combining mark stays with its base
+		{"e\u0301x", 1, "e\u0301"}, // combining mark stays with its base
 		{"abc", 0, ""},
 		{"abc", -5, ""},
 	}
@@ -251,4 +251,28 @@ func TestKeymapOverlay_OnCloseThrowPropagates(t *testing.T) {
 		}
 	}()
 	m.Update(tea.KeyPressMsg{Code: 'q'})
+}
+
+// TestKeymapOverlay_KeyReleaseCloses pins R3-16: a tea.KeyReleaseMsg closes
+// the overlay exactly like a key press (closed=true, onClose fired once).
+func TestKeymapOverlay_KeyReleaseCloses(t *testing.T) {
+	t.Parallel()
+	km := parent.NewKeymapWith(parent.WithKeys(map[string]string{"x": "act"}))
+	calls := 0
+	runtime := goja.New()
+	fn, _ := goja.AssertFunction(runtime.ToValue(func() { calls++ }))
+	m := &keymapOverlayModel{km: km, width: 80, height: 24}
+	m.onClose = fn
+	m.Update(tea.KeyReleaseMsg{})
+	if !m.closed {
+		t.Fatal("KeyReleaseMsg did not close the overlay")
+	}
+	if calls != 1 {
+		t.Fatalf("onClose called %d times, want 1", calls)
+	}
+	// A second release must not fire onClose again (closed guard).
+	m.Update(tea.KeyReleaseMsg{})
+	if calls != 1 {
+		t.Fatalf("onClose called %d times after second release, want 1", calls)
+	}
 }

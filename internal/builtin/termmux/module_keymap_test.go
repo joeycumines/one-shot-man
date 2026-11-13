@@ -412,3 +412,56 @@ func TestNewKeymap_NonStringActionRejects(t *testing.T) {
 		t.Fatal("non-string action values should throw TypeError")
 	}
 }
+
+// TestKeymapBind_TypeValidation pins R3-12/R3-19: bind/bindChord require a
+// string key AND a string action (matching newKeymap's checks), unbind/
+// unbindChord require a string key, and newKeymap's keys/chords must be plain
+// objects — arrays and primitives throw TypeError instead of binding numeric
+// indices. bindings() uses numeric index strings for array-like action lists.
+func TestKeymapBind_TypeValidation(t *testing.T) {
+	t.Parallel()
+
+	runtime, exports := testRequire(t)
+	setOnLoop(t, runtime, "tm", exports)
+
+	v, err := sessionRun(t, runtime, `(function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		var km = tm.newKeymap({});
+		var out = [];
+		// bind/bindChord: string key AND string action required.
+		out.push(expectTypeError(function(){ km.bind("x", 5); }));
+		out.push(expectTypeError(function(){ km.bind("x", {}); }));
+		out.push(expectTypeError(function(){ km.bind(123, "a"); }));
+		out.push(expectTypeError(function(){ km.bind(true, "a"); }));
+		out.push(expectTypeError(function(){ km.bindChord("x", 5); }));
+		out.push(expectTypeError(function(){ km.bindChord(123, "a"); }));
+		// unbind/unbindChord: string key required.
+		out.push(expectTypeError(function(){ km.unbind(123); }));
+		out.push(expectTypeError(function(){ km.unbindChord({}); }));
+		// Valid string/string still works.
+		km.bind("x", "act");
+		out.push(km.handleKey("x").action === "act");
+		// newKeymap keys/chords must be plain objects.
+		out.push(expectTypeError(function(){ tm.newKeymap({ keys: ["a"] }); }));
+		out.push(expectTypeError(function(){ tm.newKeymap({ chords: 42 }); }));
+		out.push(expectTypeError(function(){ tm.newKeymap({ keys: "ab" }); }));
+		// bindings() reports numeric indices as string keys.
+		var km2 = tm.newKeymap({ keys: { "0": "zero", "a": "alpha" } });
+		var b = km2.bindings();
+		var found0 = false;
+		for (var i = 0; i < b.length; i++) {
+			if (b[i].key === "0" && b[i].action === "zero") found0 = true;
+		}
+		out.push(found0);
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("type-validation script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("keymap bind type validation incorrect")
+	}
+}

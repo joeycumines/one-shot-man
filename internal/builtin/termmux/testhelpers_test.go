@@ -398,3 +398,4 @@ func setOnLoop(t *testing.T, runtime *goja.Runtime, name string, value any) {
 		t.Fatalf("setOnLoop(%s) timed out", name)
 	}
 }
+

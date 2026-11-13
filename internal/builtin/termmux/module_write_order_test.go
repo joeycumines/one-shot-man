@@ -394,14 +394,29 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 		t.Fatalf("write+sendEOF: %v", err)
 	}
 	_, _ = awaitJSValue(t, e.runtime, `await cs.wait()`)
+	// Close before reading the record file: on Windows the child helper may
+	// still hold received.bin open briefly after Wait returns, and reading or
+	// TempDir cleanup while the handle is open fails with a sharing violation.
+	_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
 	raw, err := os.ReadFile(out)
 	if err != nil {
 		t.Fatalf("read child record: %v", err)
 	}
+	if runtime.GOOS == "windows" {
+		// ConPTY has no line discipline: 0x04 written to the input pipe is
+		// delivered to the child as a literal byte, not translated into an
+		// EOF condition for a plain os.Stdin.Read loop, so the child keeps
+		// running until cs.close() kills it. The byte-level ordering contract
+		// (write lands before the EOF byte on the pipe) still holds; assert
+		// the data arrived and contains no trailing 0x04 truncation.
+		if string(raw) != "DATA-BEFORE-EOF" {
+			t.Fatalf("child received %q, want exactly %q on Windows (0x04 is a literal byte, not EOF)", raw, "DATA-BEFORE-EOF")
+		}
+		return
+	}
 	if string(raw) != "DATA-BEFORE-EOF" {
 		t.Fatalf("child received %q, want exactly %q (EOF must come after the write)", raw, "DATA-BEFORE-EOF")
 	}
-	_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
 }
 
 // TestWriteNullUndefinedTypeError pins R3-12: write/writeStaged/writeToChild

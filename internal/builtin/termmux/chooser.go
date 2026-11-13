@@ -181,7 +181,7 @@ func (m *chooseTreeModel) render() string {
 		// A visible chooser with items always renders at least one (possibly
 		// truncated-to-empty at inner==0) row per item; only a truly empty
 		// chooser collapses to zero rows.
-		if len(m.chooser.Items()) > 0 {
+		if m.chooser.Len() > 0 {
 			itemLines = []string{""}
 		} else {
 			itemLines = nil
@@ -289,27 +289,9 @@ func jsToTeaMsg(runtime *goja.Runtime, msgObj *goja.Object) tea.Msg {
 
 	switch typVal.String() {
 	case "Key":
-		key := jsGetString(msgObj, "key", "")
-		if key == "" {
-			return nil
-		}
-		if k, ok := bubbletea.ParseKey(key); ok {
-			return k
-		}
-		// Fall back to a text key so overlays that close on ANY key still
-		// fire for key strings ParseKey cannot resolve (e.g. modified
-		// non-letters like alt+, which ParseKey reports as ambiguous).
-		if r, size := utf8.DecodeRuneInString(key); r != utf8.RuneError && size == len(key) {
-			// Single-rune key string ParseKey could not resolve: keep the rune
-			// as the code, but do NOT put the key NAME in Text — Text is the
-			// literal text a key produces, and consumers (termpane.forwardKey)
-			// forward it verbatim to the child.
-			return tea.KeyPressMsg{Code: r}
-		}
-		// Multi-rune unrecognized key (e.g. "alt+,"): still a key press so
-		// overlays that close on ANY key fire, but with no Code and no Text.
-		return tea.KeyPressMsg{Text: ""}
-
+		return jsKeyToTeaMsg(msgObj, false)
+	case "KeyRelease":
+		return jsKeyToTeaMsg(msgObj, true)
 	case "WindowSize":
 		w := int(msgObj.Get("width").ToInteger())
 		h := int(msgObj.Get("height").ToInteger())
@@ -317,6 +299,94 @@ func jsToTeaMsg(runtime *goja.Runtime, msgObj *goja.Object) tea.Msg {
 	}
 
 	return nil
+}
+
+// jsKeyToTeaMsg converts the "key" field of a JS key message (type "Key" or
+// "KeyRelease") into a tea.KeyPressMsg / tea.KeyReleaseMsg.
+func jsKeyToTeaMsg(msgObj *goja.Object, release bool) tea.Msg {
+	key := jsGetString(msgObj, "key", "")
+	if key == "" {
+		return nil
+	}
+	if k, ok := bubbletea.ParseKey(key); ok {
+		if release {
+			return tea.KeyReleaseMsg(k)
+		}
+		return k
+	}
+	// Fall back so overlays that close on ANY key still fire for key strings
+	// ParseKey cannot resolve (e.g. modified non-letters like alt+, which
+	// ParseKey reports as ambiguous).
+	press := parseModifiedSingleRune(key)
+	if press != nil {
+		if release {
+			return tea.KeyReleaseMsg(*press)
+		}
+		return *press
+	}
+	if r, size := utf8.DecodeRuneInString(key); size == len(key) && utf8.ValidString(key) && r != utf8.RuneError {
+		// Single-rune key string ParseKey could not resolve: keep the rune
+		// as the code, but do NOT put the key NAME in Text — Text is the
+		// literal text a key produces, and consumers (termpane.forwardKey)
+		// forward it verbatim to the child.
+		msg := tea.KeyPressMsg{Code: r}
+		if release {
+			return tea.KeyReleaseMsg(msg)
+		}
+		return msg
+	}
+	// Multi-rune unrecognized key with no parseable modifier+stem: still a
+	// key event so overlays that close on ANY key fire, but with no Code and
+	// no Text.
+	msg := tea.KeyPressMsg{Text: ""}
+	if release {
+		return tea.KeyReleaseMsg(msg)
+	}
+	return msg
+}
+
+// parseModifiedSingleRune parses "mod+...+<single rune stem>" (e.g. "alt+,")
+// into a KeyPressMsg carrying the modifiers and the stem rune as Code, so
+// Key.String() round-trips to the original spelling and KeyToTermBytes can
+// encode it (alt+, -> ESC ,). Returns nil when the key is not of that shape.
+func parseModifiedSingleRune(key string) *tea.KeyPressMsg {
+	rest := key
+	var mod tea.KeyMod
+	prefixes := []struct {
+		prefix string
+		mod    tea.KeyMod
+	}{
+		{"ctrl+", tea.ModCtrl},
+		{"alt+", tea.ModAlt},
+		{"shift+", tea.ModShift},
+		{"meta+", tea.ModMeta},
+		{"hyper+", tea.ModHyper},
+		{"super+", tea.ModSuper},
+	}
+	for {
+		progressed := false
+		for _, p := range prefixes {
+			if r, ok := strings.CutPrefix(rest, p.prefix); ok {
+				if mod&p.mod != 0 {
+					return nil // duplicate modifier — malformed
+				}
+				mod |= p.mod
+				rest = r
+				progressed = true
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	if mod == 0 || rest == "" {
+		return nil
+	}
+	r, size := utf8.DecodeRuneInString(rest)
+	if size != len(rest) || !utf8.ValidString(rest) || r == utf8.RuneError {
+		return nil // stem must be exactly one valid rune
+	}
+	return &tea.KeyPressMsg{Code: r, Mod: mod}
 }
 
 // registerChooserMethods registers chooser-related JS bindings:

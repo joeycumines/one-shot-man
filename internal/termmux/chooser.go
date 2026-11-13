@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/rivo/uniseg"
 )
@@ -84,6 +85,12 @@ func (c *Chooser) Items() []ChooserItem {
 	return out
 }
 
+// Len returns the number of items. Prefer this over len(Items()) in render
+// hot paths — Items() allocates a copy on every call.
+func (c *Chooser) Len() int {
+	return len(c.items)
+}
+
 // Render returns the chooser content as a string for display.
 // TruncateCells clips s to at most width display cells. A non-positive width
 // yields "". Truncation is grapheme-cluster aware (uniseg): multi-rune
@@ -107,7 +114,7 @@ func TruncateCells(s string, width int) string {
 		// Skip control clusters: uniseg measures them as 0 width, but a
 		// terminal may render them (or their ESC sequences) wider, and they
 		// must never reach the frame.
-		if r := []rune(cluster)[0]; unicode.IsControl(r) {
+		if r, _ := utf8.DecodeRuneInString(cluster); unicode.IsControl(r) {
 			continue
 		}
 		gw := uniseg.StringWidth(cluster)

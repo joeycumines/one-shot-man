@@ -16,6 +16,7 @@ import (
 	"time"
 
 	goja "github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
@@ -367,6 +368,89 @@ func TestTrackOrdered_CancelledSlotDoesNotRun(t *testing.T) {
 		t.Fatalf("cancelled slot ran its operation %d times, want 0", got)
 	}
 	_ = ran
+}
+
+// TestTrackOrdered_CancelRacesRelease pins R4-4: when the predecessor is
+// released at the SAME moment the slot's worker context is cancelled (both
+// select cases ready), the post-wait re-check must still prevent the
+// operation from running — and the chain must stay alive: a later operation
+// on a live context settles normally.
+func TestTrackOrdered_CancelRacesRelease(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: drives the event loop")
+	}
+	e := newTestEnv(t)
+	rt := e.runtime
+	adapter := e.adapter
+
+	sess := newRecordingOrderSession()
+	sess.blockCh = make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	chain := newOrderChain()
+	// Slot 1 blocks inside its operation.
+	_ = trackOrdered(ctx, adapter, rt, chain, func() (any, error) {
+		_, _ = sess.Write([]byte("first"))
+		return nil, nil
+	})
+	// Slot 2: cancel its ctx, THEN release slot 1 — both select cases become
+	// ready together and Go may pick <-wait; the re-check must still reject.
+	cancelledCtx, cancel2 := context.WithCancel(context.Background())
+	var p2ran atomic.Int32
+	_ = trackOrdered(cancelledCtx, adapter, rt, chain, func() (any, error) {
+		p2ran.Add(1)
+		return nil, nil
+	})
+	cancel2()
+	close(sess.blockCh)
+
+	time.Sleep(150 * time.Millisecond)
+	if got := p2ran.Load(); got != 0 {
+		t.Fatalf("cancel-raced slot ran its operation %d times, want 0", got)
+	}
+	// The cancelled slot's TrackPromise worker holds loop liveness until it
+	// settles; keep a ref'd JS timer alive for the duration of the check so the
+	// loop cannot auto-exit while we are still polling.
+	_, _ = runJS(t, rt, `globalThis.__keepAlive = setTimeout(function(){}, 3000)`)
+	t.Cleanup(func() { _, _ = runJS(t, rt, `clearTimeout(globalThis.__keepAlive)`) })
+
+	// Chain liveness: a subsequent operation on a live ctx must run and settle.
+	// trackOrdered must run on the event-loop goroutine (TrackPromise requires
+	// the bound adapter's owner), so issue slot 3 via runJS with the Go values
+	// exposed as globals, and poll the JS-side counter back through runJS.
+	setOnLoop(t, rt, "__goCtx", ctx)
+	setOnLoop(t, rt, "__goAdapter", adapter)
+	setOnLoop(t, rt, "__goChain", chain)
+	setOnLoop(t, rt, "__trackOrderedForTest", func(ctx context.Context, adapter *gojaeventloop.Adapter, chain *orderChain, op func() (any, error)) goja.Value {
+		return trackOrdered(ctx, adapter, rt, chain, op)
+	})
+	_, rerr := runJS(t, rt, `
+		return (function() {
+			globalThis.__p3 = __trackOrderedForTest(__goCtx, __goAdapter, __goChain, function() {
+				globalThis.__p3ran = (globalThis.__p3ran || 0) + 1;
+				return "ok";
+			});
+			return 1;
+		})();
+	`)
+	if rerr != nil {
+		t.Fatalf("issue slot 3 on loop: %v", rerr)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	ran := false
+	for time.Now().Before(deadline) {
+		v, rerr := runJS(t, rt, `return globalThis.__p3ran || 0`)
+		if rerr == nil && v != nil && v.ToInteger() >= 1 {
+			ran = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !ran {
+		t.Fatalf("post-cancel slot did not run (chain deadlocked by cancelled slot)")
+	}
 }
 
 // TestCaptureSession_SendEOF_OrderedAfterWrite pins R3-1b: an un-awaited

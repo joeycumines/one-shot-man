@@ -85,6 +85,14 @@ func trackOrdered(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *
 			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(workerCtx.Err()) })
 			return
 		}
+		// Both select cases may be ready simultaneously (predecessor released
+		// at the same moment the context was cancelled) and Go picks randomly;
+		// re-check cancellation after winning the wait so a cancelled slot
+		// never runs its operation.
+		if err := workerCtx.Err(); err != nil {
+			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) })
+			return
+		}
 		value, err := operation()
 		if err != nil {
 			_ = settle.Settle(true, func(owner *goja.Runtime) any { return owner.NewGoError(err) })
@@ -174,11 +182,11 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004/T059/T10/T49/T56): All 17 methods verified present and type-correct:
+// AUDIT (T004/T059/T10/T49/T56): All 18 methods verified present and type-correct:
 //
 //	start, interrupt, kill, pause, resume, isPaused,
-//	resize, wait, write, sendEOF, close, pid, exitCode, isDone,
-//	passthrough, readAvailable.
+//	resize, wait, write, writeStaged, sendEOF, close, pid, exitCode, isDone,
+//	passthrough, readAvailable, sendKeys.
 //
 // Task 56: target, setTarget, isRunning removed — all JS call sites
 // use SessionManager wrappers (tuiMux.session()) instead.
@@ -204,15 +212,11 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	// ── start() → Promise<void> ───────────────────────────
 	// PTY/process startup can block, so it must never execute on the Goja
 	// event-loop goroutine. Track the worker so shutdown joins it and settles
-	// the promise on the owning runtime.
+	// the promise on the owning runtime. Routed through the order chain so
+	// start() lands before any later write/sendEOF issued on the same session.
 	_ = obj.Set("start", func(call goja.FunctionCall) goja.Value {
-		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
-			err := cs.Start(workerCtx)
-			if err != nil {
-				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-				return
-			}
-			_ = settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() })
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
+			return nil, cs.Start(ctx)
 		})
 	})
 
@@ -299,14 +303,11 @@ func WrapCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 	// ── close() → Promise<void> ───────────────────────────
 	// Closing a PTY may signal a process and wait for reader shutdown, so keep
 	// it off the Goja event-loop goroutine and join it through the adapter.
+	// Routed through the order chain so an un-awaited cs.write(data);
+	// cs.close() cannot truncate the write.
 	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
-		return adapter.TrackPromise(ctx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
-			err := cs.Close()
-			if err != nil {
-				_ = settle.Settle(true, func(rt *goja.Runtime) any { return rt.NewGoError(err) })
-				return
-			}
-			_ = settle.Settle(false, func(*goja.Runtime) any { return goja.Undefined() })
+		return trackOrdered(ctx, adapter, runtime, order, func() (any, error) {
+			return nil, cs.Close()
 		})
 	})
 

@@ -5,6 +5,7 @@
 package termpane
 
 import (
+	"errors"
 	"image/color"
 	"log/slog"
 	"regexp"
@@ -422,13 +423,16 @@ func (m *Model) forwardPaste(content string) {
 }
 
 // deliverPaste sends one paste to a session through the staged single-Write
-// path. When the payload is bracketed and the staged write fails, the
-// end-of-paste delimiter ESC[201~ is sent best-effort as a second staged
-// write: WriteFull does not report how many bytes landed, so resending the
-// payload could duplicate bytes, but leaving the child inside ESC[200~ would
-// corrupt all subsequent input. The terminator is idempotent, so sending it
-// after a failed (possibly partial) write is safe. A raw (non-bracketed)
-// paste sends no terminator.
+// path. When the payload is bracketed and the staged write fails with a
+// SHORT write (ErrShortWrite), the end-of-paste delimiter ESC[201~ is sent
+// best-effort as a second staged write: the partial write may have left the
+// child inside ESC[200~, and the terminator is what closes the bracket —
+// without it subsequent input would be parsed as paste content. A full
+// failure that wrote ZERO bytes (session gone, manager stopped, locked
+// session, invalid transition) must NOT send the terminator: nothing was
+// written, so there is no open bracket, and emitting a stray ESC[201~ would
+// leak into the child's normal input. A raw (non-bracketed) paste sends no
+// terminator.
 func deliverPaste(input func(data []byte) error, bracketed bool, content string) {
 	payload := content
 	if bracketed {
@@ -436,7 +440,9 @@ func deliverPaste(input func(data []byte) error, bracketed bool, content string)
 	}
 	if err := input([]byte(payload)); err != nil {
 		slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
-		if bracketed {
+		if bracketed && errors.Is(err, termmux.ErrShortWrite) {
+			// Partial write: the child may be stuck inside ESC[200~ — close
+			// the bracket best-effort.
 			if terr := input([]byte("\x1b[201~")); terr != nil {
 				slog.Warn("termpane paste terminator failed", "error", terr)
 			}

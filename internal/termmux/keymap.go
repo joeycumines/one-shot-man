@@ -92,7 +92,8 @@ func WithPassthroughKey(key string) KeymapOption {
 // are rejected so a binding can never silently swallow a key without
 // dispatching (matching Bind). Keys are applied in sorted order so that when
 // two spellings normalize to the same key the winner is deterministic
-// (lexicographically smallest spelling), never Go's randomized map order.
+// (lexicographically largest spelling — later sorted entries overwrite
+// earlier ones), never Go's randomized map order.
 func WithKeys(keys map[string]string) KeymapOption {
 	return func(k *Keymap) {
 		order := make([]string, 0, len(keys))
@@ -150,16 +151,18 @@ var modifierOrder = map[string]int{
 // normalizeKey normalizes a key name for lookup. The key is split on "+" with
 // a trailing "+" preserved as a literal "+" stem ("ctrl++" -> modifiers
 // ["ctrl"], stem "+"; bare "+" -> stem "+"). A trailing "+" is treated as the
-// stem only when exactly one "+" follows the last modifier — pathological
-// inputs with more trailing "+"s (e.g. "ctrl+++") keep their raw form, which
-// is self-consistent because bind and lookup share this function. Modifier
-// tokens (every part except the stem) are lowercased, deduplicated, and
-// sorted into the canonical order (ctrl,alt,shift,meta,hyper,super), so
-// "Ctrl+F1", "alt+ctrl+f1" and "ctrl+alt+f1" are the same binding. The stem
-// is lowercased only when it is a multi-rune key NAME ("F1" -> "f1",
-// "Enter" -> "enter"); a single-rune stem is a literal character and keeps
-// its case, so "A" and "a" stay distinct and single non-ASCII runes are
-// preserved (rune count, not byte length). Exception: a single-rune ASCII
+// stem only when exactly one "+" follows the last modifier; pathological
+// inputs with more trailing "+"s (e.g. "ctrl+++") collapse to the same
+// modifiers + stem "+" form, which is self-consistent because bind and lookup
+// share this function. Modifier tokens (every part except the stem) are
+// lowercased, deduplicated, and sorted into the canonical order
+// (ctrl,alt,shift,meta,hyper,super), so "Ctrl+F1", "alt+ctrl+f1" and
+// "ctrl+alt+f1" are the same binding. The stem is lowercased only when it is
+// a multi-rune key NAME ("F1" -> "f1", "Enter" -> "enter"); a single-rune stem
+// is a literal character and keeps its case, so "A" and "a" stay distinct and
+// single non-ASCII runes are preserved (rune count, not byte length). An
+// empty stem ("ctrl+") is rejected as "" — matching Bind's empty-key no-op, so
+// it can never create an unreachable binding. Exception: a single-rune ASCII
 // letter stem under a ctrl modifier is lowercased, because ctrl+A and ctrl+a
 // encode to the same control byte (0x01) on the wire and can never be
 // distinguished by the child. Key names produced by BubbleTea are already
@@ -167,6 +170,14 @@ var modifierOrder = map[string]int{
 func normalizeKey(key string) string {
 	if key == "" {
 		return ""
+	}
+	// Fast path: no "+" means no modifiers — the key is already normalized
+	// except for the multi-rune lowercase rule below; skip the split/map/sort.
+	if !strings.Contains(key, "+") {
+		if utf8.RuneCountInString(key) != 1 {
+			return strings.ToLower(key)
+		}
+		return key
 	}
 	// Split on "+" but keep a trailing "+" as the stem: "ctrl++" splits into
 	// parts ["ctrl", ""] where the empty last part is the literal "+" stem.
@@ -182,15 +193,20 @@ func normalizeKey(key string) string {
 		parts[last] = stem
 	}
 	mods := parts[:last]
+	if stem == "" {
+		// Empty stem ("ctrl+"): malformed — reject like Bind's empty key.
+		return ""
+	}
 	hasCtrl := false
 	for _, m := range mods {
 		if strings.EqualFold(m, "ctrl") {
 			hasCtrl = true
 		}
 	}
-	// Lowercase, dedupe, and sort modifiers into canonical order.
+	// Lowercase, dedupe, and sort modifiers into canonical order. uniq is a
+	// fresh slice — aliasing mods[:0] would corrupt parts while iterating.
 	seen := make(map[string]bool, len(mods))
-	uniq := mods[:0]
+	uniq := make([]string, 0, len(mods))
 	for _, m := range mods {
 		lm := strings.ToLower(m)
 		if seen[lm] {

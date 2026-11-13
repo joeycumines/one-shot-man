@@ -465,3 +465,55 @@ func TestKeymapBind_TypeValidation(t *testing.T) {
 		t.Fatal("keymap bind type validation incorrect")
 	}
 }
+
+// TestKeymap_StrictStringArg pins R4-6: every keymap method rejects
+// non-string arguments (objects, symbols, numbers, booleans) with a TypeError
+// BEFORE any .String() coercion — previously bind/unbind coerced objects via
+// .String() to "[object Object]" before the type check, and setPrefix coerced
+// numbers silently.
+func TestKeymap_StrictStringArg(t *testing.T) {
+	t.Parallel()
+
+	runtime, exports := testRequire(t)
+	setOnLoop(t, runtime, "tm", exports)
+
+	v, err := sessionRun(t, runtime, `(function(){
+		function expectTypeError(fn) {
+			try { fn(); return false; }
+			catch (e) { return e instanceof TypeError; }
+		}
+		var km = tm.newKeymap({});
+		var out = [];
+		// handleKey: object/symbol/number must throw, not coerce.
+		out.push(expectTypeError(function(){ km.handleKey({}); }));
+		out.push(expectTypeError(function(){ km.handleKey(Symbol("s")); }));
+		out.push(expectTypeError(function(){ km.handleKey(42); }));
+		// bind/bindChord key and action: non-strings throw.
+		out.push(expectTypeError(function(){ km.bind({ toString: function(){ return "x"; } }, "a"); }));
+		out.push(expectTypeError(function(){ km.bind("x", Symbol("a")); }));
+		out.push(expectTypeError(function(){ km.bindChord(42, "a"); }));
+		out.push(expectTypeError(function(){ km.bindChord("x", [1]); }));
+		// unbind/unbindChord: non-string key throws.
+		out.push(expectTypeError(function(){ km.unbind({}); }));
+		out.push(expectTypeError(function(){ km.unbindChord(7); }));
+		// setPrefix/setPassthroughKey: null/undefined = disable (no throw),
+		// non-string = TypeError.
+		km.setPrefix(null); km.setPassthroughKey(undefined);
+		out.push(km.prefix() === "" && km.passthroughKey() === "");
+		out.push(expectTypeError(function(){ km.setPrefix(42); }));
+		out.push(expectTypeError(function(){ km.setPassthroughKey({}); }));
+		// newKeymap opts: non-string prefix/passthroughKey throws.
+		out.push(expectTypeError(function(){ tm.newKeymap({ prefix: 42 }); }));
+		out.push(expectTypeError(function(){ tm.newKeymap({ passthroughKey: {} }); }));
+		// String primitives still work everywhere.
+		km.setPrefix("ctrl+a");
+		out.push(km.prefix() === "ctrl+a");
+		return out.every(function(x){ return x; });
+	})()`)
+	if err != nil {
+		t.Fatalf("strict-string script: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("keymap strict string validation incorrect")
+	}
+}

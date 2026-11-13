@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -376,16 +377,33 @@ func TestDeliverPaste_ClosesBracketOnStagedError(t *testing.T) {
 		return nil
 	}
 
-	// Bracketed: payload write fails -> terminator must follow.
-	deliverPaste(input, true, "payload")
+	// Bracketed: payload write fails with a SHORT write -> terminator follows.
+	failErr := error(fmt.Errorf("%w: wrote 3 of 9 bytes", termmux.ErrShortWrite))
+	inputShort := func(data []byte) error {
+		calls = append(calls, append([]byte(nil), data...))
+		return failErr
+	}
+	deliverPaste(inputShort, true, "payload")
 	if len(calls) != 2 {
-		t.Fatalf("bracketed failing paste made %d writes %q, want 2 (payload + terminator)", len(calls), calls)
+		t.Fatalf("bracketed short-write paste made %d writes %q, want 2 (payload + terminator)", len(calls), calls)
 	}
 	if string(calls[0]) != "\x1b[200~payload\x1b[201~" {
 		t.Errorf("first write = %q, want full bracketed payload", calls[0])
 	}
 	if string(calls[1]) != "\x1b[201~" {
 		t.Errorf("second write = %q, want bare ESC[201~ terminator", calls[1])
+	}
+
+	// Bracketed: payload write fails with a ZERO-byte error (session gone,
+	// manager stopped, locked session) -> NO terminator (nothing was written,
+	// so there is no open bracket; a stray ESC[201~ would corrupt input).
+	calls = nil
+	deliverPaste(input, true, "payload")
+	if len(calls) != 1 {
+		t.Fatalf("bracketed zero-byte-error paste made %d writes %q, want 1 (payload only, no terminator)", len(calls), calls)
+	}
+	if string(calls[0]) != "\x1b[200~payload\x1b[201~" {
+		t.Errorf("first write = %q, want full bracketed payload", calls[0])
 	}
 
 	// Non-bracketed: payload write fails -> no terminator.

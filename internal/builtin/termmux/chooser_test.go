@@ -379,3 +379,80 @@ func TestJsToTeaMsg_UnrecognizedKeyFallback(t *testing.T) {
 		t.Fatalf("x -> %q, want key press for x", kp2.String())
 	}
 }
+
+// TestJsToTeaMsg_AltCommaRoundTrip pins R4-3: a modified non-letter key like
+// "alt+," that ParseKey cannot resolve must still become a KeyPressMsg
+// carrying Mod=alt and Code=',' so String() round-trips to "alt+," and
+// KeyToTermBytes can encode it as ESC , (not dropped to {Text:""}).
+func TestJsToTeaMsg_AltCommaRoundTrip(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	o := rt.NewObject()
+	_ = o.Set("type", "Key")
+	_ = o.Set("key", "alt+,")
+	m := jsToTeaMsg(rt, o)
+	kp, ok := m.(tea.KeyPressMsg)
+	if !ok {
+		t.Fatalf("alt+, -> %T, want tea.KeyPressMsg", m)
+	}
+	if kp.Mod != tea.ModAlt || kp.Code != ',' {
+		t.Fatalf("alt+, -> Mod=%v Code=%q, want Mod=alt Code=','", kp.Mod, kp.Code)
+	}
+	if s := kp.String(); s != "alt+," {
+		t.Fatalf("alt+, String() = %q, want \"alt+,\"", s)
+	}
+	// The encoded bytes must be ESC , — the whole point of round-tripping.
+	b, ok := parent.KeyToTermBytes(kp.String(), false, false)
+	if !ok || b != "\x1b," {
+		t.Fatalf("KeyToTermBytes(%q) = %q,%v want ESC ,", kp.String(), b, ok)
+	}
+}
+
+// TestJsToTeaMsg_KeyRelease pins R4-2: type "KeyRelease" must produce a
+// tea.KeyReleaseMsg (so keymapOverlay's release-close branch is reachable
+// from JS), with the same key parsing as "Key".
+func TestJsToTeaMsg_KeyRelease(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	mk := func(typ, key string) *goja.Object {
+		o := rt.NewObject()
+		_ = o.Set("type", typ)
+		_ = o.Set("key", key)
+		return o
+	}
+	m := jsToTeaMsg(rt, mk("KeyRelease", "q"))
+	kr, ok := m.(tea.KeyReleaseMsg)
+	if !ok {
+		t.Fatalf("KeyRelease q -> %T, want tea.KeyReleaseMsg", m)
+	}
+	if kr.String() != "q" {
+		t.Fatalf("KeyRelease q String() = %q, want \"q\"", kr.String())
+	}
+	// Modified unresolved key under release also round-trips.
+	m2 := jsToTeaMsg(rt, mk("KeyRelease", "alt+,"))
+	kr2, ok := m2.(tea.KeyReleaseMsg)
+	if !ok {
+		t.Fatalf("KeyRelease alt+, -> %T, want tea.KeyReleaseMsg", m2)
+	}
+	if kr2.String() != "alt+," || tea.Key(kr2).Mod != tea.ModAlt {
+		t.Fatalf("KeyRelease alt+, = %q mod=%v, want \"alt+,\" alt", kr2.String(), tea.Key(kr2).Mod)
+	}
+}
+
+// TestParseModifiedSingleRune pins the modifier+stem fallback parser: valid
+// mod+single-rune forms parse; duplicate modifiers, empty stems, and
+// multi-rune stems do not.
+func TestParseModifiedSingleRune(t *testing.T) {
+	t.Parallel()
+	if m := parseModifiedSingleRune("alt+,"); m == nil || m.Mod != tea.ModAlt || m.Code != ',' {
+		t.Errorf("alt+, -> %+v", m)
+	}
+	if m := parseModifiedSingleRune("ctrl+alt+a"); m == nil || m.Mod != tea.ModCtrl|tea.ModAlt || m.Code != 'a' {
+		t.Errorf("ctrl+alt+a -> %+v", m)
+	}
+	for _, bad := range []string{"alt+alt+,", "ctrl+", "alt+ab", "", "ab"} {
+		if m := parseModifiedSingleRune(bad); m != nil {
+			t.Errorf("parseModifiedSingleRune(%q) = %+v, want nil", bad, m)
+		}
+	}
+}

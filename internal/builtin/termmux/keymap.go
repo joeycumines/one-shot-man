@@ -26,11 +26,48 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 	_ = obj.DefineDataProperty("_goKeymap", runtime.ToValue(km),
 		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 
-	_ = obj.Set("handleKey", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			panic(runtime.NewTypeError("handleKey: key argument is required"))
+	// strictStringArg returns the string value of call.Arguments[i], panicking
+	// with a TypeError when the argument is missing, null, undefined, or not a
+	// string primitive. The Export().(string) type check runs BEFORE any
+	// .String() coercion so objects/numbers throw instead of silently coercing;
+	// symbols are rejected explicitly because Symbol.Export() returns a string
+	// ("Symbol(a)") and would otherwise pass the Export().(string) check.
+	isStringValue := func(v goja.Value) bool {
+		if _, isSym := v.(*goja.Symbol); isSym {
+			return false
 		}
-		handled, action, armed := km.HandleKey(call.Argument(0).String())
+		_, isStr := v.Export().(string)
+		return isStr
+	}
+	strictStringArg := func(call goja.FunctionCall, i int, name string) string {
+		if len(call.Arguments) <= i || goja.IsUndefined(call.Argument(i)) || goja.IsNull(call.Argument(i)) {
+			panic(runtime.NewTypeError(name + ": argument must not be null or undefined"))
+		}
+		v := call.Argument(i)
+		s, isStr := v.Export().(string)
+		if !isStr || !isStringValue(v) {
+			panic(runtime.NewTypeError(name + ": argument must be a string"))
+		}
+		return s
+	}
+	// optionalStringArg returns "" for missing/null/undefined (used by
+	// setPrefix/setPassthroughKey where null means "disable") and panics with
+	// a TypeError for non-string values.
+	optionalStringArg := func(call goja.FunctionCall, i int, name string) string {
+		if len(call.Arguments) <= i || goja.IsUndefined(call.Argument(i)) || goja.IsNull(call.Argument(i)) {
+			return ""
+		}
+		v := call.Argument(i)
+		s, isStr := v.Export().(string)
+		if !isStr || !isStringValue(v) {
+			panic(runtime.NewTypeError(name + ": argument must be a string"))
+		}
+		return s
+	}
+
+	_ = obj.Set("handleKey", func(call goja.FunctionCall) goja.Value {
+		key := strictStringArg(call, 0, "handleKey: key")
+		handled, action, armed := km.HandleKey(key)
 		result := runtime.NewObject()
 		_ = result.Set("handled", handled)
 		_ = result.Set("action", action)
@@ -38,76 +75,39 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 		return result
 	})
 
-	// stringArg returns the string value of call.Arguments[i], treating
-	// null/undefined as "" (used by setPrefix/setPassthroughKey where null
-	// means "disable").
-	stringArg := func(call goja.FunctionCall, i int) string {
-		if len(call.Arguments) <= i {
-			return ""
-		}
-		v := call.Argument(i)
-		if goja.IsUndefined(v) || goja.IsNull(v) {
-			return ""
-		}
-		return v.String()
-	}
-	// requiredStringArg panics with a TypeError on null/undefined (used for
-	// key arguments, where coercing to the literal "null" would be a bug).
-	requiredStringArg := func(call goja.FunctionCall, i int, name string) string {
-		if len(call.Arguments) <= i || goja.IsUndefined(call.Argument(i)) || goja.IsNull(call.Argument(i)) {
-			panic(runtime.NewTypeError(name + ": argument must not be null or undefined"))
-		}
-		return call.Argument(i).String()
-	}
-
 	_ = obj.Set("bind", func(call goja.FunctionCall) goja.Value {
-		key := requiredStringArg(call, 0, "bind: key")
-		if _, isStr := call.Argument(0).Export().(string); !isStr {
-			panic(runtime.NewTypeError("bind: key must be a string"))
-		}
+		key := strictStringArg(call, 0, "bind: key")
+		// null/undefined action: documented no-op (skip), consistent with
+		// newKeymapFactory skipping null/undefined values.
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			if _, isStr := call.Argument(1).Export().(string); !isStr {
-				panic(runtime.NewTypeError("bind: action must be a string"))
-			}
-			km.Bind(key, call.Argument(1).String())
+			action := strictStringArg(call, 1, "bind: action")
+			km.Bind(key, action)
 		}
-		// null/undefined action: no-op (skip), consistent with newKeymapFactory.
 		return goja.Undefined()
 	})
 	_ = obj.Set("bindChord", func(call goja.FunctionCall) goja.Value {
-		key := requiredStringArg(call, 0, "bindChord: key")
-		if _, isStr := call.Argument(0).Export().(string); !isStr {
-			panic(runtime.NewTypeError("bindChord: key must be a string"))
-		}
+		key := strictStringArg(call, 0, "bindChord: key")
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			if _, isStr := call.Argument(1).Export().(string); !isStr {
-				panic(runtime.NewTypeError("bindChord: action must be a string"))
-			}
-			km.BindChord(key, call.Argument(1).String())
+			action := strictStringArg(call, 1, "bindChord: action")
+			km.BindChord(key, action)
 		}
 		return goja.Undefined()
 	})
 	_ = obj.Set("unbind", func(call goja.FunctionCall) goja.Value {
-		if _, isStr := call.Argument(0).Export().(string); !isStr {
-			panic(runtime.NewTypeError("unbind: key must be a string"))
-		}
-		km.Unbind(requiredStringArg(call, 0, "unbind: key"))
+		km.Unbind(strictStringArg(call, 0, "unbind: key"))
 		return goja.Undefined()
 	})
 	_ = obj.Set("unbindChord", func(call goja.FunctionCall) goja.Value {
-		if _, isStr := call.Argument(0).Export().(string); !isStr {
-			panic(runtime.NewTypeError("unbindChord: key must be a string"))
-		}
-		km.UnbindChord(requiredStringArg(call, 0, "unbindChord: key"))
+		km.UnbindChord(strictStringArg(call, 0, "unbindChord: key"))
 		return goja.Undefined()
 	})
 	_ = obj.Set("setPrefix", func(call goja.FunctionCall) goja.Value {
-		km.SetPrefix(stringArg(call, 0))
+		km.SetPrefix(optionalStringArg(call, 0, "setPrefix: key"))
 		return goja.Undefined()
 	})
 	_ = obj.Set("prefix", func() string { return km.Prefix() })
 	_ = obj.Set("setPassthroughKey", func(call goja.FunctionCall) goja.Value {
-		km.SetPassthroughKey(stringArg(call, 0))
+		km.SetPassthroughKey(optionalStringArg(call, 0, "setPassthroughKey: key"))
 		return goja.Undefined()
 	})
 	_ = obj.Set("passthroughKey", func() string { return km.PassthroughKey() })
@@ -140,14 +140,33 @@ func keymapObject(runtime *goja.Runtime, km *parent.Keymap) *goja.Object {
 //	keys           object  direct key → action map
 //	chords         object  chord key → action map
 func newKeymapFactory(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	// strictOptString reads an optional string property from a JS options
+	// object: missing/null/undefined -> "" (absent), non-string -> TypeError.
+	// The Export().(string) check runs before any .String() coercion.
+	strictOptString := func(obj *goja.Object, name string) (string, bool) {
+		v := obj.Get(name)
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			return "", false
+		}
+		// Reject symbols explicitly: Symbol.Export() returns a string, so the
+		// Export().(string) check alone would let symbols through.
+		if _, isSym := v.(*goja.Symbol); isSym {
+			panic(runtime.NewTypeError("newKeymap: " + name + " must be a string"))
+		}
+		s, isStr := v.Export().(string)
+		if !isStr {
+			panic(runtime.NewTypeError("newKeymap: " + name + " must be a string"))
+		}
+		return s, true
+	}
 	opts := []parent.KeymapOption{}
 	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
 		cfg := call.Argument(0).ToObject(runtime)
-		if v := cfg.Get("prefix"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-			opts = append(opts, parent.WithPrefix(v.String()))
+		if s, ok := strictOptString(cfg, "prefix"); ok {
+			opts = append(opts, parent.WithPrefix(s))
 		}
-		if v := cfg.Get("passthroughKey"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-			opts = append(opts, parent.WithPassthroughKey(v.String()))
+		if s, ok := strictOptString(cfg, "passthroughKey"); ok {
+			opts = append(opts, parent.WithPassthroughKey(s))
 		}
 		if v := cfg.Get("keys"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			obj := v.ToObject(runtime)

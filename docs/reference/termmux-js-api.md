@@ -43,7 +43,7 @@ creating sessions and managers, plus event constants.
 | `mouseDrag()` | function | Create a stateful mouse-drag object; `.handle({manager,msg})` returns a Promise |
 | `handleMouseDrag({ manager, msg })` | function | Handle one mouse event; returns `Promise<{handled, cmd}>` |
 | `newControlRouter(opts?)` | function | Create a control router for key dispatch (legacy) |
-| `newKeymap(opts?)` | function | Create a `Keymap`: unopinionated mux key state machine. `opts`: `{prefix?, passthroughKey?, keys?, chords?}` (`keys`/`chords` must be plain objects mapping string keys to string actions). Methods: `handleKey(key)` → `{handled, action, armed}`, `bind(key, action)` / `bindChord(key, action)` (both args must be strings — non-string throws `TypeError`), `unbind(key)` / `unbindChord(key)` (key only, must be a string), `setPrefix/prefix`, `setPassthroughKey/passthroughKey`, `armed`, `reset`, `bindings()` → array of `{key, action, chord}`, `listKeys()` → aligned table string |
+| `newKeymap(opts?)` | function | Create a `Keymap`: unopinionated mux key state machine. `opts`: `{prefix?, passthroughKey?, keys?, chords?}` (`keys`/`chords` must be plain objects mapping string keys to string actions; `null`/`undefined` action values are skipped; non-string `prefix`/`passthroughKey` throw `TypeError`). Methods: `handleKey(key)` → `{handled, action, armed}` (non-string key throws `TypeError`), `bind(key, action)` / `bindChord(key, action)` (both args must be strings — non-string throws `TypeError`; a `null`/`undefined` action is a documented no-op), `unbind(key)` / `unbindChord(key)` (key only, must be a string), `setPrefix/prefix` / `setPassthroughKey/passthroughKey` (`null`/`undefined` clears; non-string throws `TypeError`), `armed`, `reset`, `bindings()` → array of `{key, action, chord}`, `listKeys()` → aligned table string |
 | `keymapOverlay({keymap, tea, onClose?})` | function | `Promise<{model, view, render, visible, _update}>` — BubbleTea sub-model overlay rendering `keymap.listKeys()` as a centered popup; any key press or release closes it (render returns an empty string, `visible()` false) and fires `onClose` once; closing does NOT emit `tea.Quit` (safe to drive via `_update` inside a host app) |
 | `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
 | `handlePrefixKey({ manager, key })` | function | Execute a prefix action; returns `Promise<{action, consumed, description, result, listKeys}>` |
@@ -71,7 +71,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `opts.name` | `string` | `""` | Session name metadata |
 | `opts.kind` | `string` | `""` | Session kind metadata |
 
-### Methods (17 total)
+### Methods (18 total)
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
@@ -92,7 +92,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error; `null`/`undefined` throw `TypeError` |
 | `writeStaged(data)` | `InteractiveSession.Write()` (single call) | `string` | `Promise<void>` | one contiguous `Write` (sponge) — on this wrapper `writeStaged` is functionally identical to `write` (the payload is already a fresh single buffer); it exists for API symmetry with the manager-side `writeStaged`; `null`/`undefined` throw `TypeError` |
-| `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | rejects on error; `null`/`undefined` entries throw `TypeError` |
+| `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | at least one key required (empty call throws `TypeError`); rejects on error; `null`/`undefined` entries throw `TypeError` |
 
 **Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
 `isRunning()` — these now live on the SessionManager `session()` wrapper
@@ -315,7 +315,7 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
-| `writeStaged(data)` | `SessionManager.InputStagedActive(data)` | `string` | `Promise<void>` | single-`Write` delivery to the active session in ONE manager request (sponge; no artificial chunking) — the active-window/pane resolution and the write are atomic on the worker, unlike `InputStaged(activeID(), data)`; rejects with `ErrManagerNotRunning` when the manager is down and with a locked-session error when the target session is locked; `null`/`undefined` throw `TypeError`; ordered with `write`/`writeToChild` in call order |
+| `writeStaged(data)` | `SessionManager.InputStagedActive(data)` | `string` | `Promise<void>` | single-`Write` delivery to the active session in ONE manager request (sponge; no artificial chunking) — the active-window/pane resolution and the write are atomic on the worker, unlike `InputStaged(activeID(), data)`; rejects with `ErrSessionNotFound` when there is no active session, with `ErrManagerNotRunning` when the manager is down, and with a locked-session error when the target session is locked; `null`/`undefined` throw `TypeError`; ordered with `write`/`writeToChild` in call order |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---

@@ -532,3 +532,83 @@ func TestKeymap_WithKeysDeterministic(t *testing.T) {
 		t.Fatalf("unexpected action %q", want)
 	}
 }
+
+// TestKeymap_WithKeysCollisionLargestWins pins R4-1: WithKeys/WithChords
+// apply entries in ascending sorted order with unconditional overwrite, so
+// when two spellings normalize to the same key the LAST in byte-sorted order
+// wins — deterministically, on every run. (Uppercase bytes sort before
+// lowercase, so "ctrl+a" is applied after "Ctrl+A"/"CTRL+A".)
+func TestKeymap_WithKeysCollisionLargestWins(t *testing.T) {
+	t.Parallel()
+	// Byte-order sort: uppercase letters (0x41-0x5A) sort before lowercase
+	// (0x61-0x7A), so ascending order is "CTRL+A" < "Ctrl+A" < "ctrl+a" and
+	// the last applied (winner) is "ctrl+a" -> "lower". Pin that exact winner
+	// deterministically across runs.
+	want := ""
+	for i := 0; i < 50; i++ {
+		k := NewKeymapWith(WithKeys(map[string]string{
+			"ctrl+a": "lower",
+			"Ctrl+A": "upper",
+			"CTRL+A": "shouted",
+		}))
+		handled, action, _ := k.HandleKey("ctrl+a")
+		if !handled {
+			t.Fatalf("iteration %d: ctrl+a not handled", i)
+		}
+		if want == "" {
+			want = action
+		} else if action != want {
+			t.Fatalf("iteration %d: action %q != first %q (nondeterministic)", i, action, want)
+		}
+	}
+	if want != "lower" {
+		t.Fatalf("winner = %q, want %q (ascending sort + overwrite => last sorted spelling wins)", want, "lower")
+	}
+	// Same for chords: "B" (0x42) sorts before "b" (0x62), so "b" wins.
+	for i := 0; i < 50; i++ {
+		k := NewKeymapWith(WithPrefix("ctrl+x"), WithChords(map[string]string{"B": "lower", "b": "upper"}))
+		k.HandleKey("ctrl+x")
+		handled, action, _ := k.HandleKey("b")
+		if !handled || action != "upper" {
+			t.Fatalf("chord iteration %d: got handled=%v action=%q, want largest spelling \"upper\"", i, handled, action)
+		}
+	}
+}
+
+// TestKeymap_NormalizeKeyEmptyStemRejected pins R4-7: a trailing "+" with no
+// stem ("ctrl+") is malformed and normalizes to "" (matching Bind's empty-key
+// no-op), so it can never create an unreachable "ctrl+" binding.
+func TestKeymap_NormalizeKeyEmptyStemRejected(t *testing.T) {
+	t.Parallel()
+	if got := normalizeKey("ctrl+"); got != "" {
+		t.Errorf("normalizeKey(\"ctrl+\") = %q, want \"\"", got)
+	}
+	if got := normalizeKey("alt+"); got != "" {
+		t.Errorf("normalizeKey(\"alt+\") = %q, want \"\"", got)
+	}
+	k := NewKeymap()
+	k.Bind("ctrl+", "ghost")
+	if len(k.Bindings()) != 0 {
+		t.Errorf("Bind(\"ctrl+\", ...) created a binding: %+v", k.Bindings())
+	}
+}
+
+// TestKeymap_NormalizeKeyNoPlusFastPath pins R4-7: keys without "+" take the
+// allocation-free fast path and normalize identically to the general path.
+func TestKeymap_NormalizeKeyNoPlusFastPath(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"a":      "a",     // single rune keeps case
+		"A":      "A",     // single rune keeps case
+		"Enter":  "enter", // multi-rune name lowercased
+		"F12":    "f12",
+		"+":      "+",      // bare plus is the stem
+		"éclair": "éclair", // multi-rune non-ASCII name lowercased (already lower)
+		"É":      "É",      // single non-ASCII rune keeps case
+	}
+	for in, want := range cases {
+		if got := normalizeKey(in); got != want {
+			t.Errorf("normalizeKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

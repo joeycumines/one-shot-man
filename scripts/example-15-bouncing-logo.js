@@ -348,18 +348,14 @@ function handleKey(msg) {
     // The mux keymap sees every key first. It reports {handled, action, armed}:
     // handled=false means "forward to the child pane".
     var r = km.handleKey(msg.key);
-    // A chord that was cancelled/disarmed (e.g. prefix then esc, or an
-    // unbound chord key) must clear the stale "prefix" indicator immediately
-    // instead of leaving it up until the message timer expires.
-    if (!r.armed && state.message === 'prefix') {
-        state.message = '';
-        state.messageUntil = 0;
-    }
-    if (r.armed) {
-        setMessage('prefix');
-        return true;
-    }
+    // Check handled BEFORE armed: an empty key (handled=false) must still be
+    // able to clear a stale prefix indicator, not get swallowed by the armed
+    // branch below.
     if (r.handled) {
+        if (r.armed) {
+            setMessage('prefix');
+            return true;
+        }
         switch (r.action) {
             case 'pause':
                 state.paused = !state.paused;
@@ -373,9 +369,13 @@ function handleKey(msg) {
                 return true;
             case 'copyMode':
                 trackPaneOperation(Promise.resolve(mgr.isCopyModeActive(sid)).then(function(active) {
-                    return active ? mgr.exitCopyMode(sid) : mgr.enterCopyMode(sid);
-                }).then(function() {
-                    setMessage('copyMode');
+                    // Toggle, then label the status line with the RESULTING
+                    // state: 'copyMode' only while copy mode is active.
+                    return (active ? mgr.exitCopyMode(sid) : mgr.enterCopyMode(sid)).then(function() {
+                        return mgr.isCopyModeActive(sid);
+                    });
+                }).then(function(activeNow) {
+                    setMessage(activeNow ? 'copyMode' : '');
                 }), 'copyMode');
                 return true;
             case 'quit':
@@ -383,6 +383,13 @@ function handleKey(msg) {
                 return true;
         }
         return true;
+    }
+    // A chord that was cancelled/disarmed (e.g. prefix then esc, or an
+    // unbound chord key) must clear the stale "prefix" indicator immediately
+    // instead of leaving it up until the message timer expires.
+    if (!r.armed && state.message === 'prefix') {
+        state.message = '';
+        state.messageUntil = 0;
     }
 
     // Forward all other keys to the bouncing terminal pane.
@@ -510,6 +517,10 @@ function updateModel(msg, model) {
     }
     if (msg.type === 'Key') {
         handleKey(msg);
+        // Recompose immediately so the frame reflects this key (prefix
+        // indicator, pause state, pane size) instead of waiting for the next
+        // tick.
+        updateCompositor();
         if (state.quit) {
             return updateModel({ type: 'Tick', id: 'cleanup' }, state);
         }

@@ -483,8 +483,10 @@ passthrough stdin forwarder (`forward_stdin.go`). `WriteFull` discards `n`, so
 on `ErrShortWrite` inside a bracketed paste the caller must NOT resend the
 whole payload (that could duplicate bytes); instead `termpane.forwardPaste`
 closes the paste by sending the `ESC[201~` end delimiter best-effort as a
-second staged write (logged at `Warn` if that also fails), so the child is
-never left stuck between `ESC[200~` and `ESC[201~`.
+second staged write — but ONLY on a short write, where some bytes of the
+`ESC[200~` opener may already have landed. A zero-byte failure (session gone,
+manager stopped, locked session) sends no terminator, so no stray `ESC[201~`
+leaks into the child's input. This is logged at `Warn` if it also fails.
 
 A single staged `Write` runs on the manager worker, so a payload larger than
 the kernel PTY buffer blocks that worker until the child drains input (and
@@ -980,7 +982,7 @@ const mgr = termmux.newSessionManager({
 });
 ```
 
-### 11.4 CaptureSession JS Wrapper (17 methods)
+### 11.4 CaptureSession JS Wrapper (18 methods)
 
 | Method | Description |
 |---|---|
@@ -993,6 +995,7 @@ const mgr = termmux.newSessionManager({
 | `resize(rows, cols)` | Resize PTY; returns `Promise<void>` |
 | `wait()` → `Promise<{code, error?}>` | Wait until exit and drain |
 | `write(data)` | Send raw bytes to PTY stdin; returns `Promise<void>` |
+| `writeStaged(data)` | Single contiguous `Write` (sponge; API symmetry with manager-side `writeStaged`); returns `Promise<void>` |
 | `sendEOF()` | Send Ctrl-D; returns `Promise<void>` |
 | `close()` | Terminate and release; returns `Promise<void>` |
 | `pid()` → `number` | Child PID |

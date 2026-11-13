@@ -201,3 +201,47 @@ func TestTruncateCells_ControlCharsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// TestTruncateCells_Parity pins R4-13: the utf8.DecodeRuneInString fast path
+// keeps the width invariant and control-skip behavior for every cluster shape
+// (ASCII, multi-byte, combining, emoji, control).
+func TestTruncateCells_Parity(t *testing.T) {
+	t.Parallel()
+	cases := []string{
+		"", "a", "ab", "hello world", "café", "漢字", "👍🏽", "e\u0301x",
+		"\x1b[31mred\x1b[0m", "a\tb\nc", "\x00\x01\x7f", "日本語テスト",
+		"🚀🚀🚀🚀🚀", "mixed 漢字 abc 123 ✅",
+	}
+	for _, in := range cases {
+		for width := 0; width <= 12; width++ {
+			got := TruncateCells(in, width)
+			if width > 0 {
+				if w := uniseg.StringWidth(got); w > width {
+					t.Errorf("TruncateCells(%q, %d) = %q width %d > %d", in, width, got, w, width)
+				}
+			}
+			for _, r := range got {
+				if unicode.IsControl(r) {
+					t.Errorf("TruncateCells(%q, %d) = %q leaks control rune %U", in, width, got, r)
+				}
+			}
+		}
+	}
+}
+
+// TestChooser_Len pins R4-14: Len() reports the item count without allocating
+// a copy (unlike Items()).
+func TestChooser_Len(t *testing.T) {
+	t.Parallel()
+	c := NewChooser(nil, 0)
+	if c.Len() != 0 {
+		t.Fatalf("empty chooser Len() = %d, want 0", c.Len())
+	}
+	c = NewChooser([]ChooserItem{{ID: 1}, {ID: 2}, {ID: 3}}, 0)
+	if c.Len() != 3 {
+		t.Fatalf("Len() = %d, want 3", c.Len())
+	}
+	if len(c.Items()) != 3 {
+		t.Fatalf("len(Items()) = %d, want 3", len(c.Items()))
+	}
+}

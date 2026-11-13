@@ -2778,15 +2778,17 @@ func (m *SessionManager) handleInputStagedActive(data []byte) response {
 }
 
 // handleInputToSession is the shared worker-side input path for
-// reqInputSession and reqInputStaged: validate the session, route locked
-// input to the unlock prompt, otherwise one full Write.
+// reqInputSession and reqInputStaged (both deliver to a session addressed by
+// explicit ID in one full Write): validate the session, route locked input to
+// the unlock prompt, otherwise one full Write.
 //
 // Intentional divergence from handleInput: targeted input (by explicit ID)
 // does NOT fan out to synchronized panes — Synchronize() is a property of
 // the active pane group, and a caller addressing a specific session by ID
-// (as session().writeStaged/inputStaged do) wants exactly that session.
-// handleInput (the no-ID path) resolves the active session and honors
-// Synchronize(). Covered by TestSessionManager_InputSession_SynchronizePanesIgnored.
+// wants exactly that session. handleInput (the no-ID path) resolves the
+// active session and honors Synchronize(). Note reqInputStagedActive is a
+// separate request kind with its own handler (it resolves the active session
+// on the worker). Covered by TestSessionManager_InputSession_SynchronizePanesIgnored.
 func (m *SessionManager) handleInputToSession(id SessionID, data []byte) response {
 	ms, ok := m.sessions[id]
 	if !ok {

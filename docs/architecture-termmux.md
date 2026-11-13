@@ -29,7 +29,7 @@ The multiplexer feature inventory, all driven through `SessionManager` public me
 - **Copy mode** (`copy_mode_keys.go`) — vi-like navigation via `HandleCopyModeKey`, `EnterCopyMode`/`ExitCopyMode`, `ScrollCopyMode`, `SelectStart`/`SelectEnd`/`CopySelection`, and `SearchForward`/`SearchBackward` (`ScreenSearcher`) with match highlighting.
 - **Prefix key commands** (`prefix_keys.go`) — `PrefixKeyHandler` + `PrefixDispatcher`: an optional caller-set prefix key arms a one-key command table (`c` new window, `n`/`p` next/prev, `d` detach, `z` zoom, `x` close pane, `%`/`"` split, `[` copy mode, `?` list keys, `,` rename window, `esc` cancel), exposed to JS as `newPrefixKeyHandler`/`handlePrefixKey`. This is the legacy fixed-table router; the newer `Keymap` below is the unopinionated replacement and defaults to an empty prefix (no default Ctrl+B).
 - **Keymap** (`keymap.go`) — the unopinionated mux key state machine: optional prefix, direct key→action map, chord map, and passthrough key. `HandleKey(key)` returns `(handled, action, armed)`; a chord bound to `esc` or the prefix itself wins over the implicit cancel, and unbound chord keys pass through to the child. `ListKeys()` renders the sorted binding table; `osm:termmux` adds `newKeymap` and a `keymapOverlay` BubbleTea popup. With an empty prefix (the default) chords are disabled entirely.
-- **Staged (atomic) input** — `SessionManager.InputStaged(id, data)` copies the payload at request time and delivers it as a single `Write` call on the worker (ordering with regular input preserved); JS: `mgr.inputStaged(id, data)` and `session.writeStaged(data)`; used by `termpane.forwardPaste` for bracketed-paste payloads. See §5.2.
+- **Staged (atomic) input** — `SessionManager.InputStaged(id, data)` and `SessionManager.InputStagedActive(data)` (the active-session variant used by `session().writeStaged`) copy the payload at request time and deliver it as a single `Write` call on the worker (ordering with regular input preserved); JS: `mgr.inputStaged(id, data)` and `session.writeStaged(data)`; used by `termpane.forwardPaste` for bracketed-paste payloads. See §5.2.
 - **Mouse** (`input.go`, `sgrmouse.go`, `mouse_drag.go`) — `MouseToSGR` SGR 1006 encoding, click-to-focus and drag-to-resize hit-testing against pane geometries, and the `enableMouseForward`/`mouseDrag` JS bindings.
 - **Monitoring** (`monitor.go`) — per-session `MonitorConfig` for bell, background activity, and silence (with thresholds), plus visual bell flash state; `CheckSilenceMonitors` drives silence timers.
 - **Synchronized panes** — `SetSynchronizePanes` broadcasts input to all panes.
@@ -465,16 +465,18 @@ Two delivery granularities exist on the input path:
 
 - **Regular input** (`Input`, `InputSession`): each request is one
   `session.Write` — the typing path.
-- **Staged input** (`InputStaged`): the payload is copied once and delivered
-  as a single `Write` call (`reqInputStaged`), so we did not artificially
-  split the payload — delivery is one `Write` carrying the whole buffer.
+- **Staged input** (`InputStaged`, `InputStagedActive`): the payload is copied once and delivered
+  as a single `Write` call (`reqInputStaged` / `reqInputStagedActive`), so we did not artificially
+  split the payload — delivery is one `Write` carrying the whole buffer. `InputStagedActive` is the
+  single-request active-session form used by the JS `session().writeStaged`: it resolves the active
+  session and rejects locked sessions in one worker round-trip, then writes via `WriteFull`.
   Routed through the same worker queue, so ordering with regular input is
   preserved. `termpane.forwardPaste` uses this for bracketed-paste payloads.
 
 Every input path that writes to a child PTY treats a short write (`n < len`
 with nil error) as an error wrapping `ErrShortWrite` (which aliases
 `io.ErrShortWrite`) instead of silently truncating the payload. This covers
-the manager input paths (`Input`/`InputSession`/`InputStaged`/`SendKeys`, all
+the manager input paths (`Input`/`InputSession`/`InputStaged`/`InputStagedActive`/`SendKeys`, all
 via `WriteFull` in `write.go`), the `osm:termmux` session bindings
 (`write`/`writeStaged`/`sendKeys`), `CaptureSession.WriteString`, and the
 passthrough stdin forwarder (`forward_stdin.go`). `WriteFull` discards `n`, so

@@ -379,7 +379,7 @@ func (m *keymapOverlayModel) render() string {
 }
 
 // keymapOverlayFactory implements termmux.keymapOverlay({ keymap, tea, onClose? })
-// → { model, visible, _update } (same shape as chooseTree).
+// → { model, view, render, visible, _update } (same shape as chooseTree).
 //
 // The returned model renders keymap.listKeys() as a centered table; any key
 // closes the overlay and invokes onClose.

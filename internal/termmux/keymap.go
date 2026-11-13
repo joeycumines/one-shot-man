@@ -149,11 +149,14 @@ var modifierOrder = map[string]int{
 
 // normalizeKey normalizes a key name for lookup. The key is split on "+" with
 // a trailing "+" preserved as a literal "+" stem ("ctrl++" -> modifiers
-// ["ctrl"], stem "+"; bare "+" -> stem "+"). Modifier tokens (every part
-// except the stem) are lowercased, deduplicated, and sorted into the
-// canonical order (ctrl,alt,shift,meta,hyper,super), so "Ctrl+F1",
-// "alt+ctrl+f1" and "ctrl+alt+f1" are the same binding. The stem is
-// lowercased only when it is a multi-rune key NAME ("F1" -> "f1",
+// ["ctrl"], stem "+"; bare "+" -> stem "+"). A trailing "+" is treated as the
+// stem only when exactly one "+" follows the last modifier — pathological
+// inputs with more trailing "+"s (e.g. "ctrl+++") keep their raw form, which
+// is self-consistent because bind and lookup share this function. Modifier
+// tokens (every part except the stem) are lowercased, deduplicated, and
+// sorted into the canonical order (ctrl,alt,shift,meta,hyper,super), so
+// "Ctrl+F1", "alt+ctrl+f1" and "ctrl+alt+f1" are the same binding. The stem
+// is lowercased only when it is a multi-rune key NAME ("F1" -> "f1",
 // "Enter" -> "enter"); a single-rune stem is a literal character and keeps
 // its case, so "A" and "a" stay distinct and single non-ASCII runes are
 // preserved (rune count, not byte length). Exception: a single-rune ASCII

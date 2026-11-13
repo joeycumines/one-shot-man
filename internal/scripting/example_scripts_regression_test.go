@@ -563,7 +563,6 @@ function kmArmed() { return km.armed(); }
 function kmHandle(key) { return km.handleKey(key); }
 function msg() { return stateRef.message; }
 function msgUntil() { return stateRef.messageUntil; }
-function stateKeys() { var ks = []; for (var k in stateRef) ks.push(k); return ks.join(','); }
 // Direct keys.
 var before = { paused: model.paused, size: model.paneW };
 press('ctrl+p');                       // pause toggles
@@ -580,11 +579,19 @@ var smallerShrank = model.paneW < afterBigger;
 // operation promise chain settles — flush the microtask queue, then read.
 press('ctrl+x');
 press('c');
-var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
 // R3-13: arming the prefix sets the 'prefix' indicator; cancelling the chord
 // (prefix then esc) must clear it immediately, not wait for the timer.
-// Drive the keymap directly (bypassing updateModel) to observe its own
-// armed state, then drive handleKey to check the message side effect.
+// Drive updateModel (which calls the real handleKey) and read the model's
+// message field afterwards — this exercises the example-15 fix itself, not
+// just the keymap's armed state. (The quit chord below is deferred until
+// after these assertions: once state.quit is set, updateModel short-circuits
+// into the cleanup path and never reaches handleKey again.)
+press('ctrl+x');
+var msgWhileArmed = msg();
+press('esc');
+var msgAfterCancel = msg();
+var msgUntilAfterCancel = msgUntil();
+var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
 var directArmed = kmHandle('ctrl+x').armed;
 var handleArmedR = handleKey({ type: 'Key', key: 'ctrl+x' });
 var directCancel = handleKey({ type: 'Key', key: 'esc' });
@@ -602,7 +609,10 @@ __result = {
     armedMessage: __resultPrefix.armed,
     clearedAfterCancel: __resultPrefix.cleared,
     directArmedMsg: __resultPrefix.armed,
-    directCleared: __resultPrefix.cleared
+    directCleared: __resultPrefix.cleared,
+    msgWhileArmed: msgWhileArmed,
+    msgAfterCancel: msgAfterCancel,
+    msgUntilAfterCancel: msgUntilAfterCancel
 };
 	Promise.resolve().then(function() { return Promise.resolve(); }).then(function() {
 		__result.copyModeMessage = model.message;
@@ -624,6 +634,17 @@ __result = {
 	}
 	if got := result["directArmedMsg"]; got != true {
 		t.Errorf("example-15 R3-13: keymap not armed after handleKey(ctrl+x) (full result: %v)", result)
+	}
+	// R3-13 message-side assertions: arming the prefix sets model.message to
+	// 'prefix', and cancelling the chord (esc) clears it immediately.
+	if got := result["msgWhileArmed"]; got != "prefix" {
+		t.Errorf("example-15 R3-13: model.message after arming prefix = %v, want 'prefix' (full result: %v)", got, result)
+	}
+	if got := result["msgAfterCancel"]; got != "" {
+		t.Errorf("example-15 R3-13: model.message after chord cancel = %v, want '' (full result: %v)", got, result)
+	}
+	if got := result["msgUntilAfterCancel"]; got != int64(0) && got != float64(0) && got != 0 {
+		t.Errorf("example-15 R3-13: model.messageUntil after chord cancel = %v, want 0 (full result: %v)", got, result)
 	}
 	// The copyMode chord's real side effect: the action handler calls
 	// setMessage('copyMode') after the stubbed enter/exitCopyMode promise

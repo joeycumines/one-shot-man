@@ -552,11 +552,18 @@ func TestExample15KeymapActionCoverage(t *testing.T) {
 	result := runResultScript(t, engine, "example-15-action-coverage", `
 var initRes = __programConfig.init();
 var model = initRes[0];
+var stateRef = model;
 function press(key) {
 	var r = __programConfig.update({ type: 'Key', key: key }, model);
 	model = r[0];
+	stateRef = model;
 	return r;
 }
+function kmArmed() { return km.armed(); }
+function kmHandle(key) { return km.handleKey(key); }
+function msg() { return stateRef.message; }
+function msgUntil() { return stateRef.messageUntil; }
+function stateKeys() { var ks = []; for (var k in stateRef) ks.push(k); return ks.join(','); }
 // Direct keys.
 var before = { paused: model.paused, size: model.paneW };
 press('ctrl+p');                       // pause toggles
@@ -574,6 +581,15 @@ var smallerShrank = model.paneW < afterBigger;
 press('ctrl+x');
 press('c');
 var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
+// R3-13: arming the prefix sets the 'prefix' indicator; cancelling the chord
+// (prefix then esc) must clear it immediately, not wait for the timer.
+// Drive the keymap directly (bypassing updateModel) to observe its own
+// armed state, then drive handleKey to check the message side effect.
+var directArmed = kmHandle('ctrl+x').armed;
+var handleArmedR = handleKey({ type: 'Key', key: 'ctrl+x' });
+var directCancel = handleKey({ type: 'Key', key: 'esc' });
+var directCleared = !kmArmed();
+__resultPrefix = { armed: directArmed, handleResult: String(handleArmedR), cleared: directCleared };
 __result = {
     pauseToggled: pauseToggled,
     pauseRestored: pauseRestored,
@@ -582,22 +598,32 @@ __result = {
     // Filled in by the microtask flush after ExecuteScript, once the
     // copyMode promise chain has settled and setMessage('copyMode') ran.
     copyModeMessage: '',
-    quitSet: quitSet
+    quitSet: quitSet,
+    armedMessage: __resultPrefix.armed,
+    clearedAfterCancel: __resultPrefix.cleared,
+    directArmedMsg: __resultPrefix.armed,
+    directCleared: __resultPrefix.cleared
 };
 	Promise.resolve().then(function() { return Promise.resolve(); }).then(function() {
 		__result.copyModeMessage = model.message;
 	});
 `)
 	for k, want := range map[string]bool{
-		"pauseToggled":  true,
-		"pauseRestored": true,
-		"biggerGrew":    true,
-		"smallerShrank": true,
-		"quitSet":       true,
+		"pauseToggled":       true,
+		"pauseRestored":      true,
+		"biggerGrew":         true,
+		"smallerShrank":      true,
+		"quitSet":            true,
+		"armedMessage":       true,
+		"clearedAfterCancel": true,
+		"directCleared":      true,
 	} {
 		if got := result[k]; got != want {
-			t.Errorf("example-15 action %s = %v, want %v", k, got, want)
+			t.Errorf("example-15 action %s = %v, want %v (full result: %v)", k, got, want, result)
 		}
+	}
+	if got := result["directArmedMsg"]; got != true {
+		t.Errorf("example-15 R3-13: keymap not armed after handleKey(ctrl+x) (full result: %v)", result)
 	}
 	// The copyMode chord's real side effect: the action handler calls
 	// setMessage('copyMode') after the stubbed enter/exitCopyMode promise

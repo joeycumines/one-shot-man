@@ -2,7 +2,7 @@
 // example-15-bouncing-logo.js — Bouncing Terminal: a full-colour, mouse/keyboard-capable PTY bouncing around the screen
 //
 // Demonstrates a thin JavaScript orchestration layer over reusable Go primitives:
-//   - osm:termmux      (bounded session, control router, copy mode, prefix dispatcher)
+//   - osm:termmux      (bounded session, copy mode, configurable keymap)
 //   - osm:termui/termpane (real BubbleTea-model terminal pane: colour, mouse, keys, resize)
 //   - osm:termui/compositor (panes, chrome, generation-cached rendering)
 //   - osm:bubbletea    (model/update/view/run/tick)
@@ -348,6 +348,13 @@ function handleKey(msg) {
     // The mux keymap sees every key first. It reports {handled, action, armed}:
     // handled=false means "forward to the child pane".
     var r = km.handleKey(msg.key);
+    // A chord that was cancelled/disarmed (e.g. prefix then esc, or an
+    // unbound chord key) must clear the stale "prefix" indicator immediately
+    // instead of leaving it up until the message timer expires.
+    if (!r.armed && state.message === 'prefix') {
+        state.message = '';
+        state.messageUntil = 0;
+    }
     if (r.armed) {
         setMessage('prefix');
         return true;

@@ -402,3 +402,133 @@ func TestKeymap_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestKeymap_NormalizeKey_CanonicalModifierOrder pins R3-11 Bug A: modifier
+// tokens are sorted into BubbleTea's canonical order
+// (ctrl,alt,shift,meta,hyper,super) so any input permutation of the same
+// modifier set normalizes identically, matching encodeModNav's commutative
+// semantics.
+func TestKeymap_NormalizeKey_CanonicalModifierOrder(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"alt+ctrl+x":                         "ctrl+alt+x",
+		"shift+alt+left":                     "alt+shift+left",
+		"meta+shift+ctrl+a":                  "ctrl+shift+meta+a",
+		"super+hyper+meta+shift+alt+ctrl+f1": "ctrl+alt+shift+meta+hyper+super+f1",
+		"ctrl+alt+a":                         "ctrl+alt+a",
+		"x":                                  "x",
+		"ctrl+x":                             "ctrl+x",
+		"F1":                                 "f1",
+		"Ctrl+F1":                            "ctrl+f1",
+	}
+	for in, want := range cases {
+		if got := normalizeKey(in); got != want {
+			t.Errorf("normalizeKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// Distinct modifier SETS stay distinct.
+	if normalizeKey("ctrl+alt+x") == normalizeKey("ctrl+shift+x") {
+		t.Errorf("different modifier sets must not collide")
+	}
+}
+
+// TestKeymap_NormalizeKey_PlusStem pins R3-11 Bug A(2): a trailing "+" is a
+// literal "+" stem, so "ctrl++" normalizes to "ctrl++" (not a 0-rune stem),
+// and bare "+" is the stem "+".
+func TestKeymap_NormalizeKey_PlusStem(t *testing.T) {
+	t.Parallel()
+	if got := normalizeKey("ctrl++"); got != "ctrl++" {
+		t.Errorf("normalizeKey(\"ctrl++\") = %q, want \"ctrl++\"", got)
+	}
+	if got := normalizeKey("alt++"); got != "alt++" {
+		t.Errorf("normalizeKey(\"alt++\") = %q, want \"alt++\"", got)
+	}
+	if got := normalizeKey("+"); got != "+" {
+		t.Errorf("normalizeKey(\"+\") = %q, want \"+\"", got)
+	}
+	k := NewKeymapWith(WithKeys(map[string]string{"ctrl++": "plus"}))
+	if h, a, _ := k.HandleKey("ctrl++"); !h || a != "plus" {
+		t.Errorf("HandleKey(\"ctrl++\") = (%v,%q), want (true,\"plus\")", h, a)
+	}
+}
+
+// TestKeymap_HandleKey_EmptyKeyKeepsArmed pins R3-11 Bug B: an empty key
+// string is a no-op that reports the current armed state without disarming.
+func TestKeymap_HandleKey_EmptyKeyKeepsArmed(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(WithPrefix("ctrl+a"), WithChords(map[string]string{"x": "xact"}))
+	if h, _, armed := k.HandleKey("ctrl+a"); !h || !armed {
+		t.Fatalf("prefix did not arm: (%v,%v)", h, armed)
+	}
+	if h, a, armed := k.HandleKey(""); h || a != "" || !armed {
+		t.Fatalf("HandleKey(\"\") while armed = (%v,%q,%v), want (false,\"\",true)", h, a, armed)
+	}
+	// Still armed afterwards: the chord still fires.
+	if h, a, armed := k.HandleKey("x"); !h || a != "xact" || armed {
+		t.Fatalf("after empty key, chord = (%v,%q,%v), want (true,\"xact\",false)", h, a, armed)
+	}
+	// Not armed: empty key is a plain pass-through.
+	if h, a, armed := k.HandleKey(""); h || a != "" || armed {
+		t.Fatalf("HandleKey(\"\") idle = (%v,%q,%v), want (false,\"\",false)", h, a, armed)
+	}
+}
+
+// TestKeymap_ShadowedBindingsHidden pins R3-11 Bug C: ListKeys and Bindings
+// must not list bindings that can never fire because prefix or passthroughKey
+// shadow them.
+func TestKeymap_ShadowedBindingsHidden(t *testing.T) {
+	t.Parallel()
+	k := NewKeymapWith(
+		WithPrefix("ctrl+a"),
+		WithPassthroughKey("ctrl+b"),
+		WithKeys(map[string]string{
+			"ctrl+a": "shadowed-by-prefix",
+			"ctrl+b": "shadowed-by-passthrough",
+			"x":      "live",
+		}),
+		WithChords(map[string]string{"c": "chord-c"}),
+	)
+	for _, b := range k.Bindings() {
+		if b.Key == "ctrl+a" || b.Key == "ctrl+b" {
+			t.Errorf("Bindings() includes shadowed key %q", b.Key)
+		}
+	}
+	list := k.ListKeys()
+	if strings.Contains(list, "shadowed-by-prefix") || strings.Contains(list, "shadowed-by-passthrough") {
+		t.Errorf("ListKeys contains shadowed actions:\n%s", list)
+	}
+	if !strings.Contains(list, "live") || !strings.Contains(list, "chord-c") {
+		t.Errorf("ListKeys missing live bindings:\n%s", list)
+	}
+	// passthroughKey == prefix: the passthrough row is unreachable (prefix
+	// arm wins), so ListKeys must not render it as a passthrough row.
+	k2 := NewKeymapWith(WithPrefix("ctrl+a"), WithPassthroughKey("ctrl+a"))
+	list2 := k2.ListKeys()
+	if strings.Contains(list2, ActionPassthrough) {
+		t.Errorf("ListKeys renders unreachable passthrough row:\n%s", list2)
+	}
+	if !strings.Contains(list2, "prefix") {
+		t.Errorf("ListKeys missing prefix row:\n%s", list2)
+	}
+}
+
+// TestKeymap_WithKeysDeterministic pins R3-11 (review-18 #7): when two
+// spellings normalize to the same key, the winner must be deterministic
+// (sorted spelling order), not Go's randomized map iteration.
+func TestKeymap_WithKeysDeterministic(t *testing.T) {
+	t.Parallel()
+	want := ""
+	for i := 0; i < 50; i++ {
+		k := NewKeymapWith(WithKeys(map[string]string{"Ctrl+A": "upper-first", "ctrl+a": "lower-second"}))
+		_, a, _ := k.HandleKey("ctrl+a")
+		if want == "" {
+			want = a
+		} else if a != want {
+			t.Fatalf("iteration %d: action %q != first %q (nondeterministic)", i, a, want)
+		}
+	}
+	// The lexicographically smaller normalized spelling wins deterministically.
+	if want != "upper-first" && want != "lower-second" {
+		t.Fatalf("unexpected action %q", want)
+	}
+}

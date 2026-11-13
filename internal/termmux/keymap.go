@@ -90,10 +90,18 @@ func WithPassthroughKey(key string) KeymapOption {
 
 // WithKeys seeds the direct key→action table. Empty keys and empty actions
 // are rejected so a binding can never silently swallow a key without
-// dispatching (matching Bind).
+// dispatching (matching Bind). Keys are applied in sorted order so that when
+// two spellings normalize to the same key the winner is deterministic
+// (lexicographically smallest spelling), never Go's randomized map order.
 func WithKeys(keys map[string]string) KeymapOption {
 	return func(k *Keymap) {
-		for key, action := range keys {
+		order := make([]string, 0, len(keys))
+		for key := range keys {
+			order = append(order, key)
+		}
+		sort.Strings(order)
+		for _, key := range order {
+			action := keys[key]
 			if key == "" || action == "" {
 				continue
 			}
@@ -103,10 +111,16 @@ func WithKeys(keys map[string]string) KeymapOption {
 }
 
 // WithChords seeds the prefix chord table. Empty keys and empty actions are
-// rejected (matching BindChord).
+// rejected (matching BindChord). Applied in sorted key order (see WithKeys).
 func WithChords(chords map[string]string) KeymapOption {
 	return func(k *Keymap) {
-		for key, action := range chords {
+		order := make([]string, 0, len(chords))
+		for key := range chords {
+			order = append(order, key)
+		}
+		sort.Strings(order)
+		for _, key := range order {
+			action := chords[key]
 			if key == "" || action == "" {
 				continue
 			}
@@ -124,41 +138,85 @@ func NewKeymapWith(opts ...KeymapOption) *Keymap {
 	return k
 }
 
-// normalizeKey normalizes a key name for lookup. Modifier tokens (every
-// "+"-separated part except the last) are always lowercased, so "Ctrl+F1" and
-// "ctrl+f1" are the same binding. The final stem is lowercased only when it is
-// a multi-rune key NAME ("F1" -> "f1", "Enter" -> "enter"); a single-rune
-// stem is a literal character and keeps its case, so "A" and "a" stay
-// distinct and single non-ASCII runes are preserved (rune count, not byte
-// length). Exception: a single-rune ASCII letter stem under a ctrl modifier
-// is lowercased, because ctrl+A and ctrl+a encode to the same control byte
-// (0x01) on the wire and can never be distinguished by the child. Key names
-// produced by BubbleTea are already lowercase, so this only affects
-// hand-written bindings.
+// modifierOrder is BubbleTea v2's canonical modifier order (see Keystroke
+// docs in the bubbletea module): ctrl, alt, shift, meta, hyper, super.
+// normalizeKey sorts modifier tokens into this order so any input permutation
+// of the same modifier set normalizes identically — matching encodeModNav's
+// commutative modifier semantics in input.go.
+var modifierOrder = map[string]int{
+	"ctrl": 0, "alt": 1, "shift": 2, "meta": 3, "hyper": 4, "super": 5,
+}
+
+// normalizeKey normalizes a key name for lookup. The key is split on "+" with
+// a trailing "+" preserved as a literal "+" stem ("ctrl++" -> modifiers
+// ["ctrl"], stem "+"; bare "+" -> stem "+"). Modifier tokens (every part
+// except the stem) are lowercased, deduplicated, and sorted into the
+// canonical order (ctrl,alt,shift,meta,hyper,super), so "Ctrl+F1",
+// "alt+ctrl+f1" and "ctrl+alt+f1" are the same binding. The stem is
+// lowercased only when it is a multi-rune key NAME ("F1" -> "f1",
+// "Enter" -> "enter"); a single-rune stem is a literal character and keeps
+// its case, so "A" and "a" stay distinct and single non-ASCII runes are
+// preserved (rune count, not byte length). Exception: a single-rune ASCII
+// letter stem under a ctrl modifier is lowercased, because ctrl+A and ctrl+a
+// encode to the same control byte (0x01) on the wire and can never be
+// distinguished by the child. Key names produced by BubbleTea are already
+// lowercase and canonical, so this only affects hand-written bindings.
 func normalizeKey(key string) string {
 	if key == "" {
 		return ""
 	}
+	// Split on "+" but keep a trailing "+" as the stem: "ctrl++" splits into
+	// parts ["ctrl", ""] where the empty last part is the literal "+" stem.
 	parts := strings.Split(key, "+")
 	last := len(parts) - 1
 	stem := parts[last]
+	if stem == "" && (key == "+" || strings.HasSuffix(key, "++")) {
+		// Trailing "+": the stem is the literal "+" character and the real
+		// last modifier is parts[last-1] ("ctrl++" -> mods ["ctrl"], stem "+").
+		stem = "+"
+		last--
+		parts = parts[:last+1]
+		parts[last] = stem
+	}
+	mods := parts[:last]
 	hasCtrl := false
-	for i := 0; i < last; i++ {
-		if strings.EqualFold(parts[i], "ctrl") {
+	for _, m := range mods {
+		if strings.EqualFold(m, "ctrl") {
 			hasCtrl = true
 		}
-		parts[i] = strings.ToLower(parts[i])
 	}
+	// Lowercase, dedupe, and sort modifiers into canonical order.
+	seen := make(map[string]bool, len(mods))
+	uniq := mods[:0]
+	for _, m := range mods {
+		lm := strings.ToLower(m)
+		if seen[lm] {
+			continue
+		}
+		seen[lm] = true
+		uniq = append(uniq, lm)
+	}
+	sort.SliceStable(uniq, func(i, j int) bool {
+		ri, okI := modifierOrder[uniq[i]]
+		rj, okJ := modifierOrder[uniq[j]]
+		if okI && okJ {
+			return ri < rj
+		}
+		if okI != okJ {
+			return okI // known modifiers before unknown tokens
+		}
+		return uniq[i] < uniq[j]
+	})
 	if utf8.RuneCountInString(stem) != 1 {
-		parts[last] = strings.ToLower(stem)
+		stem = strings.ToLower(stem)
 	} else if hasCtrl {
 		// ctrl+<letter> is case-insensitive on the wire (both encode to
 		// 0x01..0x1A), so lowercase a single-rune letter stem under ctrl.
 		if c := stem[0]; (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			parts[last] = strings.ToLower(stem)
+			stem = strings.ToLower(stem)
 		}
 	}
-	return strings.Join(parts, "+")
+	return strings.Join(append(uniq, stem), "+")
 }
 
 // HandleKey runs one key through the state machine. Returns
@@ -171,6 +229,12 @@ func normalizeKey(key string) string {
 func (k *Keymap) HandleKey(key string) (handled bool, action string, armed bool) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+
+	if key == "" {
+		// An empty key is a no-op: report the current armed state without
+		// mutating anything (it must not disarm an in-progress chord).
+		return false, "", k.armed
+	}
 
 	key = normalizeKey(key)
 
@@ -282,10 +346,12 @@ func (k *Keymap) Reset() {
 	k.armed = false
 }
 
-// Bindings returns all bindings sorted by key, direct keys first then chords.
-// Chord entries are only reachable when a prefix is set, so they are omitted
-// when prefix is "" (matching ListKeys) — otherwise a UI consuming this would
-// show dead chords.
+// Bindings returns all reachable bindings sorted by key, direct keys first
+// then chords. Chord entries are only reachable when a prefix is set, so they
+// are omitted when prefix is "" (matching ListKeys) — otherwise a UI
+// consuming this would show dead chords. Direct bindings shadowed by the
+// prefix or passthrough key (which HandleKey checks first) are also omitted,
+// since they can never fire.
 func (k *Keymap) Bindings() []KeyBinding {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -295,6 +361,9 @@ func (k *Keymap) Bindings() []KeyBinding {
 	}
 	out := make([]KeyBinding, 0, len(k.keys)+chordCap)
 	for key, action := range k.keys {
+		if key == k.prefix || (k.passthroughKey != "" && key == k.passthroughKey) {
+			continue // shadowed: prefix/passthrough arm wins in HandleKey
+		}
 		out = append(out, KeyBinding{Key: key, Action: action})
 	}
 	if k.prefix != "" {
@@ -336,11 +405,16 @@ func (k *Keymap) ListKeys() string {
 	if k.prefix != "" {
 		rows = append(rows, row{key: "prefix", action: k.prefix})
 	}
-	if k.passthroughKey != "" {
+	// The passthrough row is only reachable when it does not collide with
+	// the prefix (the prefix arm wins when not armed).
+	if k.passthroughKey != "" && k.passthroughKey != k.prefix {
 		rows = append(rows, row{key: k.passthroughKey, action: ActionPassthrough})
 	}
 	direct := make([]KeyBinding, 0, len(k.keys))
 	for key, action := range k.keys {
+		if key == k.prefix || key == k.passthroughKey {
+			continue // shadowed by the prefix or passthrough arm
+		}
 		direct = append(direct, KeyBinding{Key: key, Action: action})
 	}
 	sort.Slice(direct, func(i, j int) bool { return direct[i].Key < direct[j].Key })

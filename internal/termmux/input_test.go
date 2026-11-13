@@ -516,3 +516,112 @@ func TestKeyToTermBytes_ApplicationCursor_UnaffectedKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestKeyToTermBytes_ModifierCombinations pins R3-10: BubbleTea's canonical
+// modifier order is ctrl,alt,shift,meta — every permutation of the modifier
+// set must encode identically; modified F-keys use the xterm CSI modifier
+// form; ctrl+alt+<letter> emits ESC + control byte; duplicate modifiers are
+// rejected.
+func TestKeyToTermBytes_ModifierCombinations(t *testing.T) {
+	t.Parallel()
+	perms := [][]string{
+		{"shift"}, {"alt"}, {"ctrl"}, {"meta"},
+		{"shift", "alt"}, {"alt", "shift"},
+		{"ctrl", "alt"}, {"alt", "ctrl"},
+		{"shift", "ctrl"}, {"ctrl", "shift"},
+		{"ctrl", "alt", "shift"}, {"shift", "alt", "ctrl"}, {"alt", "ctrl", "shift"},
+		{"ctrl", "meta"}, {"meta", "ctrl"},
+		{"shift", "alt", "ctrl", "meta"},
+	}
+	// Expected xterm mod param per modifier SET is computed inline below.
+	join := func(p []string) string {
+		out := ""
+		for i, m := range p {
+			if i > 0 {
+				out += "+"
+			}
+			out += m
+		}
+		return out
+	}
+	keyFor := func(p []string, stem, letterOrNum string, tilde bool) (string, string) {
+		key := join(p) + "+" + stem
+		bit := 0
+		for _, m := range p {
+			switch m {
+			case "shift":
+				bit |= 1
+			case "alt":
+				bit |= 2
+			case "ctrl":
+				bit |= 4
+			case "meta":
+				bit |= 8
+			}
+		}
+		var want string
+		if tilde {
+			want = "\x1b[" + letterOrNum + ";" + itoa(bit+1) + "~"
+		} else {
+			want = "\x1b[1;" + itoa(bit+1) + letterOrNum
+		}
+		return key, want
+	}
+	stems := []struct {
+		stem, seq string
+		tilde     bool
+	}{{"left", "D", false}, {"home", "H", false}, {"pgup", "5", true}, {"delete", "3", true}, {"f1", "P", false}, {"f5", "15", true}, {"f12", "24", true}}
+	for _, p := range perms {
+		for _, s := range stems {
+			key, want := keyFor(p, s.stem, s.seq, s.tilde)
+			got, ok := KeyToTermBytes(key, false, false)
+			if !ok || got != want {
+				t.Errorf("%s -> (%q,%v), want (%q,true)", key, got, ok, want)
+			}
+			// appCursor must not change MODIFIED keys.
+			gotC, okC := KeyToTermBytes(key, true, false)
+			if !okC || gotC != want {
+				t.Errorf("appCursor %s -> (%q,%v), want (%q,true)", key, gotC, okC, want)
+			}
+		}
+	}
+	// ctrl+alt+letter (any order) → ESC + control byte.
+	for _, key := range []string{"ctrl+alt+a", "alt+ctrl+a", "ctrl+alt+Z", "alt+ctrl+z"} {
+		got, ok := KeyToTermBytes(key, false, false)
+		want := "\x1b\x01"
+		if key[len(key)-1] == 'Z' || key[len(key)-1] == 'z' {
+			want = "\x1b\x1a"
+		}
+		if !ok || got != want {
+			t.Errorf("%s -> (%q,%v), want (%q,true)", key, got, ok, want)
+		}
+	}
+	// Duplicate modifiers rejected.
+	for _, bad := range []string{"alt+alt+left", "ctrl+ctrl+up", "shift+shift+home", "alt+alt+f1", "ctrl+alt+alt+a"} {
+		if got, ok := KeyToTermBytes(bad, false, false); ok {
+			t.Errorf("%s -> (%q,true), want rejection", bad, got)
+		}
+	}
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	neg := i < 0
+	if neg {
+		i = -i
+	}
+	var b [8]byte
+	pos := len(b)
+	for i > 0 {
+		pos--
+		b[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	if neg {
+		pos--
+		b[pos] = '-'
+	}
+	return string(b[pos:])
+}

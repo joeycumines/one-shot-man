@@ -3,6 +3,7 @@ package termmux
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/rivo/uniseg"
 )
@@ -76,27 +77,44 @@ func (c *Chooser) Selected() (ChooserItem, bool) {
 	return c.items[c.cursor], true
 }
 
+// Items returns a copy of the chooser's item list.
+func (c *Chooser) Items() []ChooserItem {
+	out := make([]ChooserItem, len(c.items))
+	copy(out, c.items)
+	return out
+}
+
 // Render returns the chooser content as a string for display.
 // TruncateCells clips s to at most width display cells. A non-positive width
 // yields "". Truncation is grapheme-cluster aware (uniseg): multi-rune
 // clusters (combining marks, variation selectors, ZWJ emoji) are never split,
-// and each cluster's width is measured as a whole. Runs in O(total cells).
+// and each cluster's width is measured as a whole. Control clusters (C0/C1,
+// e.g. tab, newline, ESC) are skipped entirely — never emitted — so the
+// result's rendered width stays within the bound on a real terminal and no
+// control/escape bytes leak into the frame. Runs in O(total cells).
 func TruncateCells(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if uniseg.StringWidth(s) <= width {
+	if uniseg.StringWidth(s) <= width && !strings.ContainsFunc(s, unicode.IsControl) {
 		return s
 	}
 	var b strings.Builder
 	w := 0
 	g := uniseg.NewGraphemes(s)
 	for g.Next() {
-		gw := uniseg.StringWidth(g.Str())
+		cluster := g.Str()
+		// Skip control clusters: uniseg measures them as 0 width, but a
+		// terminal may render them (or their ESC sequences) wider, and they
+		// must never reach the frame.
+		if r := []rune(cluster)[0]; unicode.IsControl(r) {
+			continue
+		}
+		gw := uniseg.StringWidth(cluster)
 		if w+gw > width {
 			break
 		}
-		b.WriteString(g.Str())
+		b.WriteString(cluster)
 		w += gw
 	}
 	return b.String()

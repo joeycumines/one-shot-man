@@ -3,6 +3,9 @@ package termmux
 import (
 	"strings"
 	"testing"
+	"unicode"
+
+	"github.com/rivo/uniseg"
 )
 
 func TestNewChooser(t *testing.T) {
@@ -134,6 +137,67 @@ func TestChooser_RenderTruncation(t *testing.T) {
 	for line := range strings.SplitSeq(out, "\n") {
 		if len(line) > 20 {
 			t.Errorf("line too long (%d): %q", len(line), line)
+		}
+	}
+}
+
+// TestTruncateCells_ControlCharsSkipped pins R3-15: C0/C1 control clusters
+// (tab, newline, ESC, etc.) are skipped entirely — never emitted — so the
+// result's display width stays within the bound on a real terminal (where
+// uniseg counts them as 0 but a terminal may render them differently) and no
+// escape/control bytes leak into the frame.
+func TestTruncateCells_ControlCharsSkipped(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in    string
+		width int
+	}{
+		{"ab\tcd", 10},
+		{"ab\ncd", 10},
+		{"\x1b[31mred\x1b[0m", 10},
+		{"a\x00b", 10},
+		{"\x7f", 5},
+		{"caf\xc3\xa9 \xe2\x9c\x85 ok", 5}, // wide + emoji mixed with printable
+		{"\t\t\t", 3},
+		{"a\tb", 1},
+	}
+	for _, c := range cases {
+		got := TruncateCells(c.in, c.width)
+		if w := uniseg.StringWidth(got); w > c.width {
+			t.Errorf("TruncateCells(%q, %d) = %q is %d cells, exceeds %d", c.in, c.width, got, w, c.width)
+		}
+		for _, r := range got {
+			if unicode.IsControl(r) {
+				t.Errorf("TruncateCells(%q, %d) = %q contains control rune %U", c.in, c.width, got, r)
+			}
+		}
+	}
+	// Property test over pseudo-random mixed unicode+control input: width
+	// invariant and no control runes, for many widths.
+	seed := uint64(0x9e3779b97f4a7c15)
+	next := func(n int) int {
+		seed ^= seed << 13
+		seed ^= seed >> 7
+		seed ^= seed << 17
+		return int(seed%uint64(n)) + 1
+	}
+	pool := []rune{'a', 'b', 'Z', '0', 'é', '映', '✅', '\t', '\n', 0x1b, 0x00, 0x7f, '漢', '🚀'}
+	for i := 0; i < 500; i++ {
+		n := next(12)
+		rs := make([]rune, n)
+		for j := range rs {
+			rs[j] = pool[next(len(pool))-1]
+		}
+		in := string(rs)
+		width := next(8)
+		got := TruncateCells(in, width)
+		if w := uniseg.StringWidth(got); w > width {
+			t.Fatalf("TruncateCells(%q, %d) = %q width %d > %d", in, width, got, w, width)
+		}
+		for _, r := range got {
+			if unicode.IsControl(r) {
+				t.Fatalf("TruncateCells(%q, %d) = %q contains control rune %U", in, width, got, r)
+			}
 		}
 	}
 }

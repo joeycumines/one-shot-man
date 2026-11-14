@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
@@ -81,9 +82,12 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 		close: function() {},
 		activeID: function() { return sid; },
 		sessions: function() { return [{ target: {name:'',kind:'',id:''}, state:'attached', isActive:true, id:sid }]; },
-		enterCopyMode: function() {},
-		exitCopyMode: function() {},
-		isCopyModeActive: function() { return false; }
+		// Copy-mode state is tracked so toggling reflects the resulting state,
+		// matching the real SessionManager contract the script relies on.
+		__copyMode: false,
+		enterCopyMode: function() { mgr.__copyMode = true; return Promise.resolve(); },
+		exitCopyMode: function() { mgr.__copyMode = false; return Promise.resolve(); },
+		isCopyModeActive: function() { return Promise.resolve(mgr.__copyMode); }
 	};
 	return { session: session, mgr: mgr, sid: sid };
 })();
@@ -121,7 +125,57 @@ require = function(name) {
 		return {
 			newBoundedSession: function() { return Promise.resolve(__regressionTermmux); },
 			newControlRouter: function() { return { handleKey: function() { return {handled:false}; }, inChordMode: function() { return false; } }; },
-			handlePrefixKey: function() { return {action:'Cancel'}; }
+			handlePrefixKey: function() { return {action:'Cancel'}; },
+			newKeymap: function(opts) {
+				// Faithful minimal Keymap: honors the options the script passes
+				// (prefix/keys/chords) and runs the same arm/dispatch/cancel
+				// semantics as the real implementation, so the regression test
+				// can drive chord actions (e.g. copyMode) end-to-end.
+				// NOTE: this stub lowercases keys via String(key).ToLowerCase,
+				// which diverges from the real normalizeKey for bare/alt-modified
+				// letters (case-sensitive there); only ctrl+letter normalization
+				// matches. Acceptable here because the test only drives
+				// ctrl+<letter> chords.
+				opts = opts || {};
+				var prefix = opts.prefix || '';
+				var keys = opts.keys || {};
+				var chords = opts.chords || {};
+				var armed = false;
+				return {
+					handleKey: function(key) {
+						key = String(key).toLowerCase();
+						if (armed) {
+							armed = false;
+							// A bound chord key (including the prefix itself or
+							// "esc") wins over the implicit cancel — matching
+							// the real Keymap.HandleKey.
+							if (Object.prototype.hasOwnProperty.call(chords, key)) {
+								return { handled: true, action: chords[key], armed: false };
+							}
+							if (key === prefix || key === 'esc') {
+								// Consumed, but dispatches nothing — the caller
+								// must still clear a stale prefix indicator.
+								return { handled: true, action: '', armed: false };
+							}
+							// Unbound chord key: pass through, prefix disarmed.
+							return { handled: false, action: '', armed: false };
+						}
+						if (prefix && key === prefix) {
+							armed = true;
+							return { handled: true, action: '', armed: true };
+						}
+						if (Object.prototype.hasOwnProperty.call(keys, key)) {
+							return { handled: true, action: keys[key], armed: false };
+						}
+						return { handled: false, action: '', armed: false };
+					},
+					bind: function() {}, bindChord: function() {}, unbind: function() {}, unbindChord: function() {},
+					setPrefix: function() {}, prefix: function() { return prefix; },
+					setPassthroughKey: function() {}, passthroughKey: function() { return ''; },
+					armed: function() { return armed; }, reset: function() { armed = false; },
+					bindings: function() { return []; }, listKeys: function() { return ''; }
+				};
+			}
 		};
 	}
 	if (name === 'osm:termui/termpane') {
@@ -180,6 +234,19 @@ func runResultScript(t *testing.T, engine *Engine, name, source string) map[stri
 	script := engine.LoadScriptString(name, source)
 	if err := engine.ExecuteScript(script); err != nil {
 		t.Fatalf("ExecuteScript(%s) failed: %v", name, err)
+	}
+	// Flush pending microtasks (promise .then continuations scheduled by the
+	// script) via a no-op barrier on the event loop: goja runs queued
+	// microtasks before the next submitted callback, so by the time the
+	// barrier runs, deferred __result mutations have landed.
+	flushDone := make(chan error, 1)
+	if err := engine.Loop().Submit(func() { flushDone <- nil }); err != nil {
+		t.Fatalf("submit flush barrier: %v", err)
+	}
+	select {
+	case <-flushDone:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out flushing microtasks after %s", name)
 	}
 	val := engine.GetGlobal("__result")
 	result, ok := val.(map[string]any)
@@ -477,5 +544,126 @@ __result = {
 	}
 	if got := result["viewMouseMode"]; got != true {
 		t.Fatalf("expected view mouseMode='allMotion', got %v", got)
+	}
+}
+
+// TestExample15KeymapActionCoverage drives every key and chord the script
+// binds through the real switch in handleKey, proving each action (pause,
+// bigger, smaller, copyMode, quit) is dispatched — a missing case would fall
+// through and leave state unchanged.
+func TestExample15KeymapActionCoverage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test")
+	}
+	engine := newExampleScriptEngine(t)
+	loadExampleProgram(t, engine, "example-15-bouncing-logo.js")
+
+	result := runResultScript(t, engine, "example-15-action-coverage", `
+var initRes = __programConfig.init();
+var model = initRes[0];
+var stateRef = model;
+function press(key) {
+	var r = __programConfig.update({ type: 'Key', key: key }, model);
+	model = r[0];
+	stateRef = model;
+	return r;
+}
+function kmArmed() { return km.armed(); }
+function kmHandle(key) { return km.handleKey(key); }
+function msg() { return stateRef.message; }
+function msgUntil() { return stateRef.messageUntil; }
+// Direct keys.
+var before = { paused: model.paused, size: model.paneW };
+press('ctrl+p');                       // pause toggles
+var pauseToggled = model.paused === !before.paused;
+press('ctrl+p');                       // toggle back
+var pauseRestored = model.paused === before.paused;
+press('ctrl+b');                       // bigger
+var afterBigger = model.paneW;
+var biggerGrew = afterBigger > before.size;
+press('ctrl+s');                       // smaller
+var smallerShrank = model.paneW < afterBigger;
+// copyMode chord: ctrl+x arms, 'c' dispatches the copyMode action, whose
+// handler sets the status message to 'copyMode' once the (stubbed) pane
+// operation promise chain settles — flush the microtask queue, then read.
+press('ctrl+x');
+press('c');
+// Capture the copyMode status message once the action's promise chain settles:
+// the chain is isCopyModeActive().then(toggle).then(isCopyModeActive).then(setMessage)
+// wrapped by trackPaneOperation's Promise.resolve + .then — schedule a read deep
+// enough to run after it, before the later prefix arm/esc overwrite the message.
+Promise.resolve().then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){
+	__result.copyModeMessage = stateRef.message;
+});
+// R3-13: arming the prefix sets the 'prefix' indicator; cancelling the chord
+// (prefix then esc) must clear it immediately, not wait for the timer.
+// Drive updateModel (which calls the real handleKey) and read the model's
+// message field afterwards — this exercises the example-15 fix itself, not
+// just the keymap's armed state. (The quit chord below is deferred until
+// after these assertions: once state.quit is set, updateModel short-circuits
+// into the cleanup path and never reaches handleKey again.)
+press('ctrl+x');
+var msgWhileArmed = msg();
+var directArmed = kmArmed();
+press('esc');
+var msgAfterCancel = msg();
+var msgUntilAfterCancel = msgUntil();
+var directCleared = !kmArmed();
+var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
+__resultPrefix = { armed: directArmed, cleared: directCleared };
+__result = {
+    pauseToggled: pauseToggled,
+    pauseRestored: pauseRestored,
+    biggerGrew: biggerGrew,
+    smallerShrank: smallerShrank,
+    // Filled in by the microtask flush after ExecuteScript, once the
+    // copyMode promise chain has settled and setMessage('copyMode') ran.
+    // Read it in a microtask scheduled AFTER the copyMode dispatch chain but
+    // BEFORE the later prefix arm/esc overwrite the message.
+    copyModeMessage: '',
+    quitSet: quitSet,
+    armedMessage: __resultPrefix.armed,
+    clearedAfterCancel: __resultPrefix.cleared,
+    directArmedMsg: __resultPrefix.armed,
+    directCleared: __resultPrefix.cleared,
+    msgWhileArmed: msgWhileArmed,
+    msgAfterCancel: msgAfterCancel,
+    msgUntilAfterCancel: msgUntilAfterCancel
+};
+
+`)
+	for k, want := range map[string]bool{
+		"pauseToggled":       true,
+		"pauseRestored":      true,
+		"biggerGrew":         true,
+		"smallerShrank":      true,
+		"quitSet":            true,
+		"armedMessage":       true,
+		"clearedAfterCancel": true,
+		"directCleared":      true,
+	} {
+		if got := result[k]; got != want {
+			t.Errorf("example-15 action %s = %v, want %v (full result: %v)", k, got, want, result)
+		}
+	}
+	if got := result["directArmedMsg"]; got != true {
+		t.Errorf("example-15 R3-13: keymap not armed after handleKey(ctrl+x) (full result: %v)", result)
+	}
+	// R3-13 message-side assertions: arming the prefix sets model.message to
+	// 'prefix', and cancelling the chord (esc) clears it immediately.
+	if got := result["msgWhileArmed"]; got != "prefix" {
+		t.Errorf("example-15 R3-13: model.message after arming prefix = %v, want 'prefix' (full result: %v)", got, result)
+	}
+	if got := result["msgAfterCancel"]; got != "" {
+		t.Errorf("example-15 R3-13: model.message after chord cancel = %v, want '' (full result: %v)", got, result)
+	}
+	if got := result["msgUntilAfterCancel"]; got != int64(0) && got != float64(0) && got != 0 {
+		t.Errorf("example-15 R3-13: model.messageUntil after chord cancel = %v, want 0 (full result: %v)", got, result)
+	}
+	// The copyMode chord's real side effect: the action handler calls
+	// setMessage('copyMode') after the stubbed enter/exitCopyMode promise
+	// settles, so model.message must read exactly 'copyMode'.
+	if got := result["copyModeMessage"]; got != "copyMode" {
+		t.Errorf("example-15 copyMode side effect: model.message = %v, want 'copyMode'", got)
 	}
 }

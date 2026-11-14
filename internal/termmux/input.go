@@ -190,22 +190,37 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 
 	// Ctrl+letter → control character (0x01–0x1A for a-z).
 	if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len(rest) == 1 {
-		ch := rest[0]
-		if ch >= 'a' && ch <= 'z' {
-			return string(rune(ch - 'a' + 1)), true
-		}
-		if ch >= 'A' && ch <= 'Z' {
-			return string(rune(ch - 'A' + 1)), true
+		if b, ok := ctrlLetter(rest[0]); ok {
+			return string(rune(b)), true
 		}
 	}
 
-	// Modifier+navigation keys → xterm CSI sequences.
+	// Modifier+navigation/tilde/function keys → xterm CSI sequences
+	// (appCursor only affects UNMODIFIED keys, handled above). This accepts
+	// modifiers in any order, including BubbleTea's canonical
+	// "ctrl+alt+shift+meta+...".
 	if s, ok := encodeModNav(key); ok {
 		return s, true
 	}
 
-	// Alt+key → ESC prefix + inner key bytes.
+	// Ctrl+Alt+<single letter> (BubbleTea canonical order "ctrl+alt+a"):
+	// xterm encodes this as ESC + the control byte (C-M-a = ESC 0x01).
+	// Strip any combination of ctrl/alt modifiers (in any order) and check
+	// for a single-letter stem.
+	if rest, ok := stripCtrlAlt(key); ok && len(rest) == 1 {
+		if b, ok := ctrlLetter(rest[0]); ok {
+			return "\x1b" + string(rune(b)), true
+		}
+	}
+
+	// Alt+key → ESC prefix + inner key bytes, except for keys that have
+	// their own xterm modifier encoding (handled above), so alt+left emits
+	// ESC[1;3D rather than a double-ESC sequence. A duplicated alt modifier
+	// ("alt+alt+...") is malformed and must not produce a double ESC.
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
+		if strings.HasPrefix(rest, "alt+") {
+			return "", false
+		}
 		if inner, ok := KeyToTermBytes(rest, appCursor, appKeypad); ok {
 			return "\x1b" + inner, true
 		}
@@ -237,39 +252,124 @@ func KeyToTermBytes(key string, appCursor bool, appKeypad bool) (string, bool) {
 	return "", false
 }
 
-// encodeModNav handles modifier+navigation key combinations:
-// Format: ESC[1;{mod}{letter} or ESC[{num};{mod}~ for tilde-style keys.
-func encodeModNav(key string) (string, bool) {
-	type modPrefix struct {
-		prefix string
-		mod    string
+// encodeModNav handles modifier+navigation key combinations using the xterm
+// modifier parameter: ESC[1;{mod}{letter} for cursor-style keys, ESC[{num};{mod}~ for
+// tilde-style keys, and ESC[1;{mod}{P-S} for f1-f4, where mod = 1 + bitmask
+// with shift=1, alt=2, ctrl=4, meta=8 (see xterm ctlseqs).
+//
+// Modified cursor/home/end keys ALWAYS use the CSI form, regardless of
+// application-cursor mode (DECCKM): xterm's default modifyCursorKeys=2 (and
+// every modern terminal + VT parser, e.g. ECMA-48 SS3 which takes no
+// parameters) encodes modified keys as CSI 1;mod letter in both cursor
+// modes. The SS3 form ESC O {letter} is only for UNMODIFIED application
+// cursor keys (handled by KeyToTermBytes itself). Emitting ESC O {mod}{letter}
+// would be parsed as an unknown SS3 sequence followed by a literal letter.
+//
+// Modifiers may appear in any order and each may appear at most once
+// ("alt+alt+left" is rejected); the maps are package-level so the typing hot
+// path allocates nothing.
+var (
+	modBits = map[string]int{
+		"shift": 1,
+		"alt":   2,
+		"ctrl":  4,
+		"meta":  8,
 	}
-	prefixes := []modPrefix{
-		{"ctrl+shift+", "6"},
-		{"shift+", "2"},
-		{"ctrl+", "5"},
-	}
-	navMap := map[string]string{
+	navMap = map[string]string{
 		"up": "A", "down": "B", "right": "C", "left": "D",
 		"home": "H", "end": "F",
 	}
-	tildeMap := map[string]string{
+	tildeMap = map[string]string{
 		"pgup": "5", "pgdown": "6", "delete": "3", "insert": "2",
 	}
+	// f1-f4 use the CSI 1;{mod}{P,Q,R,S} form; f5-f12 the CSI {num};{mod}~ form.
+	fkeySS3Map = map[string]string{
+		"f1": "P", "f2": "Q", "f3": "R", "f4": "S",
+	}
+	fkeyTildeMap = map[string]string{
+		"f5": "15", "f6": "17", "f7": "18", "f8": "19",
+		"f9": "20", "f10": "21", "f11": "23", "f12": "24",
+	}
+)
 
-	for _, mp := range prefixes {
-		rest, ok := strings.CutPrefix(key, mp.prefix)
-		if !ok {
-			continue
+func encodeModNav(key string) (string, bool) {
+	mod := 0
+	rest := key
+	for {
+		progressed := false
+		for name, bit := range modBits {
+			if r, ok := strings.CutPrefix(rest, name+"+"); ok {
+				if mod&bit != 0 {
+					// Duplicate modifier ("alt+alt+left") is malformed.
+					return "", false
+				}
+				mod |= bit
+				rest = r
+				progressed = true
+			}
 		}
-		if letter, exists := navMap[rest]; exists {
-			return "\x1b[1;" + mp.mod + letter, true
-		}
-		if num, exists := tildeMap[rest]; exists {
-			return "\x1b[" + num + ";" + mp.mod + "~", true
+		if !progressed {
+			break
 		}
 	}
+	if mod == 0 {
+		return "", false
+	}
+	xtermMod := strconv.Itoa(mod + 1)
+
+	if letter, exists := navMap[rest]; exists {
+		return "\x1b[1;" + xtermMod + letter, true
+	}
+	if num, exists := tildeMap[rest]; exists {
+		return "\x1b[" + num + ";" + xtermMod + "~", true
+	}
+	if letter, exists := fkeySS3Map[rest]; exists {
+		return "\x1b[1;" + xtermMod + letter, true
+	}
+	if num, exists := fkeyTildeMap[rest]; exists {
+		return "\x1b[" + num + ";" + xtermMod + "~", true
+	}
 	return "", false
+}
+
+// stripCtrlAlt removes leading ctrl+/alt+ modifier prefixes (each at most
+// once, in any order) and reports whether both ctrl AND alt were present.
+// A duplicated modifier ("ctrl+alt+alt+a") is malformed and returns ok=false.
+func stripCtrlAlt(key string) (rest string, ok bool) {
+	rest = key
+	sawCtrl, sawAlt := false, false
+	for {
+		if r, isCtrl := strings.CutPrefix(rest, "ctrl+"); isCtrl {
+			if sawCtrl {
+				return "", false
+			}
+			sawCtrl = true
+			rest = r
+			continue
+		}
+		if r, isAlt := strings.CutPrefix(rest, "alt+"); isAlt {
+			if sawAlt {
+				return "", false
+			}
+			sawAlt = true
+			rest = r
+			continue
+		}
+		break
+	}
+	return rest, sawCtrl && sawAlt
+}
+
+// ctrlLetter returns the control byte for a single ASCII letter (0x01–0x1A
+// for a-z, case-insensitive), matching the ctrl+letter branch.
+func ctrlLetter(ch byte) (byte, bool) {
+	if ch >= 'a' && ch <= 'z' {
+		return ch - 'a' + 1, true
+	}
+	if ch >= 'A' && ch <= 'Z' {
+		return ch - 'A' + 1, true
+	}
+	return 0, false
 }
 
 // MouseButton identifies a mouse button for SGR encoding.

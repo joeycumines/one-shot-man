@@ -3,6 +3,8 @@ package termpane
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,15 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termui/coordinate"
 )
+
+// skipOnWindows skips tests that spawn a real PTY child; PTY allocation and
+// the compiled child helpers are unix-only in this package.
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping real-PTY test on windows")
+	}
+}
 
 // pasteBounds is the standard pane rectangle used by the paste tests.
 var pasteBounds = coordinate.Rect{
@@ -122,12 +133,12 @@ func TestUpdate_PasteForwardedBracketed(t *testing.T) {
 	}
 }
 
-// TestUpdate_PasteChunkedAbovePTYWriteSize verifies that a paste larger than
-// termmux.PassthroughReadBufferSize is delivered in multiple ordered chunks
-// that reassemble byte-exactly: the PTY write path issues a single write(2)
-// per call, so one oversized write could be truncated, and the delivery must
-// never depend on that.
-func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
+// TestUpdate_PasteStagedAbovePTYWriteSize verifies that a paste larger than
+// termmux.PassthroughReadBufferSize is delivered atomically: the whole
+// payload goes to the session in a single Write call (the staged/sponge
+// path), so the child never observes the paste split into multiple
+// contiguous chunks. Byte-exactness is still required.
+func TestUpdate_PasteStagedAbovePTYWriteSize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -137,8 +148,8 @@ func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
 	model := NewModel(sid, mgr, pasteBounds)
 	defer model.Close()
 
-	// 10000 bytes > 2x the 4096 chunk size, with a pattern that would expose
-	// any dropped, repeated, or reordered chunk.
+	// 10000 bytes > 2x the old 4096 chunk size, with a pattern that would
+	// expose any dropped, repeated, or reordered bytes.
 	var b strings.Builder
 	for range 1000 {
 		b.WriteString("0123456789")
@@ -155,21 +166,13 @@ func TestUpdate_PasteChunkedAbovePTYWriteSize(t *testing.T) {
 			len(got), len(content), firstDivergence(got, []byte(content)))
 	}
 
-	// Chunk boundaries: the single PTY write(2) per call means delivery must
-	// not rely on one oversized write. Expect exactly
-	// ceil(10000/4096)=3 writes of 4096, 4096, 1808 bytes — no write may
-	// exceed PassthroughReadBufferSize.
+	// Atomic delivery: exactly one Write call carrying the full payload.
 	sizes := session.WriteSizes()
-	wantSizes := []int{termmux.PassthroughReadBufferSize, termmux.PassthroughReadBufferSize, len(content) - 2*termmux.PassthroughReadBufferSize}
-	if len(sizes) != len(wantSizes) {
-		t.Fatalf("paste delivered in %d writes (%v), want %d writes %v",
-			len(sizes), sizes, len(wantSizes), wantSizes)
+	if len(sizes) != 1 {
+		t.Fatalf("paste delivered in %d writes (%v), want exactly 1 atomic staged write", len(sizes), sizes)
 	}
-	for i := range wantSizes {
-		if sizes[i] != wantSizes[i] {
-			t.Fatalf("write %d carried %d bytes, want %d (all writes: %v)",
-				i, sizes[i], wantSizes[i], sizes)
-		}
+	if sizes[0] != len(content) {
+		t.Fatalf("staged write carried %d bytes, want %d (all writes: %v)", sizes[0], len(content), sizes)
 	}
 }
 
@@ -195,11 +198,11 @@ func TestUpdate_PasteEmptyIsNoop(t *testing.T) {
 	}
 }
 
-// TestUpdate_PasteBracketedChunked combines the two delivery properties: a
-// paste larger than the chunk size, delivered to a child that enabled
+// TestUpdate_PasteBracketedStaged combines the two delivery properties: a
+// paste larger than the old chunk size, delivered to a child that enabled
 // bracketed paste mode, must arrive as the delimiter-wrapped payload in
-// order, byte-exact.
-func TestUpdate_PasteBracketedChunked(t *testing.T) {
+// one atomic write, byte-exact.
+func TestUpdate_PasteBracketedStaged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
@@ -235,6 +238,15 @@ func TestUpdate_PasteBracketedChunked(t *testing.T) {
 		t.Fatalf("bracketed large paste arrived corrupted: got %d bytes, want %d",
 			len(got), len(want))
 	}
+	// Atomic delivery: the delimiter-wrapped payload must arrive as exactly
+	// ONE Write call carrying the full payload (the sponge contract).
+	sizes := session.WriteSizes()
+	if len(sizes) != 1 {
+		t.Fatalf("bracketed staged paste delivered in %d writes (%v), want exactly 1 atomic write", len(sizes), sizes)
+	}
+	if sizes[0] != len(want) {
+		t.Fatalf("staged write carried %d bytes, want %d (full bracketed payload)", sizes[0], len(want))
+	}
 }
 
 // buildCopyProgram compiles a minimal long-lived child that copies stdin to
@@ -245,9 +257,6 @@ func buildCopyProgram(t *testing.T) string {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "main.go")
 	bin := filepath.Join(dir, "copyprog")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
 	prog := `package main
 
 import (
@@ -280,10 +289,7 @@ func TestUpdate_PasteRealPTYRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in -short mode")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("real-PTY round trip requires a Unix PTY")
-	}
-
+	skipOnWindows(t)
 	bin := buildCopyProgram(t)
 
 	cs := termmux.NewCaptureSession(termmux.CaptureConfig{
@@ -353,4 +359,65 @@ func firstDivergence(got, want []byte) string {
 		return "length mismatch"
 	}
 	return "none"
+}
+
+// TestDeliverPaste_ClosesBracketOnStagedError pins R3-5: when a bracketed
+// paste's staged write fails, the end-of-paste delimiter ESC[201~ is sent
+// best-effort so the child is not left stuck inside ESC[200~. A raw
+// (non-bracketed) paste must NOT send any terminator.
+func TestDeliverPaste_ClosesBracketOnStagedError(t *testing.T) {
+	t.Parallel()
+	var calls [][]byte
+	failWrites := true
+	input := func(data []byte) error {
+		calls = append(calls, append([]byte(nil), data...))
+		if failWrites {
+			return errors.New("staged write failed")
+		}
+		return nil
+	}
+
+	// Bracketed: payload write fails with a SHORT write -> terminator follows.
+	failErr := error(fmt.Errorf("%w: wrote 3 of 9 bytes", termmux.ErrShortWrite))
+	inputShort := func(data []byte) error {
+		calls = append(calls, append([]byte(nil), data...))
+		return failErr
+	}
+	deliverPaste(inputShort, true, "payload")
+	if len(calls) != 2 {
+		t.Fatalf("bracketed short-write paste made %d writes %q, want 2 (payload + terminator)", len(calls), calls)
+	}
+	if string(calls[0]) != "\x1b[200~payload\x1b[201~" {
+		t.Errorf("first write = %q, want full bracketed payload", calls[0])
+	}
+	if string(calls[1]) != "\x1b[201~" {
+		t.Errorf("second write = %q, want bare ESC[201~ terminator", calls[1])
+	}
+
+	// Bracketed: payload write fails with a ZERO-byte error (session gone,
+	// manager stopped, locked session) -> NO terminator (nothing was written,
+	// so there is no open bracket; a stray ESC[201~ would corrupt input).
+	calls = nil
+	deliverPaste(input, true, "payload")
+	if len(calls) != 1 {
+		t.Fatalf("bracketed zero-byte-error paste made %d writes %q, want 1 (payload only, no terminator)", len(calls), calls)
+	}
+	if string(calls[0]) != "\x1b[200~payload\x1b[201~" {
+		t.Errorf("first write = %q, want full bracketed payload", calls[0])
+	}
+
+	// Non-bracketed: payload write fails -> no terminator.
+	calls = nil
+	deliverPaste(input, false, "payload")
+	if len(calls) != 1 || string(calls[0]) != "payload" {
+		t.Errorf("raw failing paste made writes %q, want exactly [\"payload\"]", calls)
+	}
+
+	// Bracketed, write succeeds: exactly one write, no extra terminator.
+	failWrites = false
+	calls = nil
+	deliverPaste(input, true, "ok")
+	if len(calls) != 1 || string(calls[0]) != "\x1b[200~ok\x1b[201~" {
+		t.Errorf("successful bracketed paste made writes %q, want exactly the payload", calls)
+	}
 }

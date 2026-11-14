@@ -386,7 +386,7 @@ func TestBouncingLogo_ChordMode(t *testing.T) {
 	sendKey(t, cp, "\x18")
 	time.Sleep(300 * time.Millisecond)
 	buffer := cp.String()
-	assert.Contains(t, buffer, "C-x-", "chord mode should show C-x- prefix")
+	assert.Contains(t, buffer, "C-x ", "chord mode should show C-x prefix")
 
 	sendKey(t, cp, "b")
 	time.Sleep(500 * time.Millisecond)
@@ -395,7 +395,7 @@ func TestBouncingLogo_ChordMode(t *testing.T) {
 	sendKey(t, cp, "\x18")
 	time.Sleep(300 * time.Millisecond)
 	buffer = cp.String()
-	assert.Contains(t, buffer, "C-x-", "chord mode should show C-x- prefix on second entry")
+	assert.Contains(t, buffer, "C-x ", "chord mode should show C-x prefix on second entry")
 
 	sendKey(t, cp, "p")
 	time.Sleep(300 * time.Millisecond)

@@ -39,8 +39,6 @@ func TestSessionManager_InputSession_TargetedRouting(t *testing.T) {
 		t.Fatalf("InputSession(s2): %v", err)
 	}
 
-	time.Sleep(10 * time.Millisecond)
-
 	if got := string(s2.Written()); got != "targeted-to-s2" {
 		t.Errorf("s2 received %q, want %q", got, "targeted-to-s2")
 	}
@@ -52,8 +50,6 @@ func TestSessionManager_InputSession_TargetedRouting(t *testing.T) {
 	if err := m.InputSession(id1, []byte("targeted-to-s1")); err != nil {
 		t.Fatalf("InputSession(s1): %v", err)
 	}
-
-	time.Sleep(10 * time.Millisecond)
 
 	if got := string(s1.Written()); got != "targeted-to-s1" {
 		t.Errorf("s1 received %q, want %q", got, "targeted-to-s1")
@@ -104,7 +100,6 @@ func TestSessionManager_InputSession_SynchronizePanesIgnored(t *testing.T) {
 	if err := m.Input([]byte("broadcast-msg")); err != nil {
 		t.Fatalf("Input broadcast: %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	if !bytes.Contains(s1.Written(), []byte("broadcast-msg")) {
 		t.Errorf("s1 did not receive broadcast, got %q", s1.Written())
@@ -125,7 +120,6 @@ func TestSessionManager_InputSession_SynchronizePanesIgnored(t *testing.T) {
 	if err := m.InputSession(id1, []byte("direct-to-s1")); err != nil {
 		t.Fatalf("InputSession(id1): %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	if got := string(s1.Written()); got != "direct-to-s1" {
 		t.Errorf("s1 received %q, want %q", got, "direct-to-s1")
@@ -138,7 +132,6 @@ func TestSessionManager_InputSession_SynchronizePanesIgnored(t *testing.T) {
 	if err := m.InputSession(id2, []byte("direct-to-s2")); err != nil {
 		t.Fatalf("InputSession(id2): %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	if got := string(s2.Written()); got != "direct-to-s2" {
 		t.Errorf("s2 received %q, want %q", got, "direct-to-s2")
@@ -217,7 +210,6 @@ func TestSessionManager_InputSession_LockedSession(t *testing.T) {
 	if err := m.InputSession(id, []byte("regular-input\x1b")); err != nil {
 		t.Fatalf("InputSession while locked: %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	if got := string(cs.Written()); got != "" {
 		t.Errorf("child received input while locked: %q", got)
@@ -227,7 +219,6 @@ func TestSessionManager_InputSession_LockedSession(t *testing.T) {
 	if err := m.InputSession(id, []byte("secret123\n")); err != nil {
 		t.Fatalf("InputSession password: %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	if m.IsLocked(id) {
 		t.Fatal("session should be unlocked after entering correct password")
@@ -237,7 +228,6 @@ func TestSessionManager_InputSession_LockedSession(t *testing.T) {
 	if err := m.InputSession(id, []byte("after-unlock\n")); err != nil {
 		t.Fatalf("InputSession after unlock: %v", err)
 	}
-	time.Sleep(10 * time.Millisecond)
 
 	got := strings.TrimSpace(string(cs.Written()))
 	if got != "after-unlock" {

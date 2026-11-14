@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,7 +44,10 @@ func setupMgr(t *testing.T, withSession bool) (*goja.Runtime, func()) {
 		rec := newRecordingStringIO()
 		sio := parent.NewStringIOSession(rec)
 		sio.Start()
-		session := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+		session := func() goja.Value {
+			v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+			return v
+		}()
 		setOnLoop(t, runtime, "testSession", session)
 		if _, err := awaitJSValue(t, runtime, `return await tuiMux.register(testSession, {name: "test", kind: "pty"})`); err != nil {
 			t.Fatalf("Register: %v", err)
@@ -1786,7 +1790,10 @@ func TestSessionManager_LockedInputGate_JS(t *testing.T) {
 	runtime := goja.New()
 	tuiMux := wrapTestSessionManagerWithLoop(t, ctx, runtime, mgr, nil, nil, -1, "")
 	setOnLoop(t, runtime, "tuiMux", tuiMux)
-	gateSession := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+	gateSession := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "gateSession", gateSession)
 	if _, err := awaitJSValue(t, runtime, `return await tuiMux.register(gateSession, {name: "gate-test", kind: "pty"})`); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -1912,6 +1919,7 @@ type mockInteractiveSession struct {
 	writes                        []string
 	resizes                       [][2]int
 	writeErr, resizeErr, closeErr error
+	shortWrite                    int // if > 0, Write reports only this many bytes written (nil error)
 }
 
 func (m *mockInteractiveSession) Write(p []byte) (int, error) {
@@ -1919,6 +1927,9 @@ func (m *mockInteractiveSession) Write(p []byte) (int, error) {
 		return 0, m.writeErr
 	}
 	m.writes = append(m.writes, string(p))
+	if m.shortWrite > 0 {
+		return m.shortWrite, nil
+	}
 	return len(p), nil
 }
 
@@ -1959,7 +1970,10 @@ func TestWrapInteractiveSession_HappyPath(t *testing.T) {
 	sess.readerCh <- []byte("alpha")
 	sess.readerCh <- []byte("beta")
 
-	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "s", wrapped)
 
 	_, err := awaitJSValue(t, runtime, `
@@ -1984,7 +1998,10 @@ func TestWrapInteractiveSession_Close(t *testing.T) {
 	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
 	defer cancel()
 	sess := &mockInteractiveSession{done: make(chan struct{})}
-	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "s", wrapped)
 
 	_, err := awaitJSValue(t, runtime, `return await s.close()`)
@@ -2003,7 +2020,10 @@ func TestWrapInteractiveSession_ResizeError(t *testing.T) {
 	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
 	defer cancel()
 	sess := &mockInteractiveSession{resizeErr: errors.New("resize fail")}
-	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "s", wrapped)
 
 	_, err := awaitJSValue(t, runtime, `return await s.resize(10, 20)`)
@@ -2016,7 +2036,10 @@ func TestWrapInteractiveSession_WriteError(t *testing.T) {
 	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
 	defer cancel()
 	sess := &mockInteractiveSession{writeErr: errors.New("write fail")}
-	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "s", wrapped)
 
 	_, err := awaitJSValue(t, runtime, `return await s.write("x")`)
@@ -2025,11 +2048,44 @@ func TestWrapInteractiveSession_WriteError(t *testing.T) {
 	}
 }
 
+// TestWrapInteractiveSession_ShortWriteRejects verifies that write,
+// writeStaged, and sendKeys all reject when the underlying session reports a
+// short write (n < len with nil error) — a silent short write would truncate
+// input delivered to the child, so it must surface as an ErrShortWrite error.
+func TestWrapInteractiveSession_ShortWriteRejects(t *testing.T) {
+	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
+	defer cancel()
+	sess := &mockInteractiveSession{done: make(chan struct{}), shortWrite: 2}
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
+	setOnLoop(t, runtime, "s", wrapped)
+
+	for _, call := range []string{
+		`await s.write("hello")`,
+		`await s.writeStaged("hello")`,
+		`await s.sendKeys("left", "right")`,
+	} {
+		err := awaitJSErr(t, runtime, `return `+call)
+		if err == nil {
+			t.Errorf("%s: expected rejection on short write, got resolution", call)
+			continue
+		}
+		if !strings.Contains(err.Error(), parent.ErrShortWrite.Error()) {
+			t.Errorf("%s: error %q does not wrap ErrShortWrite (%q)", call, err.Error(), parent.ErrShortWrite)
+		}
+	}
+}
+
 func TestWrapInteractiveSession_CloseError(t *testing.T) {
 	runtime, ctx, cancel := setupInteractiveSessionRuntime(t)
 	defer cancel()
 	sess := &mockInteractiveSession{closeErr: errors.New("close fail")}
-	wrapped := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+	wrapped := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sess, parent.SessionKindPTY)
+		return v
+	}()
 	setOnLoop(t, runtime, "s", wrapped)
 
 	_, err := awaitJSValue(t, runtime, `return await s.close()`)

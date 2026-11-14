@@ -58,6 +58,29 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("create event loop: %v", err)
 	}
 
+	// Auto-exit is deliberately OFF for tests: it would terminate the loop as
+	// soon as no ref'd work remains, racing the test's trackOrdered workers
+	// (whose liveness is released when they settle) and rejecting later Submits
+	// with ErrLoopTerminated. Tests drive the loop explicitly and always shut
+	// it down via t.Cleanup, so auto-exit buys nothing here.
+	//
+	// Liveness is held for the whole test by an in-flight Promisify worker on
+	// a context that is never cancelled until cleanup: promisifyCount is loop
+	// liveness, so the loop cannot auto-exit (or accept a terminal transition)
+	// while the worker blocks. The worker is admitted BEFORE loop.Run starts,
+	// so its admission cannot lose to any quiescing window.
+	keepAliveCtx, stopKeepAlive := context.WithCancel(context.Background())
+	keepAliveDone := make(chan struct{})
+	loop.Promisify(keepAliveCtx, func(ctx context.Context) (any, error) {
+		defer close(keepAliveDone)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if !loop.Alive() {
+		stopKeepAlive()
+		t.Fatalf("keepalive worker not admitted: loop reports not alive before Run")
+	}
+
 	runtime := goja.New()
 	registry := require.NewRegistry()
 	registry.Enable(runtime)
@@ -84,15 +107,51 @@ func newTestEnv(t *testing.T) *testEnv {
 		defer close(loopDone)
 		_ = loop.Run(ctx)
 	}()
+	// Wait until the loop is actually running so every test-side Submit is
+	// admitted by a live loop rather than racing startup.
+	deadline := time.Now().Add(5 * time.Second)
+	for loop.State() != goeventloop.StateRunning && loop.State() != goeventloop.StateSleeping {
+		if loop.State() == goeventloop.StateTerminated || loop.State() == goeventloop.StateTerminating {
+			t.Fatalf("event loop terminated before Run started")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("event loop did not start within 5s (state=%v)", loop.State())
+		}
+		time.Sleep(time.Millisecond)
+	}
 	testLoops.Store(runtime, loop)
 	testAdapters.Store(runtime, adapter)
 
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
+		stopKeepAlive()
+		// Bound every wait in this cleanup: a wedged Promisify worker or a
+		// Shutdown that cannot join in-flight work must fail this test loudly
+		// instead of hanging until the package-level test timeout panics and
+		// dumps every other parallel test's goroutines. The bound is 30s (not
+		// tight): CI runners run dozens of parallel tests each with its own
+		// loop and child processes, and goroutine scheduling of the cancelled
+		// keepalive worker can lag far beyond the ms-scale expectation under
+		// load — the bound exists to convert a 40m package panic into a
+		// per-test failure, not to assert a scheduling latency.
+		const cleanupBound = 30 * time.Second
+		select {
+		case <-keepAliveDone:
+		case <-time.After(cleanupBound):
+			t.Errorf("keepalive worker did not exit within %s of stopKeepAlive", cleanupBound)
+		}
 		cancel()
-		_ = loop.Shutdown(context.Background())
-		<-loopDone
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
+		defer shutdownCancel()
+		if err := loop.Shutdown(shutdownCtx); err != nil {
+			t.Errorf("loop.Shutdown: %v", err)
+		}
+		select {
+		case <-loopDone:
+		case <-time.After(cleanupBound):
+			t.Errorf("loop.Run did not return within %s of Shutdown", cleanupBound)
+		}
 	})
 
 	return &testEnv{
@@ -258,8 +317,18 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
-		_ = loop.Shutdown(context.Background())
-		<-loopDone
+		// Bound the shutdown waits (see newTestEnv's cleanup for the
+		// rationale): a wedged loop must fail this test, not hang the whole
+		// package until the test timeout panics.
+		const cleanupBound = 30 * time.Second
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
+		defer shutdownCancel()
+		_ = loop.Shutdown(shutdownCtx)
+		select {
+		case <-loopDone:
+		case <-time.After(cleanupBound):
+			t.Errorf("loop.Run did not return within %s of Shutdown", cleanupBound)
+		}
 	})
 
 	return wrapper

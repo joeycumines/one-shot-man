@@ -42,10 +42,12 @@ creating sessions and managers, plus event constants.
 | `enableMouseForward(config)` | function | Build an async mouse forwarder; call the returned `(msg) => Promise<void>` function for each mouse event |
 | `mouseDrag()` | function | Create a stateful mouse-drag object; `.handle({manager,msg})` returns a Promise |
 | `handleMouseDrag({ manager, msg })` | function | Handle one mouse event; returns `Promise<{handled, cmd}>` |
-| `newControlRouter(opts?)` | function | Create a control router for key dispatch |
+| `newControlRouter(opts?)` | function | Create a control router for key dispatch (legacy) |
+| `newKeymap(opts?)` | function | Create a `Keymap`: unopinionated mux key state machine. `opts`: `{prefix?, passthroughKey?, keys?, chords?}` (`keys`/`chords` must be plain objects mapping string keys to string actions; `null`/`undefined` action values are skipped; non-string `prefix`/`passthroughKey` throw `TypeError`). Methods: `handleKey(key)` → `{handled, action, armed}` (non-string key throws `TypeError`), `bind(key, action)` / `bindChord(key, action)` (both args must be strings — non-string throws `TypeError`; a `null`/`undefined` action is a documented no-op), `unbind(key)` / `unbindChord(key)` (key only, must be a string), `setPrefix/prefix` / `setPassthroughKey/passthroughKey` (`null`/`undefined` clears; non-string throws `TypeError`), `armed`, `reset`, `bindings()` → array of `{key, action, chord}`, `listKeys()` → aligned table string |
+| `keymapOverlay({keymap, tea, onClose?})` | function | `Promise<{model, view, render, visible, _update}>` — BubbleTea sub-model overlay rendering `keymap.listKeys()` as a centered popup; any key press or release closes it (render returns an empty string, `visible()` false) and fires `onClose` once; closing does NOT emit `tea.Quit` (safe to drive via `_update` inside a host app) |
 | `newPrefixKeyHandler(opts?)` | function | Create a prefix key handler |
 | `handlePrefixKey({ manager, key })` | function | Execute a prefix action; returns `Promise<{action, consumed, description, result, listKeys}>` |
-| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`) |
+| `keyToTermBytes(key, appCursor?, appKeypad?)` | function | Convert a key to terminal byte sequence (`string\|null`). Modified nav/tilde keys use the xterm modifier parameter: `alt+left` → `ESC[1;3D`, `ctrl+shift+home` → `ESC[1;6H`, `alt+pgup` → `ESC[5;3~` (mod param = 1 + shift 1 + alt 2 + ctrl 4 + meta 8). Modified nav keys use CSI in BOTH cursor modes (xterm modifyCursorKeys=2); SS3 applies only to unmodified app-cursor keys |
 | `renderMessageBar(text, row?, cols?)` | function | Render a one-line ANSI message bar |
 | `mouseToSGR(event, offsetRow?, offsetCol?)` | function | Convert a mouse event to SGR bytes (`string\|null`) |
 | `splitLayout(...)` | function | Split layout operation |
@@ -69,7 +71,7 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `opts.name` | `string` | `""` | Session name metadata |
 | `opts.kind` | `string` | `""` | Session kind metadata |
 
-### Methods (17 total)
+### Methods (18 total)
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
@@ -88,8 +90,9 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `isDone()` | channel select on `Done()` | — | `boolean` | silent |
 | `passthrough(opts?)` | `CaptureSession.Passthrough()` | `{toggleKey?}` | `Promise<{reason, error?}>` | async, error field |
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
-| `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error |
-| `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | rejects on error |
+| `write(data)` | `InteractiveSession.Write()` | `string` | `Promise<void>` | rejects on error; `null`/`undefined` throw `TypeError` |
+| `writeStaged(data)` | `InteractiveSession.Write()` (single call) | `string` | `Promise<void>` | one contiguous `Write` (sponge) — on this wrapper `writeStaged` is functionally identical to `write` (the payload is already a fresh single buffer); it exists for API symmetry with the manager-side `writeStaged`; `null`/`undefined` throw `TypeError` |
+| `sendKeys(...keys)` | `InteractiveSession.Write()` | `string[]` | `Promise<void>` | at least one key required (empty call throws `TypeError`); rejects on error; `null`/`undefined` entries throw `TypeError` |
 
 **Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
 `isRunning()` — these now live on the SessionManager `session()` wrapper
@@ -191,6 +194,8 @@ Production pr-split code should prefer pinned SessionID access: `capture(id)` /
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `inputSession(id, data)` | `SessionManager.InputSession()` | `number, string` | `Promise<void>` | rejects on error (unknown session, invalid state) |
+| `inputStaged(id, data)` | `SessionManager.InputStaged()` | `number, string` | `Promise<void>` | delivers `data` to the session PTY as ONE `Write` call (sponge) — use for pastes; the payload is handed over whole, not artificially chunked; rejects on short write (`ErrShortWrite`); call-order linearized with `input`/`inputSession`/`sendKeys` even when un-awaited |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 | `writeToChild(data)` | `SessionManager.Input()` | `string` | `Promise<number>` (bytes) | rejects on error; active-session compatibility helper |
 | `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
@@ -310,6 +315,7 @@ prefer pinned SessionIDs over ActiveID-backed convenience access.
 | `target()` | closure read | — | `{id, name, kind}` | silent |
 | `setTarget(t)` | closure mutation | `{name?,kind?,id?}` | `undefined` | throws TypeError |
 | `write(data)` | `SessionManager.Input()` | `string` | `Promise<void>` | rejects on error |
+| `writeStaged(data)` | `SessionManager.InputStagedActive(data)` | `string` | `Promise<void>` | single-`Write` delivery to the active session in ONE manager request (sponge; no artificial chunking) — the active-window/pane resolution and the write are atomic on the worker, unlike `InputStaged(activeID(), data)`; rejects with `ErrSessionNotFound` when there is no active session, with `ErrManagerNotRunning` when the manager is down, and with a locked-session error when the target session is locked; `null`/`undefined` throw `TypeError`; ordered with `write`/`writeToChild` in call order |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `Promise<void>` | rejects on error |
 
 ---

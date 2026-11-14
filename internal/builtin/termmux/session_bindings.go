@@ -35,6 +35,31 @@ func (s *muxState) managerPromise(run func() (any, error)) goja.Value {
 	})
 }
 
+// orderChainFor returns the mux's manager-order chain, lazily initializing it
+// exactly once for zero-value muxState values constructed in tests (the
+// constructor seeds it directly). The sync.Once makes the lazy path safe
+// against concurrent first use; the seeded path never touches the Once.
+func (s *muxState) orderChainFor() *orderChain {
+	s.mgrOrderOnce.Do(func() {
+		if s.mgrOrder == nil {
+			s.mgrOrder = newOrderChain()
+		}
+	})
+	return s.mgrOrder
+}
+
+// managerPromiseOrdered is managerPromise with call-order linearization: the
+// order slot is reserved synchronously on the JS/event-loop goroutine (before
+// TrackPromise spawns the worker goroutine), so two un-awaited calls like
+// mgr.inputStaged(id, paste); mgr.inputSession(id, "\n") reach the manager
+// worker in call order, matching the PTY-visible ordering of trackOrdered.
+func (s *muxState) managerPromiseOrdered(run func() (any, error)) goja.Value {
+	if s.adapter == nil {
+		panic(s.runtime.NewTypeError("termmux: event loop adapter unavailable"))
+	}
+	return trackOrdered(s.ctx, s.adapter, s.runtime, s.orderChainFor(), run)
+}
+
 // copyModeSearchAdapter lets a JS function satisfy parent.ScreenSearcher.
 type copyModeSearchAdapter struct {
 	searchFn func(pattern string, row, col int) map[string]any
@@ -327,9 +352,40 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		if len(call.Arguments) < 1 {
 			panic(s.runtime.NewTypeError("input requires 1 argument (data)"))
 		}
+		if goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(s.runtime.NewTypeError("input: data must not be null or undefined"))
+		}
 		data := []byte(call.Argument(0).String())
-		return s.managerPromise(func() (any, error) {
+		return s.managerPromiseOrdered(func() (any, error) {
 			return nil, s.mgr.Input(data)
+		})
+	})
+
+	_ = obj.Set("inputSession", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("inputSession requires at least 2 arguments (sessionID, data)"))
+		}
+		if goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
+			panic(s.runtime.NewTypeError("inputSession: data must not be null or undefined"))
+		}
+		id := parent.SessionID(call.Argument(0).ToInteger())
+		data := []byte(call.Argument(1).String())
+		return s.managerPromiseOrdered(func() (any, error) {
+			return nil, s.mgr.InputSession(id, data)
+		})
+	})
+
+	_ = obj.Set("inputStaged", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(s.runtime.NewTypeError("inputStaged requires at least 2 arguments (sessionID, data)"))
+		}
+		if goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
+			panic(s.runtime.NewTypeError("inputStaged: data must not be null or undefined"))
+		}
+		id := parent.SessionID(call.Argument(0).ToInteger())
+		data := []byte(call.Argument(1).String())
+		return s.managerPromiseOrdered(func() (any, error) {
+			return nil, s.mgr.InputStaged(id, data)
 		})
 	})
 
@@ -342,7 +398,7 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 		for i := 1; i < len(call.Arguments); i++ {
 			keys = append(keys, call.Argument(i).String())
 		}
-		return s.managerPromise(func() (any, error) {
+		return s.managerPromiseOrdered(func() (any, error) {
 			return nil, s.mgr.SendKeys(id, keys...)
 		})
 	})

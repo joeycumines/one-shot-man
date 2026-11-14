@@ -166,6 +166,15 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			return newControlRouter(runtime, call)
 		})
 
+		// ── Keymap (unopinionated mux key state machine) ────────
+		_ = exports.Set("newKeymap", func(call goja.FunctionCall) goja.Value {
+			return newKeymapFactory(runtime, call)
+		})
+
+		_ = exports.Set("keymapOverlay", func(call goja.FunctionCall) goja.Value {
+			return keymapOverlayFactory(ctx, adapter, runtime, call)
+		})
+
 		_ = exports.Set("newPrefixKeyHandler", func(call goja.FunctionCall) goja.Value {
 			prefix := ""
 			if len(call.Arguments) > 0 && call.Argument(0) != goja.Undefined() && !goja.IsNull(call.Argument(0)) {

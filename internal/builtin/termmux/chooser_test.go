@@ -2,10 +2,13 @@ package termmux
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/joeycumines/goja"
+	"github.com/rivo/uniseg"
 
 	btea "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
@@ -67,6 +70,68 @@ func assertQuitCmd(t *testing.T, cmd tea.Cmd) {
 	msg := cmd()
 	if _, ok := msg.(tea.QuitMsg); !ok {
 		t.Fatalf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+// TestChooseTreeModel_RenderFitsTerminal proves the chooser popup fits any
+// terminal: every rendered line is at most width cells, all frame rows share
+// one width, and the total line count never exceeds height — including
+// widths below the old 24-cell floor (28 was the overflow threshold) and
+// heights below the 4-row frame.
+func TestChooseTreeModel_RenderFitsTerminal(t *testing.T) {
+	t.Parallel()
+
+	items := []parent.ChooserItem{
+		{ID: 1, Name: "alpha", Kind: "pty", Index: 0},
+		{ID: 2, Name: "a-very-long-session-name-that-exceeds-narrow-widths", Kind: "pty", Index: 1},
+		{ID: 3, Name: "gämma-\u00e9\u0301-\U0001F468\u200d\U0001F4BB", Kind: "pty", Index: 2},
+	}
+	chooser := parent.NewChooser(items, 1)
+	runtime := goja.New()
+
+	for _, width := range []int{80, 50, 40, 30, 28, 27, 24, 20, 15, 10, 7, 5, 3, 2, 1} {
+		for _, height := range []int{24, 10, 6, 5, 4, 3, 2, 1} {
+			name := fmt.Sprintf("w%d_h%d", width, height)
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				m := newChooseTreeModel(runtime, chooser, nil, nil)
+				m.width = width
+				m.height = height
+				out := m.View().Content
+				if out == "" {
+					t.Fatalf("width=%d height=%d: empty render", width, height)
+				}
+				lines := strings.Split(out, "\n")
+				nonEmpty := 0
+				refWidth := -1
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
+					nonEmpty++
+					w := uniseg.StringWidth(line)
+					if w > width {
+						t.Fatalf("width=%d height=%d: line %d cells > %d: %q", width, height, w, width, line)
+					}
+					if strings.ContainsAny(line, "┌┐└┘├┤│") {
+						if refWidth == -1 {
+							refWidth = w
+						} else if w != refWidth {
+							t.Fatalf("width=%d height=%d: frame width %d != %d: %q", width, height, w, refWidth, line)
+						}
+					}
+				}
+				if len(lines) > height {
+					t.Fatalf("width=%d height=%d: emitted %d lines > height:\n%s", width, height, len(lines), out)
+				}
+				if width >= 3 && height >= 4 && nonEmpty < 4 {
+					t.Fatalf("width=%d height=%d: frame incomplete (%d lines):\n%s", width, height, nonEmpty, out)
+				}
+				if nonEmpty < 1 {
+					t.Fatalf("width=%d height=%d: no visible lines: %q", width, height, out)
+				}
+			})
+		}
 	}
 }
 
@@ -204,4 +269,190 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// TestChooseTreeModel_RenderNarrowAndSingleItem pins R3-6: widths 3..6 draw a
+// real box frame (not the degenerate bar), a 1-item chooser stays visible at
+// width 7 (inner==0), and degenerate renders never exceed the terminal height
+// even with yOff > 0.
+func TestChooseTreeModel_RenderNarrowAndSingleItem(t *testing.T) {
+	t.Parallel()
+
+	runtime := goja.New()
+
+	// 1-item chooser: at width 7 inner==0 used to collapse the item list to
+	// zero rows; the chooser must still render a visible frame with one row.
+	one := parent.NewChooser([]parent.ChooserItem{{ID: 1, Name: "solo", Kind: "pty", Index: 0}}, 1)
+	m := newChooseTreeModel(runtime, one, nil, nil)
+	m.width, m.height = 7, 10
+	out := m.View().Content
+	if !strings.Contains(out, "│") {
+		t.Fatalf("width=7 1-item chooser: no frame rendered:\n%s", out)
+	}
+	lines := strings.Split(out, "\n")
+	for _, l := range lines {
+		if w := uniseg.StringWidth(l); w > 7 {
+			t.Fatalf("width=7: line %d cells > 7: %q", w, l)
+		}
+	}
+	if len(lines) > 10 {
+		t.Fatalf("width=7 height=10: emitted %d lines > 10:\n%s", len(lines), out)
+	}
+
+	// Widths 3..6 must draw a box frame (┌ present), not the degenerate bar.
+	for _, width := range []int{3, 4, 5, 6} {
+		for _, height := range []int{4, 10, 24} {
+			c := parent.NewChooser([]parent.ChooserItem{
+				{ID: 1, Name: "a", Kind: "pty", Index: 0},
+				{ID: 2, Name: "b", Kind: "pty", Index: 1},
+			}, 1)
+			mm := newChooseTreeModel(runtime, c, nil, nil)
+			mm.width, mm.height = width, height
+			o := mm.View().Content
+			ls := strings.Split(o, "\n")
+			for _, l := range ls {
+				if w := uniseg.StringWidth(l); w > width {
+					t.Fatalf("w=%d h=%d: line %d cells > %d: %q", width, height, w, width, l)
+				}
+			}
+			if len(ls) > height {
+				t.Fatalf("w=%d h=%d: emitted %d lines > %d:\n%s", width, height, len(ls), height, o)
+			}
+			if !strings.Contains(o, "┌") {
+				t.Fatalf("w=%d h=%d: expected a box frame, got bar-only render:\n%s", width, height, o)
+			}
+		}
+	}
+
+	// Degenerate bar with yOff>0 (tall narrow terminal): total lines must not
+	// exceed height — the old `i>0 || yOff>0` bug emitted one extra newline.
+	for _, width := range []int{1, 2} {
+		for _, height := range []int{3, 4, 5, 10, 24} {
+			c := parent.NewChooser([]parent.ChooserItem{
+				{ID: 1, Name: "a", Kind: "pty", Index: 0},
+				{ID: 2, Name: "b", Kind: "pty", Index: 1},
+			}, 1)
+			mm := newChooseTreeModel(runtime, c, nil, nil)
+			mm.width, mm.height = width, height
+			o := mm.View().Content
+			ls := strings.Split(o, "\n")
+			if len(ls) > height {
+				t.Fatalf("degenerate w=%d h=%d: emitted %d lines > %d:\n%q", width, height, len(ls), height, o)
+			}
+			for _, l := range ls {
+				if w := uniseg.StringWidth(l); w > width {
+					t.Fatalf("degenerate w=%d h=%d: line %d cells > %d: %q", width, height, w, width, l)
+				}
+			}
+		}
+	}
+}
+
+// TestJsToTeaMsg_UnrecognizedKeyFallback pins R3-7: a multi-rune key name
+// ParseKey rejects must not leak into Text (termpane forwards Text verbatim);
+// a single-rune fallback keeps only the Code.
+func TestJsToTeaMsg_UnrecognizedKeyFallback(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	mk := func(key string) *goja.Object {
+		o := rt.NewObject()
+		_ = o.Set("type", "Key")
+		_ = o.Set("key", key)
+		return o
+	}
+	m1 := jsToTeaMsg(rt, mk("alt+,"))
+	kp, ok := m1.(tea.KeyPressMsg)
+	if !ok {
+		t.Fatalf("alt+, -> %T, want tea.KeyPressMsg", m1)
+	}
+	if kp.Text != "" {
+		t.Fatalf("alt+, Text = %q, want empty (key name must not be forwarded as text)", kp.Text)
+	}
+	m2 := jsToTeaMsg(rt, mk("x"))
+	kp2, ok := m2.(tea.KeyPressMsg)
+	if !ok {
+		t.Fatalf("x -> %T, want tea.KeyPressMsg", m2)
+	}
+	// "x" parses via bubbletea.ParseKey, so String() is "x"; either way it
+	// must be a KeyPressMsg for "x".
+	if kp2.String() != "x" {
+		t.Fatalf("x -> %q, want key press for x", kp2.String())
+	}
+}
+
+// TestJsToTeaMsg_AltCommaRoundTrip pins R4-3: a modified non-letter key like
+// "alt+," that ParseKey cannot resolve must still become a KeyPressMsg
+// carrying Mod=alt and Code=',' so String() round-trips to "alt+," and
+// KeyToTermBytes can encode it as ESC , (not dropped to {Text:""}).
+func TestJsToTeaMsg_AltCommaRoundTrip(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	o := rt.NewObject()
+	_ = o.Set("type", "Key")
+	_ = o.Set("key", "alt+,")
+	m := jsToTeaMsg(rt, o)
+	kp, ok := m.(tea.KeyPressMsg)
+	if !ok {
+		t.Fatalf("alt+, -> %T, want tea.KeyPressMsg", m)
+	}
+	if kp.Mod != tea.ModAlt || kp.Code != ',' {
+		t.Fatalf("alt+, -> Mod=%v Code=%q, want Mod=alt Code=','", kp.Mod, kp.Code)
+	}
+	if s := kp.String(); s != "alt+," {
+		t.Fatalf("alt+, String() = %q, want \"alt+,\"", s)
+	}
+	// The encoded bytes must be ESC , — the whole point of round-tripping.
+	b, ok := parent.KeyToTermBytes(kp.String(), false, false)
+	if !ok || b != "\x1b," {
+		t.Fatalf("KeyToTermBytes(%q) = %q,%v want ESC ,", kp.String(), b, ok)
+	}
+}
+
+// TestJsToTeaMsg_KeyRelease pins R4-2: type "KeyRelease" must produce a
+// tea.KeyReleaseMsg (so keymapOverlay's release-close branch is reachable
+// from JS), with the same key parsing as "Key".
+func TestJsToTeaMsg_KeyRelease(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	mk := func(typ, key string) *goja.Object {
+		o := rt.NewObject()
+		_ = o.Set("type", typ)
+		_ = o.Set("key", key)
+		return o
+	}
+	m := jsToTeaMsg(rt, mk("KeyRelease", "q"))
+	kr, ok := m.(tea.KeyReleaseMsg)
+	if !ok {
+		t.Fatalf("KeyRelease q -> %T, want tea.KeyReleaseMsg", m)
+	}
+	if kr.String() != "q" {
+		t.Fatalf("KeyRelease q String() = %q, want \"q\"", kr.String())
+	}
+	// Modified unresolved key under release also round-trips.
+	m2 := jsToTeaMsg(rt, mk("KeyRelease", "alt+,"))
+	kr2, ok := m2.(tea.KeyReleaseMsg)
+	if !ok {
+		t.Fatalf("KeyRelease alt+, -> %T, want tea.KeyReleaseMsg", m2)
+	}
+	if kr2.String() != "alt+," || tea.Key(kr2).Mod != tea.ModAlt {
+		t.Fatalf("KeyRelease alt+, = %q mod=%v, want \"alt+,\" alt", kr2.String(), tea.Key(kr2).Mod)
+	}
+}
+
+// TestParseModifiedSingleRune pins the modifier+stem fallback parser: valid
+// mod+single-rune forms parse; duplicate modifiers, empty stems, and
+// multi-rune stems do not.
+func TestParseModifiedSingleRune(t *testing.T) {
+	t.Parallel()
+	if m := parseModifiedSingleRune("alt+,"); m == nil || m.Mod != tea.ModAlt || m.Code != ',' {
+		t.Errorf("alt+, -> %+v", m)
+	}
+	if m := parseModifiedSingleRune("ctrl+alt+a"); m == nil || m.Mod != tea.ModCtrl|tea.ModAlt || m.Code != 'a' {
+		t.Errorf("ctrl+alt+a -> %+v", m)
+	}
+	for _, bad := range []string{"alt+alt+,", "ctrl+", "alt+ab", "", "ab"} {
+		if m := parseModifiedSingleRune(bad); m != nil {
+			t.Errorf("parseModifiedSingleRune(%q) = %+v, want nil", bad, m)
+		}
+	}
 }

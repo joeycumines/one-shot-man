@@ -58,6 +58,29 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("create event loop: %v", err)
 	}
 
+	// Auto-exit is deliberately OFF for tests: it would terminate the loop as
+	// soon as no ref'd work remains, racing the test's trackOrdered workers
+	// (whose liveness is released when they settle) and rejecting later Submits
+	// with ErrLoopTerminated. Tests drive the loop explicitly and always shut
+	// it down via t.Cleanup, so auto-exit buys nothing here.
+	//
+	// Liveness is held for the whole test by an in-flight Promisify worker on
+	// a context that is never cancelled until cleanup: promisifyCount is loop
+	// liveness, so the loop cannot auto-exit (or accept a terminal transition)
+	// while the worker blocks. The worker is admitted BEFORE loop.Run starts,
+	// so its admission cannot lose to any quiescing window.
+	keepAliveCtx, stopKeepAlive := context.WithCancel(context.Background())
+	keepAliveDone := make(chan struct{})
+	loop.Promisify(keepAliveCtx, func(ctx context.Context) (any, error) {
+		defer close(keepAliveDone)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if !loop.Alive() {
+		stopKeepAlive()
+		t.Fatalf("keepalive worker not admitted: loop reports not alive before Run")
+	}
+
 	runtime := goja.New()
 	registry := require.NewRegistry()
 	registry.Enable(runtime)
@@ -84,12 +107,26 @@ func newTestEnv(t *testing.T) *testEnv {
 		defer close(loopDone)
 		_ = loop.Run(ctx)
 	}()
+	// Wait until the loop is actually running so every test-side Submit is
+	// admitted by a live loop rather than racing startup.
+	deadline := time.Now().Add(5 * time.Second)
+	for loop.State() != goeventloop.StateRunning && loop.State() != goeventloop.StateSleeping {
+		if loop.State() == goeventloop.StateTerminated || loop.State() == goeventloop.StateTerminating {
+			t.Fatalf("event loop terminated before Run started")
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("event loop did not start within 5s (state=%v)", loop.State())
+		}
+		time.Sleep(time.Millisecond)
+	}
 	testLoops.Store(runtime, loop)
 	testAdapters.Store(runtime, adapter)
 
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
+		stopKeepAlive()
+		<-keepAliveDone
 		cancel()
 		_ = loop.Shutdown(context.Background())
 		<-loopDone

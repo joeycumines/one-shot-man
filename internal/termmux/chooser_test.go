@@ -182,7 +182,7 @@ func TestTruncateCells_ControlCharsSkipped(t *testing.T) {
 		return int(seed%uint64(n)) + 1
 	}
 	pool := []rune{'a', 'b', 'Z', '0', 'é', '映', '✅', '\t', '\n', 0x1b, 0x00, 0x7f, '漢', '🚀'}
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		n := next(12)
 		rs := make([]rune, n)
 		for j := range rs {

@@ -141,7 +141,7 @@ func TestInputStaged_UnAwaitedCallOrder(t *testing.T) {
 
 	got := strings.Join(rec.sent, "")
 	want := ""
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		want += fmt.Sprintf("S%d;I%d;A%d;", i, i, i)
 	}
 	if got != want {

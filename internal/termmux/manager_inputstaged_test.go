@@ -2,7 +2,6 @@ package termmux
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -510,8 +509,7 @@ func TestSessionManager_IsRunning_Lifecycle(t *testing.T) {
 	if m.IsRunning() {
 		t.Fatal("IsRunning before Run must be false")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
 	<-m.Started()

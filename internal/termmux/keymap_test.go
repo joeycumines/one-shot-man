@@ -372,9 +372,9 @@ func TestKeymap_BindEmptyRejected(t *testing.T) {
 	}
 	// "ctrl+a" appears in the prefix row; the unbound keys x/y must not.
 	got := k.ListKeys()
-	for _, ln := range strings.Split(got, "\n") {
-		fields := strings.Fields(ln)
-		for _, f := range fields {
+	for ln := range strings.SplitSeq(got, "\n") {
+		fields := strings.FieldsSeq(ln)
+		for f := range fields {
 			if f == "x" || f == "y" {
 				t.Fatalf("empty binding leaked into ListKeys:\n%s", got)
 			}
@@ -518,7 +518,7 @@ func TestKeymap_ShadowedBindingsHidden(t *testing.T) {
 func TestKeymap_WithKeysDeterministic(t *testing.T) {
 	t.Parallel()
 	want := ""
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		k := NewKeymapWith(WithKeys(map[string]string{"Ctrl+A": "upper-first", "ctrl+a": "lower-second"}))
 		_, a, _ := k.HandleKey("ctrl+a")
 		if want == "" {
@@ -545,7 +545,7 @@ func TestKeymap_WithKeysCollisionLargestWins(t *testing.T) {
 	// the last applied (winner) is "ctrl+a" -> "lower". Pin that exact winner
 	// deterministically across runs.
 	want := ""
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		k := NewKeymapWith(WithKeys(map[string]string{
 			"ctrl+a": "lower",
 			"Ctrl+A": "upper",
@@ -565,7 +565,7 @@ func TestKeymap_WithKeysCollisionLargestWins(t *testing.T) {
 		t.Fatalf("winner = %q, want %q (ascending sort + overwrite => last sorted spelling wins)", want, "lower")
 	}
 	// Same for chords: "B" (0x42) sorts before "b" (0x62), so "b" wins.
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		k := NewKeymapWith(WithPrefix("ctrl+x"), WithChords(map[string]string{"B": "lower", "b": "upper"}))
 		k.HandleKey("ctrl+x")
 		handled, action, _ := k.HandleKey("b")

@@ -311,14 +311,8 @@ func (m *keymapOverlayModel) render() string {
 	// cells), so a body of inner cells renders the row exactly popupWidth
 	// cells wide. The top/bottom borders use popupWidth-2 dashes plus the
 	// two corners = popupWidth cells total.
-	inner := popupWidth - 3
-	if inner < 0 {
-		inner = 0
-	}
-	border := popupWidth - 2
-	if border < 0 {
-		border = 0
-	}
+	inner := max(popupWidth-3, 0)
+	border := max(popupWidth-2, 0)
 	// Truncate the title and every content line to the inner body width so
 	// no rendered row exceeds the popup (and thus the terminal) width.
 	for i, l := range lines {
@@ -328,10 +322,7 @@ func (m *keymapOverlayModel) render() string {
 
 	// Vertical clamp: never render more lines than the terminal can hold.
 	// The full frame is 4 rows (top, title, divider, bottom) plus content.
-	maxLines := height - 4
-	if maxLines < 0 {
-		maxLines = 0
-	}
+	maxLines := max(height-4, 0)
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
 	}
@@ -346,10 +337,7 @@ func (m *keymapOverlayModel) render() string {
 		xOff = (width - popupWidth) / 2
 	}
 	if xOff+popupWidth > width {
-		xOff = width - popupWidth
-		if xOff < 0 {
-			xOff = 0
-		}
+		xOff = max(width-popupWidth, 0)
 	}
 
 	var b []byte
@@ -378,10 +366,9 @@ func (m *keymapOverlayModel) render() string {
 	row := func(body string) {
 		b = append(b, pad...)
 		bodyW := uniseg.StringWidth(body)
-		padN := popupWidth - 3 - bodyW // "│ " + body + pad + "│"
-		if padN < 0 {
-			padN = 0
-		}
+		padN := max(
+			// "│ " + body + pad + "│"
+			popupWidth-3-bodyW, 0)
 		b = append(b, ("│ " + body + strings.Repeat(" ", padN) + "│\n")...)
 	}
 	b = append(b, pad...)

@@ -166,14 +166,10 @@ func (m *chooseTreeModel) render() string {
 	if popupWidth > width {
 		popupWidth = width
 	}
-	inner := popupWidth - 3 // body budget of a "│ " + body + "│" row
-	if inner < 0 {
-		inner = 0
-	}
-	border := popupWidth - 2
-	if border < 0 {
-		border = 0
-	}
+	inner := max(
+		// body budget of a "│ " + body + "│" row
+		popupWidth-3, 0)
+	border := max(popupWidth-2, 0)
 
 	items := m.chooser.Render(inner)
 	itemLines := strings.Split(items, "\n")
@@ -190,10 +186,7 @@ func (m *chooseTreeModel) render() string {
 	contentHeight := len(itemLines) + 4 // border, title, separator, bottom
 
 	// Vertical clamp: never emit more lines than the terminal can hold.
-	maxItems := height - 4
-	if maxItems < 0 {
-		maxItems = 0
-	}
+	maxItems := max(height-4, 0)
 	if len(itemLines) > maxItems {
 		itemLines = itemLines[:maxItems]
 		contentHeight = len(itemLines) + 4
@@ -208,10 +201,7 @@ func (m *chooseTreeModel) render() string {
 		xOff = (width - popupWidth) / 2
 	}
 	if xOff+popupWidth > width {
-		xOff = width - popupWidth
-		if xOff < 0 {
-			xOff = 0
-		}
+		xOff = max(width-popupWidth, 0)
 	}
 
 	var b strings.Builder
@@ -240,10 +230,7 @@ func (m *chooseTreeModel) render() string {
 	pad := strings.Repeat(" ", xOff)
 	row := func(body string) {
 		bodyW := uniseg.StringWidth(body)
-		padN := inner - bodyW
-		if padN < 0 {
-			padN = 0
-		}
+		padN := max(inner-bodyW, 0)
 		fmt.Fprintf(&b, "%s│ %s%s│\n", pad, body, strings.Repeat(" ", padN))
 	}
 

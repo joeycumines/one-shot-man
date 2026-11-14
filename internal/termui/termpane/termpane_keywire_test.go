@@ -214,7 +214,7 @@ func TestUpdate_AltLeftWireBytes_AppCursor(t *testing.T) {
 		snap := mgr.Snapshot(sid)
 		if snap != nil {
 			text := snapshotPlainText(snap)
-			if idx := strings.Index(text, wantHex); idx >= 0 {
+			if found := strings.Contains(text, wantHex); found {
 				rest := strings.TrimSpace(strings.Replace(text, "READY", "", 1))
 				if rest != wantHex {
 					t.Fatalf("appCursor child received unexpected bytes: got %q, want exactly %q", rest, wantHex)

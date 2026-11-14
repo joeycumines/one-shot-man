@@ -351,6 +351,15 @@ function handleKey(msg) {
     // Check handled BEFORE armed: an empty key (handled=false) must still be
     // able to clear a stale prefix indicator, not get swallowed by the armed
     // branch below.
+    // A chord that was cancelled/disarmed (prefix then esc/prefix, or an
+    // unbound chord key) must clear the stale "prefix" indicator immediately
+    // instead of leaving it up until the message timer expires. This runs
+    // whether or not the keymap reported the cancel as handled.
+    if (!r.armed && state.message === 'prefix') {
+        state.message = '';
+        state.messageUntil = 0;
+    }
+
     if (r.handled) {
         if (r.armed) {
             setMessage('prefix');
@@ -383,13 +392,6 @@ function handleKey(msg) {
                 return true;
         }
         return true;
-    }
-    // A chord that was cancelled/disarmed (e.g. prefix then esc, or an
-    // unbound chord key) must clear the stale "prefix" indicator immediately
-    // instead of leaving it up until the message timer expires.
-    if (!r.armed && state.message === 'prefix') {
-        state.message = '';
-        state.messageUntil = 0;
     }
 
     // Forward all other keys to the bouncing terminal pane.

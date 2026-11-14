@@ -82,9 +82,12 @@ func loadExampleProgram(t *testing.T, engine *Engine, scriptName string) {
 		close: function() {},
 		activeID: function() { return sid; },
 		sessions: function() { return [{ target: {name:'',kind:'',id:''}, state:'attached', isActive:true, id:sid }]; },
-		enterCopyMode: function() { return Promise.resolve(); },
-		exitCopyMode: function() { return Promise.resolve(); },
-		isCopyModeActive: function() { return Promise.resolve(false); }
+		// Copy-mode state is tracked so toggling reflects the resulting state,
+		// matching the real SessionManager contract the script relies on.
+		__copyMode: false,
+		enterCopyMode: function() { mgr.__copyMode = true; return Promise.resolve(); },
+		exitCopyMode: function() { mgr.__copyMode = false; return Promise.resolve(); },
+		isCopyModeActive: function() { return Promise.resolve(mgr.__copyMode); }
 	};
 	return { session: session, mgr: mgr, sid: sid };
 })();
@@ -143,12 +146,18 @@ require = function(name) {
 						key = String(key).toLowerCase();
 						if (armed) {
 							armed = false;
+							// A bound chord key (including the prefix itself or
+							// "esc") wins over the implicit cancel — matching
+							// the real Keymap.HandleKey.
 							if (Object.prototype.hasOwnProperty.call(chords, key)) {
 								return { handled: true, action: chords[key], armed: false };
 							}
 							if (key === prefix || key === 'esc') {
+								// Consumed, but dispatches nothing — the caller
+								// must still clear a stale prefix indicator.
 								return { handled: true, action: '', armed: false };
 							}
+							// Unbound chord key: pass through, prefix disarmed.
 							return { handled: false, action: '', armed: false };
 						}
 						if (prefix && key === prefix) {
@@ -579,6 +588,13 @@ var smallerShrank = model.paneW < afterBigger;
 // operation promise chain settles — flush the microtask queue, then read.
 press('ctrl+x');
 press('c');
+// Capture the copyMode status message once the action's promise chain settles:
+// the chain is isCopyModeActive().then(toggle).then(isCopyModeActive).then(setMessage)
+// wrapped by trackPaneOperation's Promise.resolve + .then — schedule a read deep
+// enough to run after it, before the later prefix arm/esc overwrite the message.
+Promise.resolve().then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){ return Promise.resolve(); }).then(function(){
+	__result.copyModeMessage = stateRef.message;
+});
 // R3-13: arming the prefix sets the 'prefix' indicator; cancelling the chord
 // (prefix then esc) must clear it immediately, not wait for the timer.
 // Drive updateModel (which calls the real handleKey) and read the model's
@@ -588,15 +604,13 @@ press('c');
 // into the cleanup path and never reaches handleKey again.)
 press('ctrl+x');
 var msgWhileArmed = msg();
+var directArmed = kmArmed();
 press('esc');
 var msgAfterCancel = msg();
 var msgUntilAfterCancel = msgUntil();
-var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
-var directArmed = kmHandle('ctrl+x').armed;
-var handleArmedR = handleKey({ type: 'Key', key: 'ctrl+x' });
-var directCancel = handleKey({ type: 'Key', key: 'esc' });
 var directCleared = !kmArmed();
-__resultPrefix = { armed: directArmed, handleResult: String(handleArmedR), cleared: directCleared };
+var quitSet = (function(){ press('ctrl+x'); press('q'); return model.quit === true; })();
+__resultPrefix = { armed: directArmed, cleared: directCleared };
 __result = {
     pauseToggled: pauseToggled,
     pauseRestored: pauseRestored,
@@ -604,6 +618,8 @@ __result = {
     smallerShrank: smallerShrank,
     // Filled in by the microtask flush after ExecuteScript, once the
     // copyMode promise chain has settled and setMessage('copyMode') ran.
+    // Read it in a microtask scheduled AFTER the copyMode dispatch chain but
+    // BEFORE the later prefix arm/esc overwrite the message.
     copyModeMessage: '',
     quitSet: quitSet,
     armedMessage: __resultPrefix.armed,
@@ -614,9 +630,7 @@ __result = {
     msgAfterCancel: msgAfterCancel,
     msgUntilAfterCancel: msgUntilAfterCancel
 };
-	Promise.resolve().then(function() { return Promise.resolve(); }).then(function() {
-		__result.copyModeMessage = model.message;
-	});
+
 `)
 	for k, want := range map[string]bool{
 		"pauseToggled":       true,

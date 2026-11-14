@@ -144,7 +144,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
 		defer shutdownCancel()
-		if err := loop.Shutdown(shutdownCtx); err != nil {
+		if err := loop.Shutdown(shutdownCtx); err != nil && !errors.Is(err, goeventloop.ErrLoopTerminated) {
+			// A loop that already terminated on its own (e.g. fatal exit from
+			// an unhandled rejection in the test's own JS) is a normal
+			// end-state here, not a cleanup failure — Shutdown on a terminated
+			// loop reports ErrLoopTerminated by contract.
 			t.Errorf("loop.Shutdown: %v", err)
 		}
 		select {
@@ -323,7 +327,9 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 		const cleanupBound = 30 * time.Second
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
 		defer shutdownCancel()
-		_ = loop.Shutdown(shutdownCtx)
+		if err := loop.Shutdown(shutdownCtx); err != nil && !errors.Is(err, goeventloop.ErrLoopTerminated) {
+			_ = err // see newTestEnv cleanup: ErrLoopTerminated is a normal end-state
+		}
 		select {
 		case <-loopDone:
 		case <-time.After(cleanupBound):

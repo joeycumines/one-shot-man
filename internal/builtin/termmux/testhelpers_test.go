@@ -126,10 +126,26 @@ func newTestEnv(t *testing.T) *testEnv {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
 		stopKeepAlive()
-		<-keepAliveDone
+		// Bound every wait in this cleanup: a wedged Promisify worker or a
+		// Shutdown that cannot join in-flight work must fail this test loudly
+		// instead of hanging until the package-level test timeout panics and
+		// dumps every other parallel test's goroutines.
+		select {
+		case <-keepAliveDone:
+		case <-time.After(10 * time.Second):
+			t.Errorf("keepalive worker did not exit within 10s of stopKeepAlive")
+		}
 		cancel()
-		_ = loop.Shutdown(context.Background())
-		<-loopDone
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		if err := loop.Shutdown(shutdownCtx); err != nil {
+			t.Errorf("loop.Shutdown: %v", err)
+		}
+		select {
+		case <-loopDone:
+		case <-time.After(10 * time.Second):
+			t.Errorf("loop.Run did not return within 10s of Shutdown")
+		}
 	})
 
 	return &testEnv{

@@ -525,6 +525,43 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 	`); err != nil {
 		t.Fatalf("write+sendEOF: %v", err)
 	}
+	if runtime.GOOS == "windows" {
+		// ConPTY has no line discipline: 0x04 written to the input pipe is
+		// delivered to the child as a literal byte, not translated into an
+		// EOF condition for a plain os.Stdin.Read loop, so the child never
+		// exits on its own and cs.wait() would block until the helper's
+		// awaitJSValue timeout. The byte-level ordering contract (write lands
+		// before the EOF byte on the pipe) is still what this test pins, so
+		// poll the record file for the data instead of waiting for exit,
+		// then close (which terminates the child) and read the file.
+		deadline := time.Now().Add(10 * time.Second)
+		var raw []byte
+		for {
+			if b, rerr := os.ReadFile(out); rerr == nil && len(b) >= len("DATA-BEFORE-EOF") {
+				raw = b
+				break
+			}
+			if time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		_, _ = awaitJSValue(t, e.runtime, `await cs.close()`)
+		if raw == nil {
+			var rerr error
+			raw, rerr = os.ReadFile(out)
+			if rerr != nil {
+				t.Fatalf("read child record: %v", rerr)
+			}
+		}
+		// The write must have arrived intact and before the 0x04 byte; close
+		// kills the child before it can read the trailing 0x04, so the file
+		// holds exactly the data bytes.
+		if string(raw) != "DATA-BEFORE-EOF" {
+			t.Fatalf("child received %q, want exactly %q on Windows (0x04 is a literal byte, not EOF)", raw, "DATA-BEFORE-EOF")
+		}
+		return
+	}
 	_, _ = awaitJSValue(t, e.runtime, `await cs.wait()`)
 	// Close before reading the record file: on Windows the child helper may
 	// still hold received.bin open briefly after Wait returns, and reading or
@@ -533,18 +570,6 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 	raw, err := os.ReadFile(out)
 	if err != nil {
 		t.Fatalf("read child record: %v", err)
-	}
-	if runtime.GOOS == "windows" {
-		// ConPTY has no line discipline: 0x04 written to the input pipe is
-		// delivered to the child as a literal byte, not translated into an
-		// EOF condition for a plain os.Stdin.Read loop, so the child keeps
-		// running until cs.close() kills it. The byte-level ordering contract
-		// (write lands before the EOF byte on the pipe) still holds; assert
-		// the data arrived and contains no trailing 0x04 truncation.
-		if string(raw) != "DATA-BEFORE-EOF" {
-			t.Fatalf("child received %q, want exactly %q on Windows (0x04 is a literal byte, not EOF)", raw, "DATA-BEFORE-EOF")
-		}
-		return
 	}
 	if string(raw) != "DATA-BEFORE-EOF" {
 		t.Fatalf("child received %q, want exactly %q (EOF must come after the write)", raw, "DATA-BEFORE-EOF")

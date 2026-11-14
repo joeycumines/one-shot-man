@@ -517,12 +517,21 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 	`, buildStdinToFileProgram(t), out)); err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
-	// Fire write then sendEOF without awaiting the write.
-	if _, err := awaitJSValue(t, e.runtime, `
-		cs.write('DATA-BEFORE-EOF');
+	// Fire write then sendEOF without awaiting the write. On Windows the
+	// ConPTY console input is in line-input (cooked) mode: bytes are not
+	// delivered to the child until a line terminator (\r) arrives (see the
+	// ConPTY note in module_pane_test.go), so the data write must end with
+	// \r or the child never sees it. %q emits a Go string literal, which is
+	// also valid JS string syntax (\r escapes identically).
+	payload := "DATA-BEFORE-EOF"
+	if runtime.GOOS == "windows" {
+		payload = "DATA-BEFORE-EOF\r"
+	}
+	if _, err := awaitJSValue(t, e.runtime, fmt.Sprintf(`
+		cs.write(%q);
 		cs.sendEOF();
 		return true;
-	`); err != nil {
+	`, payload)); err != nil {
 		t.Fatalf("write+sendEOF: %v", err)
 	}
 	if runtime.GOOS == "windows" {
@@ -534,10 +543,15 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 		// before the EOF byte on the pipe) is still what this test pins, so
 		// poll the record file for the data instead of waiting for exit,
 		// then close (which terminates the child) and read the file.
+		//
+		// Cooked-mode line input delivers the line with its \r terminator
+		// (possibly translated to \r\n by the console), so assert the data
+		// arrived intact and in order — the whole point of the test — rather
+		// than exact byte equality with the terminator.
 		deadline := time.Now().Add(10 * time.Second)
 		var raw []byte
 		for {
-			if b, rerr := os.ReadFile(out); rerr == nil && len(b) >= len("DATA-BEFORE-EOF") {
+			if b, rerr := os.ReadFile(out); rerr == nil && strings.Contains(string(b), "DATA-BEFORE-EOF") {
 				raw = b
 				break
 			}
@@ -556,9 +570,9 @@ func TestCaptureSession_SendEOF_OrderedAfterWrite(t *testing.T) {
 		}
 		// The write must have arrived intact and before the 0x04 byte; close
 		// kills the child before it can read the trailing 0x04, so the file
-		// holds exactly the data bytes.
-		if string(raw) != "DATA-BEFORE-EOF" {
-			t.Fatalf("child received %q, want exactly %q on Windows (0x04 is a literal byte, not EOF)", raw, "DATA-BEFORE-EOF")
+		// holds exactly the data bytes (plus the console's line terminator).
+		if !strings.Contains(string(raw), "DATA-BEFORE-EOF") {
+			t.Fatalf("child received %q, want it to contain %q on Windows (0x04 is a literal byte, not EOF)", raw, "DATA-BEFORE-EOF")
 		}
 		return
 	}

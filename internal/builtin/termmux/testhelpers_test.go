@@ -129,22 +129,28 @@ func newTestEnv(t *testing.T) *testEnv {
 		// Bound every wait in this cleanup: a wedged Promisify worker or a
 		// Shutdown that cannot join in-flight work must fail this test loudly
 		// instead of hanging until the package-level test timeout panics and
-		// dumps every other parallel test's goroutines.
+		// dumps every other parallel test's goroutines. The bound is 30s (not
+		// tight): CI runners run dozens of parallel tests each with its own
+		// loop and child processes, and goroutine scheduling of the cancelled
+		// keepalive worker can lag far beyond the ms-scale expectation under
+		// load — the bound exists to convert a 40m package panic into a
+		// per-test failure, not to assert a scheduling latency.
+		const cleanupBound = 30 * time.Second
 		select {
 		case <-keepAliveDone:
-		case <-time.After(10 * time.Second):
-			t.Errorf("keepalive worker did not exit within 10s of stopKeepAlive")
+		case <-time.After(cleanupBound):
+			t.Errorf("keepalive worker did not exit within %s of stopKeepAlive", cleanupBound)
 		}
 		cancel()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
 		defer shutdownCancel()
 		if err := loop.Shutdown(shutdownCtx); err != nil {
 			t.Errorf("loop.Shutdown: %v", err)
 		}
 		select {
 		case <-loopDone:
-		case <-time.After(10 * time.Second):
-			t.Errorf("loop.Run did not return within 10s of Shutdown")
+		case <-time.After(cleanupBound):
+			t.Errorf("loop.Run did not return within %s of Shutdown", cleanupBound)
 		}
 	})
 
@@ -311,8 +317,18 @@ func wrapTestSessionManagerWithLoop(t *testing.T, ctx context.Context, runtime *
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
-		_ = loop.Shutdown(context.Background())
-		<-loopDone
+		// Bound the shutdown waits (see newTestEnv's cleanup for the
+		// rationale): a wedged loop must fail this test, not hang the whole
+		// package until the test timeout panics.
+		const cleanupBound = 30 * time.Second
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
+		defer shutdownCancel()
+		_ = loop.Shutdown(shutdownCtx)
+		select {
+		case <-loopDone:
+		case <-time.After(cleanupBound):
+			t.Errorf("loop.Run did not return within %s of Shutdown", cleanupBound)
+		}
 	})
 
 	return wrapper

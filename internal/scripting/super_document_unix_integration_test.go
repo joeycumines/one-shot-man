@@ -172,9 +172,7 @@ func TestSuperDocument_TUIRendering(t *testing.T) {
 		t.Fatalf("Failed to send quit key: %v\nBuffer: %q", err, cp.String())
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_KeyboardNavigation tests keyboard-based interaction with the TUI.
@@ -237,9 +235,7 @@ func TestSuperDocument_KeyboardNavigation(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_AddDocumentViaKeyboard tests adding a document using keyboard input.
@@ -314,9 +310,7 @@ func TestSuperDocument_AddDocumentViaKeyboard(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_MouseClickAddButton tests mouse interaction with the Add button.
@@ -382,9 +376,7 @@ func TestSuperDocument_MouseClickAddButton(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_PreviewTruncatesAndStripsNewlines verifies that the preview
@@ -458,9 +450,7 @@ func TestSuperDocument_PreviewTruncatesAndStripsNewlines(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_LoadFileViaKeyboard tests loading a file from disk.
@@ -540,9 +530,7 @@ func TestSuperDocument_LoadFileViaKeyboard(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_CopyPromptWithDocuments tests the copy prompt functionality.
@@ -632,9 +620,7 @@ func TestSuperDocument_CopyPromptWithDocuments(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_ErrorOnCopyWithNoDocuments tests error handling when copying with no documents.
@@ -687,9 +673,7 @@ func TestSuperDocument_ErrorOnCopyWithNoDocuments(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_HelpCommand tests the help command (?) shows keybindings.
@@ -751,9 +735,7 @@ func TestSuperDocument_HelpCommand(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_CtrlCQuits tests that Ctrl+C quits the TUI.
@@ -798,9 +780,7 @@ func TestSuperDocument_CtrlCQuits(t *testing.T) {
 	// Send Ctrl+C
 	sendKey(t, cp, "\x03")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // ============================================================================
@@ -872,9 +852,7 @@ func TestSuperDocument_MouseClickAddAndConfirm(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_MouseClickDocumentSelection tests selecting a document by clicking
@@ -956,9 +934,7 @@ func TestSuperDocument_MouseClickDocumentSelection(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_MouseClickCopyPrompt tests clicking [C]opy Prompt button
@@ -1067,9 +1043,7 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_KeyboardEditDocument tests using keyboard 'e' to edit
@@ -1138,9 +1112,7 @@ func TestSuperDocument_KeyboardEditDocument(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_REPLTUIToggle tests the toggle between TUI and REPL modes
@@ -1236,9 +1208,7 @@ func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_MultilineTextarea tests that the textarea correctly handles
@@ -1324,9 +1294,7 @@ func TestSuperDocument_MultilineTextarea(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // ============================================================================
@@ -1416,9 +1384,7 @@ func TestSuperDocument_MouseWheelDoesNotTriggerButtonClick(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_MouseClickTextareaFocus tests that clicking the textarea area
@@ -1497,9 +1463,7 @@ func TestSuperDocument_MouseClickTextareaFocus(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_BacktabNavigation tests that Shift+Tab moves focus backward in forms.
@@ -1577,9 +1541,7 @@ func TestSuperDocument_BacktabNavigation(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // ============================================================================
@@ -1683,9 +1645,7 @@ func TestSuperDocument_ScrollViaKeyboard(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_PageKeysBringNewContentIntoView tests that pgdown, pgup, home, end
@@ -1774,9 +1734,7 @@ func TestSuperDocument_PageKeysBringNewContentIntoView(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_ArrowMovesSelectionAndKeepsInViewport tests that arrow up/down
@@ -1855,9 +1813,7 @@ func TestSuperDocument_ArrowMovesSelectionAndKeepsInViewport(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_LargeListPerformanceSmoke tests that adding multiple documents
@@ -1948,9 +1904,7 @@ func TestSuperDocument_LargeListPerformanceSmoke(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // ============================================================================
@@ -2093,9 +2047,7 @@ func TestSuperDocument_FastScrollDoesNotInsertGarbage(t *testing.T) {
 	// Quit
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping tests that:
@@ -2192,9 +2144,7 @@ func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_JumpButtonsUnlockViewport tests that the jump-to-top and jump-to-bottom
@@ -2294,11 +2244,7 @@ func TestSuperDocument_JumpButtonsUnlockViewport(t *testing.T) {
 	expect(snap, "Cancelled", 15*time.Second)
 	sendKey(t, cp, "q")
 
-	waitCtx, waitCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer waitCancel()
-	if code, err := cp.WaitExit(waitCtx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_PasteInTextarea tests that paste events (bracketed paste mode)
@@ -2386,9 +2332,7 @@ func TestSuperDocument_PasteInTextarea(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // TestSuperDocument_TextareaArrowKeysAndEnter is the definitive E2E proof that
@@ -2514,7 +2458,5 @@ func TestSuperDocument_TextareaArrowKeysAndEnter(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sendKey(t, cp, "q")
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }

@@ -18,29 +18,18 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
-// waitExit sends "exit" and waits for the process to terminate, bounding the
-// wait so a child that never exits fails this test instead of stalling the
-// whole package.
+// waitExit sends "exit" and waits for the process to terminate with code 0.
 //
-// The bound is not a latency assertion. WaitExit blocks until the context is
-// cancelled or the process exits, and these tests previously passed it a
-// context that was only cancellable at cleanup, so a child that failed to act
-// on "exit" hung until the package-level timeout killed the run: run
-// 129562188826 died at `panic: test timed out after 40m0s` with
-// TestPromptFlow_Unix_ListShowsMissing recorded as running for 38m46s and its
-// goroutine parked in Console.WaitExit. The send error is checked too, because
-// a failed write means "exit" was never delivered and waiting would be
-// pointless.
+// The send error is checked because a failed write means "exit" was never
+// delivered, and the wait is bounded by requireExpectExitCode; passing a context
+// that only expires at cleanup let a child that ignored "exit" hang until the
+// package timeout (run 129562188826, 38m46s in WaitExit).
 func waitExit(t *testing.T, cp *termtest.Console) {
 	t.Helper()
 	if err := cp.SendLine("exit"); err != nil {
 		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(t.Context(), t, cp, 0)
 }
 
 // Example demonstrates a complete prompt-flow workflow

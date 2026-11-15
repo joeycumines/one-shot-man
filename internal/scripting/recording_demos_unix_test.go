@@ -109,11 +109,7 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *vhs.InputCaptureRecorder
 // cancellation propagates.
 func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console, r *vhs.InputCaptureRecorder) {
 	t.Helper()
-	exitCtx, exitCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer exitCancel()
-	if code, err := cp.WaitExit(exitCtx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, r.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }
 
 // buildRecorderOpts returns recorder options, including vhs.WithRecorderSkipTapeOutput()

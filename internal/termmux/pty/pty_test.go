@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -33,26 +34,97 @@ func skipIfWindows(t *testing.T) {
 
 // conPTYProbeResult caches the outcome of probing the host for a working
 // ConPTY. Ten tests call requireConPTYRuntime and several of them t.Parallel
-// with each other, so probing per call meant up to thirty powershell spawns
-// per package run, each up to 5s, competing for the same loaded runner.
+// with each other, so probing per call meant up to thirty spawns per package
+// run, each up to 10s, competing for the same loaded runner.
 var conPTYProbeResult struct {
 	once sync.Once
 	// unavailable is a human-readable reason, or empty when ConPTY works.
 	unavailable string
+	// failure is set when the probe observed a broken pty contract rather than
+	// an unusable host; requireConPTYRuntime turns it into t.Fatalf.
+	failure string
 }
 
-// requireConPTYRuntime skips the calling test unless the host can run ConPTY.
+// conPTYStatusDLLInitFailed is STATUS_DLL_INIT_FAILED (0xC0000142), the
+// documented headless-runner limitation where the child's console cannot
+// initialise. Together with the API-absence errnos below it is the only probe
+// outcome that legitimately means "this host cannot run these tests".
+const conPTYStatusDLLInitFailed = 3221225794
+
+// Windows errnos meaning the ConPTY API itself is not present on this host.
+// They are declared as plain syscall.Errno values because this file builds on
+// every platform, while golang.org/x/sys/windows does not. Pre-1809 Windows
+// Server has no pseudoconsole at all, which is host capability, not a
+// regression in this package.
+const (
+	conPTYErrCallNotImplemented = syscall.Errno(120) // ERROR_CALL_NOT_IMPLEMENTED
+	conPTYErrProcNotFound       = syscall.Errno(127) // ERROR_PROC_NOT_FOUND
+)
+
+// conPTYProbeVerdict is the outcome of one probe attempt.
+type conPTYProbeVerdict int
+
+const (
+	// conPTYProbeReady: the host spawned, waited on and closed a console.
+	conPTYProbeReady conPTYProbeVerdict = iota
+	// conPTYProbeUnavailable: the host cannot initialise a console.
+	conPTYProbeUnavailable
+	// conPTYProbeFailure: the pty contract itself is broken.
+	conPTYProbeFailure
+)
+
+// conPTYProbeAttempt is one attempt's raw observations.
+type conPTYProbeAttempt struct {
+	spawnErr error
+	waitErr  error
+	closeErr error
+	code     int
+}
+
+// classifyConPTYAttempt decides what one probe attempt means.
 //
-// The probe decides whether these Windows-only tests can run at all; it does
-// not assert host health. A host that cannot spawn a working console is a
+// The probe runs the code under test, so a failure can be either "this host
+// cannot run a console" or "Spawn/Wait/Close is broken". Only two things are the
+// former: STATUS_DLL_INIT_FAILED, the documented headless-runner console-init
+// limitation, and a spawn that reports the ConPTY API itself is absent. Everything
+// else — any other Spawn error, a Wait error (including a deadlock that hit the
+// attempt bound), an unexpected exit code, or a Close that could not release the
+// pseudoconsole — is a broken contract and must fail the suite loudly rather
+// than skip it green.
+func classifyConPTYAttempt(attempt conPTYProbeAttempt) (conPTYProbeVerdict, string) {
+	if attempt.spawnErr != nil {
+		if errors.Is(attempt.spawnErr, ErrNotSupported) ||
+			errors.Is(attempt.spawnErr, conPTYErrCallNotImplemented) ||
+			errors.Is(attempt.spawnErr, conPTYErrProcNotFound) {
+			return conPTYProbeUnavailable, fmt.Sprintf("ConPTY is not available on this host: %v", attempt.spawnErr)
+		}
+		return conPTYProbeFailure, fmt.Sprintf("pty.Spawn failed: %v", attempt.spawnErr)
+	}
+	if attempt.waitErr != nil {
+		return conPTYProbeFailure, fmt.Sprintf("pty.Wait failed: %v", attempt.waitErr)
+	}
+	if uint32(attempt.code) == conPTYStatusDLLInitFailed {
+		return conPTYProbeUnavailable, fmt.Sprintf("child console init failed with %#x (STATUS_DLL_INIT_FAILED): this host cannot run ConPTY", uint32(attempt.code))
+	}
+	if attempt.closeErr != nil {
+		return conPTYProbeFailure, fmt.Sprintf("pty.Close failed: %v", attempt.closeErr)
+	}
+	if attempt.code != 0 {
+		return conPTYProbeFailure, fmt.Sprintf("probe command exited with code %d", attempt.code)
+	}
+	return conPTYProbeReady, ""
+}
+
+// requireConPTYRuntime skips the calling test unless the host can run ConPTY,
+// and fails it when the probe proves the pty contract is broken.
+//
+// The distinction matters: a host that cannot spawn a working console is a
 // reason to skip, because no ConPTY test in this package can then say anything
-// about the code. Treating that as a fatal error made one unavailable host fail
-// eight tests and the whole package: run 129562188488 reported
-// `ConPTY runtime probe exited with code 1 after 3 attempts` from
-// TestConPTY_Smoke, TestConPTY_ContextCancel, TestConPTY_Resize,
-// TestConPTY_WriteRead and all three TestProcess_Wait_ExitModes_Windows
-// subtests. Retries remain for the genuinely transient case (a loaded runner
-// where powershell exits 1), and the successful path is unchanged.
+// about the code (run 129562188488 reported `ConPTY runtime probe exited with
+// code 1 after 3 attempts` from eight tests on a runner that could not
+// initialise a console). But a Spawn or Wait regression is exactly what these
+// tests exist to catch, so it must fail the package instead of silently
+// skipping all ten callers.
 func requireConPTYRuntime(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "windows" {
@@ -60,48 +132,76 @@ func requireConPTYRuntime(t *testing.T) {
 	}
 
 	conPTYProbeResult.once.Do(func() {
-		conPTYProbeResult.unavailable = probeConPTY()
+		conPTYProbeResult.unavailable, conPTYProbeResult.failure = probeConPTY()
 	})
+	if failure := conPTYProbeResult.failure; failure != "" {
+		t.Fatalf("ConPTY runtime probe failed: %s", failure)
+	}
 	if reason := conPTYProbeResult.unavailable; reason != "" {
 		t.Skipf("skipping ConPTY tests: %s", reason)
 	}
 }
 
-// probeConPTY reports why the host cannot run ConPTY tests, or "" when it can.
-func probeConPTY() string {
+// probeConPTY reports why the host cannot run ConPTY tests (unavailable) or why
+// the pty contract is broken (failure), or two empty strings when ConPTY works.
+//
+// The command is cmd.exe rather than powershell.exe: PowerShell loads the CLR,
+// which made the probe slow enough to need a wide bound and flaky enough on a
+// loaded runner to need retries. Output is drained concurrently so a child that
+// writes before exiting cannot fill the ConPTY pipe and wedge Wait. Each attempt
+// releases its own process and context (probeConPTYAttempt), so a failed attempt
+// leaves no handle behind for the retry.
+func probeConPTY() (unavailable, failure string) {
 	const attempts = 3
-	var last string
+
+	lastFailure := "probe produced no verdict"
 	for attempt := 1; attempt <= attempts; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		proc, err := Spawn(ctx, SpawnConfig{
-			Command: "powershell.exe",
-			Args:    []string{"-NoProfile", "-Command", "exit 0"},
-			Rows:    24,
-			Cols:    80,
-		})
-		if err != nil {
-			cancel()
-			last = fmt.Sprintf("spawn failed: %v", err)
-		} else {
-			code, waitErr := proc.Wait()
-			proc.Close()
-			cancel()
-			switch {
-			case waitErr != nil:
-				last = fmt.Sprintf("wait failed: %v", waitErr)
-			case code == 0:
-				return ""
-			case uint32(code) == 3221225794:
-				return fmt.Sprintf("child console init failed with %#x", uint32(code))
-			default:
-				last = fmt.Sprintf("probe exited with code %d", code)
-			}
+		verdict, reason := probeConPTYAttempt()
+		switch verdict {
+		case conPTYProbeReady:
+			return "", ""
+		case conPTYProbeUnavailable:
+			// A console that cannot initialise will not start working on a
+			// retry: it is a property of this host, so report it immediately.
+			return reason, ""
+		case conPTYProbeFailure:
+			// A failure may be a loaded-runner artefact (handle exhaustion,
+			// a timeout), so retry before calling the contract broken.
+			lastFailure = reason
 		}
 		if attempt < attempts {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
-	return last + fmt.Sprintf(" (after %d attempts)", attempts)
+	return "", lastFailure + fmt.Sprintf(" (after %d attempts)", attempts)
+}
+
+// probeConPTYAttempt runs one spawn/wait/close cycle and classifies it.
+func probeConPTYAttempt() (conPTYProbeVerdict, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var observed conPTYProbeAttempt
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "exit 0"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		observed.spawnErr = err
+		return classifyConPTYAttempt(observed)
+	}
+
+	// Drain concurrently: an undrained ConPTY output pipe can block the child
+	// before it exits, which would surface as a bogus Wait timeout.
+	proc.DrainOutput(io.Discard)
+
+	observed.code, observed.waitErr = proc.Wait()
+	observed.closeErr = proc.Close()
+
+	return classifyConPTYAttempt(observed)
 }
 
 func TestSpawn_EchoHello(t *testing.T) {

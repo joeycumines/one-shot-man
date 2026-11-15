@@ -261,15 +261,11 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.WaitContext(ctx)
-			if waitErr != nil {
-				var closeErr *processTreeCloseError
-				var exitErr *osexec.ExitError
-				if errors.As(waitErr, &closeErr) || !errors.As(waitErr, &exitErr) {
-					handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
-						return rt.NewGoError(waitErr)
-					}))
-					return
-				}
+			if rejectErr := waitRejection(waitErr); rejectErr != nil {
+				handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
+					return rt.NewGoError(rejectErr)
+				}))
+				return
 			}
 			m := map[string]any{"code": code}
 			if signal := processExitSignal(waitErr); signal != "" {
@@ -342,6 +338,29 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 }
 
 const outputAbortGrace = 100 * time.Millisecond
+
+// waitRejection reports the error that must reject the JS wait() promise, or
+// nil when the result should resolve as {code, signal}.
+//
+// A real exit status outranks a tree-cleanup failure. wait() used to reject
+// whenever its error chain carried a processTreeCloseError, even alongside a
+// valid exit status. A timeout-killed child whose process group had already
+// gone away hit exactly that: wait() rejected with "signal: killed" although
+// the child demonstrably exited, JS saw an unhandled rejection, and the
+// adapter's fatal-exit path (goja-eventloop processrejection.go:380 ->
+// requestFatalExit) shut the event loop down, stranding every other pending
+// promise in the process. The cleanup failure remains visible through
+// ChildProcess.Wait's error for Go callers.
+func waitRejection(waitErr error) error {
+	if waitErr == nil {
+		return nil
+	}
+	var exitErr *osexec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		return nil
+	}
+	return waitErr
+}
 
 // outputEOFCeiling bounds how long runExec waits for output readers to reach EOF.
 const outputEOFCeiling = 30 * time.Second

@@ -32,13 +32,19 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        version="$(awk '$1 == "go" { print $2; exit }' go.mod)"
-        if [ -z "$version" ]; then
+        directive="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+        if [ -z "$directive" ]; then
           echo "could not read the go directive from go.mod" >&2
           exit 1
         fi
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-        echo "using Go $version from go.mod"
+        # The go directive is a language version ("1.27.3"). setup-go resolves
+        # a major.minor spec to the newest published patch of that line, which
+        # is what we want: the point is to refuse a *minor* bump that outruns
+        # staticcheck, not to pin a patch release that may not exist for every
+        # runner image.
+        minor="$(echo "$directive" | awk -F. '{ print $1 "." $2 }')"
+        echo "version=$minor" >> "$GITHUB_OUTPUT"
+        echo "using Go $minor (from go $directive in go.mod)"
     - name: Set up Go
       uses: actions/setup-go@v5
       with:

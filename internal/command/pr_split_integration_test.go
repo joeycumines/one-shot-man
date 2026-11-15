@@ -823,6 +823,9 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
 			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
 			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
 			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
@@ -906,6 +909,9 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
 			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
 			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
 			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;

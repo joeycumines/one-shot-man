@@ -203,33 +203,25 @@ func TestStateManager_SetStateTriggerNotification(t *testing.T) {
 		t.Fatalf("failed to create state manager: %v", err)
 	}
 
-	var notifiedKey string
-	var wg sync.WaitGroup
-	wg.Add(1)
+	// notifyListeners calls each listener on the SetState caller's goroutine,
+	// so the notification has already happened by the time SetState returns.
+	// Asserting that directly keeps this test about notification; waiting on a
+	// helper goroutine only measured how quickly the scheduler ran it, which is
+	// what failed on windows-latest under load (`SetState did not trigger
+	// listener notification` after a 100ms bound that the listener never had a
+	// chance to miss).
+	var notified []string
 
 	sm.AddListener(func(key string) {
-		notifiedKey = key
-		wg.Done()
+		notified = append(notified, key)
 	})
 
-	// Set state should trigger notification
 	sm.SetState("test-key", "test-value")
 
-	// Wait for listener
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success
-	case <-time.After(100 * time.Millisecond):
+	if len(notified) == 0 {
 		t.Fatal("SetState did not trigger listener notification")
 	}
-
-	if notifiedKey != "test-key" {
-		t.Errorf("expected notifiedKey 'test-key', got %q", notifiedKey)
+	if len(notified) != 1 || notified[0] != "test-key" {
+		t.Errorf("expected exactly one notification for 'test-key', got %q", notified)
 	}
 }

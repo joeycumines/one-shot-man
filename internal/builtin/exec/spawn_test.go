@@ -66,7 +66,7 @@ func TestSpawnChild_ConcurrentStdoutReaders(t *testing.T) {
 		t.Fatalf("unexpected concurrent output: %v", seen)
 	}
 	_ = child.Kill()
-	_, _ = child.Wait()
+	_, _ = child.WaitContext(context.Background())
 }
 
 func TestSpawnChild_WriteStdinContextCancellation(t *testing.T) {
@@ -81,7 +81,7 @@ func TestSpawnChild_WriteStdinContextCancellation(t *testing.T) {
 		t.Fatal("WriteStdinContext succeeded despite cancellation")
 	}
 	_ = child.Kill()
-	_, _ = child.Wait()
+	_, _ = child.WaitContext(context.Background())
 }
 
 // TestSpawnChild_SignalAfterExitIsNoOp covers the reaped-child guard: a
@@ -93,7 +93,7 @@ func TestSpawnChild_SignalAfterExitIsNoOp(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `exit 0`)
 
-	code, err := child.Wait()
+	code, err := child.WaitContext(context.Background())
 	if code != 0 || err != nil {
 		t.Fatalf("Wait = (%d, %v), want (0, nil)", code, err)
 	}
@@ -137,7 +137,7 @@ func TestSpawnChild_BasicStdout(t *testing.T) {
 		t.Errorf("stdout = %q, want %q", got, "hello")
 	}
 
-	code, err := child.Wait()
+	code, err := child.WaitContext(context.Background())
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
@@ -168,7 +168,7 @@ func TestSpawnChild_BasicStderr(t *testing.T) {
 		t.Errorf("stderr = %q, want %q", got, "error")
 	}
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
@@ -180,7 +180,7 @@ func TestSpawnChild_ExitCode(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `exit 42`)
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code != 42 {
 		t.Errorf("exit code = %d, want 42", code)
 	}
@@ -215,7 +215,7 @@ func TestSpawnChild_Stdin(t *testing.T) {
 		t.Errorf("stdout = %q, want %q", got, "ping")
 	}
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
@@ -301,7 +301,7 @@ func TestSpawnChild_LargeOutput(t *testing.T) {
 		t.Errorf("last line = %q, want %q", lines[lineCount-1], "10000")
 	}
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}
@@ -317,7 +317,7 @@ func TestSpawnChild_Kill(t *testing.T) {
 		t.Fatalf("Kill: %v", err)
 	}
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code == 0 {
 		t.Errorf("expected non-zero exit code after kill, got 0")
 	}
@@ -337,7 +337,7 @@ func TestSpawnChild_KillIdempotent(t *testing.T) {
 		t.Fatalf("Kill 2: %v", err)
 	}
 
-	child.Wait()
+	child.WaitContext(context.Background())
 }
 
 func TestSpawnChild_ContextCancel(t *testing.T) {
@@ -359,7 +359,7 @@ func TestSpawnChild_ContextCancel(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		child.Wait()
+		child.WaitContext(context.Background())
 		close(done)
 	}()
 
@@ -446,7 +446,7 @@ func TestSpawnChild_Pid(t *testing.T) {
 		t.Errorf("pid = %d, want > 0", pid)
 	}
 
-	child.Wait()
+	child.WaitContext(context.Background())
 }
 
 func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
@@ -484,7 +484,7 @@ func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
 				buf.WriteString(data)
 			}
 
-			child.Wait()
+			child.WaitContext(context.Background())
 			results <- result{output: strings.TrimSpace(buf.String())}
 		}(i)
 	}
@@ -512,8 +512,8 @@ func TestSpawnChild_WaitIdempotent(t *testing.T) {
 
 	child := shSpawn(t, context.Background(), `exit 7`)
 
-	code1, _ := child.Wait()
-	code2, _ := child.Wait() // should return immediately, same result
+	code1, _ := child.WaitContext(context.Background())
+	code2, _ := child.WaitContext(context.Background()) // should return immediately, same result
 
 	if code1 != 7 || code2 != 7 {
 		t.Errorf("Wait() codes = (%d, %d), want (7, 7)", code1, code2)
@@ -534,7 +534,7 @@ func TestSpawnChild_CloseStdinIdempotent(t *testing.T) {
 		t.Errorf("CloseStdin 2: %v", err)
 	}
 
-	child.Wait()
+	child.WaitContext(context.Background())
 }
 
 func TestSpawnChild_WriteAfterClose(t *testing.T) {
@@ -552,7 +552,7 @@ func TestSpawnChild_WriteAfterClose(t *testing.T) {
 		t.Error("WriteStdin after close should return error")
 	}
 
-	child.Wait()
+	child.WaitContext(context.Background())
 }
 
 func TestSpawnChild_InvalidCommand(t *testing.T) {
@@ -581,7 +581,7 @@ func TestSpawnChild_EmptyStdout(t *testing.T) {
 		t.Errorf("expected done=true for empty stdout, got data=%q", data)
 	}
 
-	code, _ := child.Wait()
+	code, _ := child.WaitContext(context.Background())
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0", code)
 	}

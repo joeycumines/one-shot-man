@@ -81,7 +81,7 @@ func TestSpawnChild_RepeatedSignalsAreDelivered(t *testing.T) {
 	}
 	defer func() {
 		_ = child.Kill()
-		_, _ = child.Wait()
+		_, _ = child.WaitContext(context.Background())
 	}()
 
 	ready, err := readSignalHelperLine(ctx, child)
@@ -107,7 +107,7 @@ func TestSpawnChild_RepeatedSignalsAreDelivered(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, waitErr := child.Wait()
+		_, waitErr := child.WaitContext(context.Background())
 		done <- waitErr
 	}()
 	select {
@@ -168,7 +168,7 @@ func TestSpawnChild_ConcurrentSignalsAfterExitAreNoOps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}
-	if _, err := child.Wait(); err != nil {
+	if _, err := child.WaitContext(context.Background()); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestSpawnChild_CloseKillsDescendants(t *testing.T) {
 
 	waitDone := make(chan error, 1)
 	go func() {
-		_, waitErr := child.Wait()
+		_, waitErr := child.WaitContext(context.Background())
 		waitDone <- waitErr
 	}()
 	select {

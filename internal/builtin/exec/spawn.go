@@ -568,19 +568,13 @@ func (c *ChildProcess) CloseStdinContext(ctx context.Context) error {
 	return pipe.Close()
 }
 
-// Wait blocks until the process exits.
-func (c *ChildProcess) Wait() (int, error) {
-	<-c.done
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.exitCode, c.exitErr
-}
-
 // WaitContext blocks until the process exits or ctx is cancelled.
 //
-// A caller that can be cancelled (the JS wait() binding) must not use Wait:
-// the process may outlive the loop, and an unbounded wait there strands the
-// promise forever. Reap still happens in the background regardless of ctx.
+// This is the only wait entry point: the JS wait() binding calls it with the
+// caller's context, and a caller that can be cancelled must not block on an
+// exit that may never arrive. Reaping happens on the background reaper
+// regardless of ctx, so a cancelled wait reports ctx.Err() without abandoning
+// the process.
 func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()

@@ -237,7 +237,7 @@ func TestSpawnChild_KillAfterExitIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}
-	if code, err := child.Wait(); err != nil || code != 0 {
+	if code, err := child.WaitContext(context.Background()); err != nil || code != 0 {
 		t.Fatalf("Wait = (%d, %v), want (0, nil)", code, err)
 	}
 	if err := child.Kill(); err != nil {

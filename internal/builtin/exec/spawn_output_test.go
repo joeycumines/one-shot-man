@@ -416,7 +416,7 @@ func TestSpawnedChildSettlesPumpsPromptlyAfterKill(t *testing.T) {
 
 	// The leader exits only after the escaped descendant has left the process
 	// group and keeps the stdout write end open, so the pumps cannot reach EOF.
-	if _, err := child.Wait(); err != nil {
+	if _, err := child.WaitContext(context.Background()); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
 	child.AbortDrain() // what Kill/timeout/baseCtx/tree-close-failure trigger

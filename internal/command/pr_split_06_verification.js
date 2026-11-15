@@ -629,11 +629,24 @@
         }
 
         // Read stdout/stderr concurrently; truncated stream is a prefix.
+        //
+        // A read can reject when the engine context ends, and this function
+        // must not reject: an unhandled rejection is fatal to the event loop,
+        // and several callers await it without a catch. A stream that cannot be
+        // drained is reported as truncated, which is exactly what it is — the
+        // verdict is unknown — so the failure stays inside the result.
         var streamsTruncated = false;
         async function readStream(stream, onChunk) {
             var buf = '';
             while (true) {
-                var chunk = await stream.read();
+                var chunk;
+                try {
+                    chunk = await stream.read();
+                } catch (e) {
+                    streamsTruncated = true;
+                    log.debug('verify stream read failed; capture is a prefix', { error: e.message || String(e) });
+                    break;
+                }
                 if (chunk.done) {
                     if (chunk.truncated === true) streamsTruncated = true;
                     break;
@@ -694,6 +707,8 @@
             };
         }
 
+        // A rejected wait is reported below, after the truncation gate, so a
+        // cut capture still outranks an unknown status as the diagnosis.
         if (streamsTruncated) {
             return {
                 name: branchName,
@@ -702,6 +717,20 @@
                 truncated: true,
                 exitCode: exitCode,
                 error: 'verification output capture was cut short before EOF: the verdict is unknown'
+            };
+        }
+
+        // A rejected wait means the exec layer never recorded an exit status.
+        // Reporting it as `exit -1` with an empty explanation told the operator
+        // nothing: a broken spawn/wait looked exactly like a verify command that
+        // failed without writing to stderr. The reason is carried through.
+        if (waitError) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: exitCode,
+                error: 'verify wait failed after ' + elapsedMs + 'ms with no exit status: ' + String((waitError && waitError.message) || waitError)
             };
         }
 

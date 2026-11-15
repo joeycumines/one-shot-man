@@ -694,6 +694,21 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			wantMessage:   "process tree close failed: permission denied",
 			wantTruncated: false,
 		},
+		{
+			// A stream read can reject when the engine context ends. That
+			// rejection must not escape: callers await collectSpawnOutput
+			// without a catch, and an unhandled rejection is fatal to the
+			// event loop. An undrainable stream is a prefix capture.
+			name:          "stream read rejection becomes a cut capture",
+			stdoutChunks:  `[{done: false, value: 'partial\n'}, REJECT]`,
+			stderrChunks:  `[{done: true}]`,
+			waitResult:    `{code: 0, signal: null}`,
+			wantStdout:    "partial\n",
+			wantCode:      -1,
+			wantError:     true,
+			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
+			wantTruncated: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -707,10 +722,16 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 						var queue = chunks.slice();
 						return {
 							read: async function() {
-								return queue.length > 0 ? queue.shift() : {done: true};
+								if (queue.length === 0) return {done: true};
+								var next = queue.shift();
+								// The REJECT marker stands in for a read that
+								// rejects when the engine context ends.
+								if (next === REJECT) throw new Error('read: context canceled');
+								return next;
 							}
 						};
 					}
+					var REJECT = {};
 					var child = {
 						stdout: stream(` + test.stdoutChunks + `),
 						stderr: stream(` + test.stderrChunks + `),

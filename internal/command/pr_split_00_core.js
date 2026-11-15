@@ -1,7 +1,9 @@
 'use strict';
 // pr_split_00_core.js — Core: requires, style, config, runtime, internal helpers
 //
-// Core utilities; load first. See docs/architecture-pr-split-chunks.md.
+// Core utilities; load first. The chunk contract (load order and the exports
+// each chunk must define) lives in pr_split_manifest.json, executed by
+// loadChunkedScript in pr_split.go.
 
 (function() {
     // --- Module imports ---
@@ -340,13 +342,27 @@
     }
 
     // collectSpawnOutput drains a spawned child's stdout/stderr.
+    //
+    // Neither the drain nor the wait may reject: an unhandled rejection is
+    // fatal to the event loop, and callers await this without a catch. A stream
+    // that cannot be drained is reported as truncated — the verdict is unknown,
+    // which is exactly what it is — so the failure stays inside the result.
     async function collectSpawnOutput(child, outputFn) {
         var truncated = false;
 
         async function readAll(stream, streamOutputFn) {
             var buf = '';
             while (true) {
-                var chunk = await stream.read();
+                var chunk;
+                try {
+                    chunk = await stream.read();
+                } catch (e) {
+                    truncated = true;
+                    if (typeof log !== 'undefined' && log.debug) {
+                        log.debug('spawn stream read failed; capture is a prefix', { error: e.message || String(e) });
+                    }
+                    break;
+                }
                 if (chunk.done) {
                     if (chunk.truncated === true) truncated = true;
                     break;

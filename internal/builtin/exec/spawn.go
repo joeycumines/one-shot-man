@@ -90,6 +90,12 @@ type ChildProcess struct {
 	settled  chan struct{} // closed when drain settles
 	exitCode int
 	exitErr  error
+	// exitStatus records whether the reaper observed a real exit status for
+	// this child. It is the authority the JS wait() settlement consults: an
+	// observed status outranks a process-tree cleanup failure, because the
+	// command's outcome is known even when tidying its group failed. See
+	// recordExit and waitRejection.
+	exitStatus bool
 	// abort cuts the output pump drain promptly.
 	abort     chan struct{}
 	abortOnce sync.Once
@@ -396,24 +402,7 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	go func() {
 		waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
 
-		child.mu.Lock()
-		child.closed = true
-		if waitErr != nil {
-			if exitErr, ok := waitErr.(*osexec.ExitError); ok {
-				child.exitCode = exitErr.ExitCode()
-			} else {
-				child.exitCode = -1
-			}
-			child.exitErr = waitErr
-		}
-		if closeErr != nil {
-			child.exitErr = errors.Join(child.exitErr, &processTreeCloseError{err: closeErr})
-			// A tree close that failed cannot vouch for the pipe writers, so
-			// the drain is aborted immediately rather than bounded by the
-			// ceiling (mirrors runExecCommand's captureAbort).
-			child.AbortDrain()
-		}
-		child.mu.Unlock()
+		child.recordExit(waitErr, closeErr)
 
 		pumpDone := make(chan struct{})
 		go func() {
@@ -426,6 +415,41 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	}()
 
 	return child, nil
+}
+
+// recordExit stores the outcome of the reaper so WaitContext and the JS wait()
+// settlement read one consistent account of how the child ended.
+//
+// The exit status is recorded as a fact (exitStatus), not inferred from the
+// error's type at settlement time. `cmd.Wait()` returns nil for a child that
+// exited 0, so a nil waitErr IS an observed status; a wrapped
+// *osexec.ExitError is one too, which is why this inspects the chain with
+// errors.As rather than a bare type assertion.
+//
+// A failed process-tree close is joined into exitErr for Go callers, but it
+// never erases the status: the drain is aborted because a tree close that
+// failed cannot vouch for the pipe writers (mirrors runExecCommand's
+// captureAbort).
+func (c *ChildProcess) recordExit(waitErr, closeErr error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.closed = true
+	c.exitStatus = waitErr == nil
+	if waitErr != nil {
+		var exitErr *osexec.ExitError
+		if errors.As(waitErr, &exitErr) {
+			c.exitCode = exitErr.ExitCode()
+			c.exitStatus = true
+		} else {
+			c.exitCode = -1
+		}
+		c.exitErr = waitErr
+	}
+	if closeErr != nil {
+		c.exitErr = errors.Join(c.exitErr, &processTreeCloseError{err: closeErr})
+		c.AbortDrain()
+	}
 }
 
 // AbortDrain cuts the output pump drain promptly.

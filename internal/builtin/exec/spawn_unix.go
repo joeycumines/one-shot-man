@@ -81,6 +81,16 @@ func closeProcessGroup(cmd *osexec.Cmd, kill func(pid int, signal syscall.Signal
 	return nil
 }
 
+// exitStatusUnclassified reports whether a recorded exit status cannot be
+// presented to JS as one.
+//
+// A signalled child's ExitCode is -1, so a negative code on its own means
+// nothing; only a negative code with no signal is genuinely unclassified, and
+// that must reject rather than masquerade as the command's own status.
+func exitStatusUnclassified(code int, waitErr error) bool {
+	return code < 0 && processExitSignal(waitErr) == ""
+}
+
 func processExitSignal(err error) string {
 	var exitErr *osexec.ExitError
 	if !errors.As(err, &exitErr) {

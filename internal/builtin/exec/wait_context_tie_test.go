@@ -15,15 +15,18 @@ import (
 // waitRejection, which rejects, and an unhandled rejection is fatal to the event
 // loop (goja-eventloop requestFatalExit), tearing down every other pending
 // promise in the process.
+//
+// The tie-breaking code is platform independent, so the test spawns a
+// cross-platform command and runs on every platform.
 func TestWaitContext_ReapedChildPreemptsCancelledContext(t *testing.T) {
-	skipIfWindows(t)
 	skipSlow(t)
 
 	const iters = 50
 	for i := 0; i < iters; i++ {
+		command, args := immediateExitCommand()
 		child, err := SpawnChild(context.Background(), SpawnConfig{
-			Command: "sh",
-			Args:    []string{"-c", "exit 0"},
+			Command: command,
+			Args:    args,
 		})
 		if err != nil {
 			t.Fatalf("iter %d: spawn: %v", i, err)

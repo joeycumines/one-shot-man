@@ -261,7 +261,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.WaitContext(ctx)
-			if rejectErr := waitRejection(code, waitErr); rejectErr != nil {
+			if rejectErr := child.waitRejection(code, waitErr); rejectErr != nil {
 				handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
 					return rt.NewGoError(rejectErr)
 				}))
@@ -342,30 +342,45 @@ const outputAbortGrace = 100 * time.Millisecond
 // waitRejection reports the error that must reject the JS wait() promise, or
 // nil when the result should resolve as {code, signal}.
 //
-// A real exit status outranks a tree-cleanup failure. wait() used to reject
-// whenever its error chain carried a processTreeCloseError, even alongside a
-// valid exit status. A timeout-killed child whose process group had already
-// gone away hit exactly that: wait() rejected with "signal: killed" although
-// the child demonstrably exited, JS saw an unhandled rejection, and the
-// adapter's fatal-exit path (goja-eventloop processrejection.go:380 ->
+// A real exit status outranks a process-tree cleanup failure. wait() used to
+// reject whenever its error chain carried a processTreeCloseError, even
+// alongside a valid exit status, and the asymmetry was user-visible: a child
+// that exited 0 has `cmd.Wait() == nil`, so its chain held *only* the cleanup
+// failure and it rejected, while the same cleanup failure next to `exit 1`
+// resolved. A timeout-killed child whose process group had already gone away
+// hit the same path with "signal: killed". JS then saw an unhandled rejection
+// and the adapter's fatal-exit path (goja-eventloop processrejection.go:380 ->
 // requestFatalExit) shut the event loop down, stranding every other pending
-// promise in the process. The cleanup failure is still carried in
-// ChildProcess.exitErr for Go callers.
+// promise in the process.
 //
-// The discriminator is an *osexec.ExitError in the chain, because that is what
-// the reaper records an exit status from. Note that a signalled child's
-// ExitCode is -1, so a negative code on its own means nothing: only a negative
-// code with no signal is genuinely unclassified, and that must reject rather
-// than present itself as a status.
-func waitRejection(code int, waitErr error) error {
+// The discriminator is therefore the recorded exit status, not the error type.
+// A status is rejected only when it cannot be presented honestly: the wait was
+// cut short by the caller's context, the reaper recorded no status at all, or
+// the code is unclassified on this platform (exitStatusUnclassified). The
+// cleanup failure is still carried in ChildProcess.exitErr for Go callers.
+//
+// Both code and waitErr are the values WaitContext returned, so the settlement
+// cannot disagree with what the caller observed; recordExit's fields are read
+// under the mutex because the reaper may still be recording when a cancelled
+// wait returns early.
+func (c *ChildProcess) waitRejection(code int, waitErr error) error {
 	if waitErr == nil {
 		return nil
 	}
-	var exitErr *osexec.ExitError
-	if !errors.As(waitErr, &exitErr) {
+	// A wait cut short by context cancellation observed no status by
+	// definition, and the reaper may be finishing concurrently: reject rather
+	// than reporting a status the caller never received.
+	if errors.Is(waitErr, context.Canceled) || errors.Is(waitErr, context.DeadlineExceeded) {
 		return waitErr
 	}
-	if code < 0 && processExitSignal(waitErr) == "" {
+	c.mu.Lock()
+	exitStatus := c.exitStatus
+	c.mu.Unlock()
+
+	if !exitStatus {
+		return waitErr
+	}
+	if exitStatusUnclassified(code, waitErr) {
 		return waitErr
 	}
 	return nil

@@ -224,6 +224,21 @@ func (t *windowsProcessTree) close(_ *osexec.Cmd) error {
 	return windows.CloseHandle(job)
 }
 
+// exitStatusUnclassified reports whether a recorded exit status cannot be
+// presented to JS as one.
+//
+// Never on Windows: a process exit code is a DWORD, and the reaper stores it as
+// `int(uint32)`, so every status the OS reports reads back non-negative on
+// 64-bit targets and — importantly — an NTSTATUS such as
+// 0xC0000142 (STATUS_DLL_INIT_FAILED) reads back NEGATIVE on 32-bit targets
+// (release.yml builds windows/386). Treating that negative value as an
+// unclassified failure would reject a perfectly ordinary ConPTY exit, so the
+// signed-code heuristic that Unix needs (where a signal makes the code -1) must
+// not be applied here.
+func exitStatusUnclassified(int, error) bool {
+	return false
+}
+
 func processExitSignal(error) string {
 	return ""
 }

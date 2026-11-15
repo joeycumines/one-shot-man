@@ -1,15 +1,38 @@
 package exec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	osexec "os/exec"
+	"runtime"
 	"syscall"
 	"testing"
 )
 
-// TestWaitRejection guards the decision that a real exit status is delivered
-// even when cleaning up the process tree also failed.
+// exitErrorFor produces a real *osexec.ExitError with the given code by
+// running a trivial child, so the decision table is fed the same value type
+// the reaper records rather than a synthesized struct with no ProcessState.
+func exitErrorFor(t *testing.T, code int) *osexec.ExitError {
+	t.Helper()
+	command, args := "sh", []string{"-c", fmt.Sprintf("exit %d", code)}
+	if runtime.GOOS == "windows" {
+		command, args = "cmd.exe", []string{"/C", fmt.Sprintf("exit %d", code)}
+	}
+	cmd := osexec.Command(command, args...)
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("helper command for exit %d unexpectedly succeeded", code)
+	}
+	var exitErr *osexec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("helper command for exit %d returned %T, want *osexec.ExitError", code, err)
+	}
+	return exitErr
+}
+
+// TestWaitRejection covers the decision table that turns a reaped child into a
+// JS wait() settlement.
 //
 // wait() used to reject whenever its error chain carried a
 // processTreeCloseError, even alongside a valid exit status. A timeout-killed
@@ -17,51 +40,170 @@ import (
 // rejected with "signal: killed" although the child demonstrably exited, JS
 // saw an unhandled rejection, and the adapter's fatal-exit path shut the event
 // loop down, stranding every other pending promise in the process.
+//
+// The asymmetry went further than the timeout case: a child that exited 0 had
+// `cmd.Wait() == nil`, so its recorded error chain held *only* the tree-close
+// failure and wait() rejected, while the identical cleanup failure next to
+// `exit 1` resolved. A real exit status therefore has to be recorded as a fact
+// about the child (exitStatus) rather than inferred from the error type, which
+// is what these cases pin down.
 func TestWaitRejection(t *testing.T) {
-	exitStatus := &osexec.ExitError{ProcessState: nil}
+	exitSeven := exitErrorFor(t, 7)
+	exitOne := exitErrorFor(t, 1)
 
 	for _, tc := range []struct {
-		name string
-		code int
-		err  error
-		want bool // true = must reject
+		name          string
+		waitErr       error
+		closeErr      error
+		wantCode      int
+		wantReject    bool
+		skipOnWindows bool
 	}{
-		{name: "no error", code: 0, err: nil, want: false},
-		{name: "exit status", code: 7, err: exitStatus, want: false},
 		{
-			name: "exit status with tree close failure",
-			code: 0,
-			err:  errors.Join(exitStatus, &processTreeCloseError{err: syscall.EPERM}),
-			want: false,
+			name:     "exit zero",
+			wantCode: 0,
 		},
 		{
-			name: "tree close failure only",
-			code: 0,
-			err:  &processTreeCloseError{err: syscall.EPERM},
-			want: true,
-		},
-		{name: "opaque failure", code: 0, err: fmt.Errorf("wait failed"), want: true},
-		{
-			name: "context cancellation",
-			code: -1,
-			err:  fmt.Errorf("wait: %w", errors.New("context canceled")),
-			want: true,
+			// The reported defect: a clean exit whose process-group close
+			// failed. It resolves, because the exit status is a fact.
+			name:     "exit zero with tree close failure",
+			closeErr: syscall.EPERM,
+			wantCode: 0,
 		},
 		{
-			// A negative code with no signal is unclassified: the reaper sets
-			// -1 whenever it cannot extract an exit status, so it must not be
-			// presented as one.
-			name: "unclassified negative code with exit status in chain",
-			code: -1,
-			err:  exitStatus,
-			want: true,
+			name:     "non-zero exit",
+			waitErr:  exitSeven,
+			wantCode: 7,
+		},
+		{
+			name:     "non-zero exit with tree close failure",
+			waitErr:  exitOne,
+			closeErr: syscall.EPERM,
+			wantCode: 1,
+		},
+		{
+			name:       "opaque wait failure",
+			waitErr:    fmt.Errorf("wait failed"),
+			wantCode:   -1,
+			wantReject: true,
+		},
+		{
+			name:       "opaque wait failure with tree close failure",
+			waitErr:    fmt.Errorf("wait failed"),
+			closeErr:   syscall.EPERM,
+			wantCode:   -1,
+			wantReject: true,
+		},
+		{
+			name:       "context cancellation",
+			waitErr:    fmt.Errorf("wait: %w", context.Canceled),
+			wantCode:   -1,
+			wantReject: true,
+		},
+		{
+			// A synthesized ExitError carries no ProcessState, so there is no
+			// signal to read: a negative code with no signal is unclassified
+			// and must reject rather than masquerade as a status.
+			// processExitSignal tolerates the nil ProcessState.
+			name:          "unclassified negative code with exit status in chain",
+			waitErr:       &osexec.ExitError{},
+			wantCode:      -1,
+			wantReject:    true,
+			skipOnWindows: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := waitRejection(tc.code, tc.err) != nil
-			if got != tc.want {
-				t.Fatalf("waitRejection(%d, %v) rejected = %v, want %v", tc.code, tc.err, got, tc.want)
+			if tc.skipOnWindows && runtime.GOOS == "windows" {
+				t.Skip("Windows exit codes are unsigned, so a negative code is never unclassified there")
+			}
+			child := &ChildProcess{}
+			child.recordExit(tc.waitErr, tc.closeErr)
+
+			if child.exitCode != tc.wantCode {
+				t.Fatalf("exitCode = %d, want %d", child.exitCode, tc.wantCode)
+			}
+			if got := child.waitRejection(tc.wantCode, tc.waitErr) != nil; got != tc.wantReject {
+				t.Fatalf("waitRejection(%v) rejected = %v, want %v (exitCode=%d exitStatus=%v exitErr=%v)",
+					tc.waitErr, got, tc.wantReject, child.exitCode, child.exitStatus, child.exitErr)
 			}
 		})
 	}
+}
+
+// TestWaitRejection_TreeCloseFailureAfterCleanExit is the end-to-end form of
+// the decision above: a real child exits 0, the process-group close then
+// fails, and the wait must still deliver {code: 0, signal: null}.
+//
+// This is the shape a Darwin timeout produced in CI, where the only group
+// member is the exited-but-unreaped leader and the pre-reap signal returns
+// EPERM.
+func TestWaitRejection_TreeCloseFailureAfterCleanExit(t *testing.T) {
+	skipIfWindows(t)
+
+	cmd := osexec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start helper process: %v", err)
+	}
+
+	waitErr, closeErr := waitAndCloseProcessTree(cmd, &failingCloseTree{err: syscall.EPERM})
+	if waitErr != nil {
+		t.Fatalf("waitErr = %v, want nil for an exit-0 command", waitErr)
+	}
+	if !errors.Is(closeErr, syscall.EPERM) {
+		t.Fatalf("closeErr = %v, want EPERM", closeErr)
+	}
+
+	child := &ChildProcess{}
+	child.recordExit(waitErr, closeErr)
+
+	if child.exitCode != 0 {
+		t.Fatalf("exitCode = %d, want 0", child.exitCode)
+	}
+	if !child.exitStatus {
+		t.Fatal("exitStatus = false, want true for a child whose exit 0 was observed")
+	}
+	if rejectErr := child.waitRejection(child.exitCode, child.exitErr); rejectErr != nil {
+		t.Fatalf("a clean exit must outrank the tree-cleanup failure, rejected with: %v", rejectErr)
+	}
+	if child.exitErr == nil || !errors.Is(child.exitErr, syscall.EPERM) {
+		t.Fatalf("the cleanup failure must still be carried for Go callers, got %v", child.exitErr)
+	}
+}
+
+// TestWaitRejection_TreeCloseFailureAfterNonZeroExit keeps the case that
+// already worked from regressing: a non-zero exit alongside a cleanup failure
+// resolves with its code.
+func TestWaitRejection_TreeCloseFailureAfterNonZeroExit(t *testing.T) {
+	skipIfWindows(t)
+
+	cmd := osexec.Command("sh", "-c", "exit 1")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start helper process: %v", err)
+	}
+
+	waitErr, closeErr := waitAndCloseProcessTree(cmd, &failingCloseTree{err: syscall.EPERM})
+	child := &ChildProcess{}
+	child.recordExit(waitErr, closeErr)
+
+	if child.exitCode != 1 {
+		t.Fatalf("exitCode = %d, want 1", child.exitCode)
+	}
+	if !child.exitStatus {
+		t.Fatal("exitStatus = false, want true for a child whose exit 1 was observed")
+	}
+	if rejectErr := child.waitRejection(child.exitCode, child.exitErr); rejectErr != nil {
+		t.Fatalf("non-zero exit must resolve, rejected with: %v", rejectErr)
+	}
+}
+
+// failingCloseTree fails every close, standing in for a process group that has
+// already gone away.
+type failingCloseTree struct {
+	err error
+}
+
+func (*failingCloseTree) attach(*osexec.Cmd) error { return nil }
+func (*failingCloseTree) kill(*osexec.Cmd) error   { return nil }
+func (f *failingCloseTree) close(*osexec.Cmd) error {
+	return f.err
 }

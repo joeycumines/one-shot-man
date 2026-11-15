@@ -18,7 +18,7 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-07-flag-parsing.js` | Flag parsing demo: typed flags, introspection, visit/visitAll | Non-interactive |
 | `example-08-aimux-session.js` | Interactive PTY TUI with `osm:aimux`: spawn, async I/O, state machine, parser, viewport, textarea | Interactive (BubbleTea) |
 | `example-13-split-pane.js` | Terminal compositor: split panes, focus cycling, animated content, lipgloss styling | Interactive (BubbleTea) |
-| `example-15-bouncing-logo.js` | Bouncing terminal: nested PTY session with ctrl+letter controls (^P pause, ^B bigger, ^S smaller, ^Q quit), chord mode (ctrl+x prefix), compositor rendering, mouse/keyboard forwarding | Interactive (BubbleTea) |
+| `example-15-bouncing-logo.js` | Bouncing terminal: nested PTY session with a `termmux.newKeymap` mux keymap (^P pause, ^B bigger, ^S smaller, ^Q quit, ctrl+x chord prefix), compositor rendering, mouse/keyboard forwarding | Interactive (BubbleTea) |
 | `example-16-freeze-capture.js` | Capture terminal output with `osm:termmux` and render it as SVG with `osm:freezeterm` (skips cleanly when freeze is not installed) | Non-interactive |
 
 ## Tests & Benchmarks

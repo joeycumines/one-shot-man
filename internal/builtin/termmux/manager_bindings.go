@@ -298,6 +298,7 @@ func wrapSessionManager(ctx context.Context, adapter *gojaeventloop.Adapter, loo
 		adapter:          adapter,
 		sb:               statusbar.New(stdout),
 		toggleKey:        parent.DefaultToggleKey,
+		mgrOrder:         newOrderChain(),
 	}
 	rows, cols := mgr.ConfiguredTermSize()
 	if rows <= 0 {

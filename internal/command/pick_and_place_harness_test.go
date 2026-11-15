@@ -97,7 +97,9 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 
 	// Create test environment
 	env := NewPickAndPlaceTestProcessEnv(t)
-	timeout := 60 * time.Second
+	// 120s total: on loaded CI runners (macos under `make -j`) startup waits
+	// are per-pattern (30s debug / 20s menu) and must fit inside this budget.
+	timeout := 120 * time.Second
 
 	testCtx, cancel := context.WithTimeout(ctx, timeout)
 
@@ -156,12 +158,17 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 	// The debug JSON markers only appear in the TUI alternate screen, not in console output
 	// This ensures we're seeing actual TUI output, not just the pre-startup console.log
 	//
-	// Use per-pattern timeouts (15s each) rather than the harness-level context
-	// because termtest's Expect may not reliably respect context cancellation.
+	// Each pattern gets its own generous per-pattern timeout (30s debug, 20s
+	// menu) rather than relying on the harness-level context alone, because on
+	// loaded CI runners (macos under `make -j`) process startup plus the first
+	// rendered frame can exceed the old 15s/10s budgets even though the harness
+	// context (60s) still has headroom. All waits share the snapshot taken
+	// above and poll every 10ms, so a slow-starting child is observed as soon
+	// as it renders.
 	debugPatterns := []string{"__place_debug_start__", `"m":"`, "__place_debug_end__"}
 	found := false
 	for _, pattern := range debugPatterns {
-		patternCtx, patternCancel := context.WithTimeout(h.ctx, 15*time.Second)
+		patternCtx, patternCancel := context.WithTimeout(h.ctx, 30*time.Second)
 		if err := h.console.Expect(patternCtx, snap, termtest.Contains(pattern), "debug overlay"); err == nil {
 			t.Logf("Simulator started, detected debug pattern: %s", pattern)
 			found = true
@@ -175,7 +182,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 	if !found {
 		menuPatterns := []string{"PICK-AND-PLACE", "Mode:", "@", "█"}
 		for _, pattern := range menuPatterns {
-			patternCtx, patternCancel := context.WithTimeout(h.ctx, 10*time.Second)
+			patternCtx, patternCancel := context.WithTimeout(h.ctx, 20*time.Second)
 			if err := h.console.Expect(patternCtx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
 				t.Logf("Simulator started, detected: %s", pattern)
 				// Poll for TUI to stabilize after alternate screen entry — wait for

@@ -712,7 +712,10 @@ func TestSessionManager_BasicLifecycle(t *testing.T) {
 	rec := newRecordingStringIO()
 	sio := parent.NewStringIOSession(rec)
 	sio.Start()
-	sessionWrapper := wrapInteractiveSession(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindCapture)
+	sessionWrapper := func() goja.Value {
+		v, _ := wrapInteractiveSessionWithOrder(ctx, adapterForRuntime(t, runtime), runtime, sio, parent.SessionKindCapture)
+		return v
+	}()
 	setOnLoop(t, runtime, "session", sessionWrapper)
 
 	v, err := awaitJSValue(t, runtime, `return mux.register(session, {name: 'test', kind: 'pty'})`)

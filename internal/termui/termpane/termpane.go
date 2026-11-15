@@ -5,6 +5,7 @@
 package termpane
 
 import (
+	"errors"
 	"image/color"
 	"log/slog"
 	"regexp"
@@ -402,10 +403,12 @@ func (m *Model) forwardKey(msg tea.KeyPressMsg) {
 // logical delivery. When the child has enabled bracketed paste mode (DECSET
 // ?2004h, captured on the snapshot), the content is wrapped in the ESC[200~ /
 // ESC[201~ delimiters so the child's own paste handling receives it as a
-// paste; otherwise the raw content is written. The bytes go to the PTY in
-// chunks of at most PassthroughReadBufferSize: the PTY write path issues a
-// single write(2) per call, and one oversized write could be truncated, so a
-// chunk the passthrough path already proves is delivered whole is the unit.
+// paste; otherwise the raw content is written. The whole payload is handed
+// to the manager as a staged write: it is delivered to the PTY in a single
+// Write call, so the code does not artificially split the paste into
+// multiple contiguous writes. (The kernel may still segment a large write
+// on the wire; bracketed-paste delimiters are what let the child reassemble
+// it — the guarantee here is "no artificial boundary", not wire atomicity.)
 func (m *Model) forwardPaste(content string) {
 	if content == "" {
 		return
@@ -414,21 +417,36 @@ func (m *Model) forwardPaste(content string) {
 	bracketed := m.snap != nil && m.snap.BracketedPaste
 	m.mu.Unlock()
 
+	deliverPaste(func(data []byte) error {
+		return m.manager.InputStaged(m.sessionID, data)
+	}, bracketed, content)
+}
+
+// deliverPaste sends one paste to a session through the staged single-Write
+// path. When the payload is bracketed and the staged write fails with a
+// SHORT write (ErrShortWrite), the end-of-paste delimiter ESC[201~ is sent
+// best-effort as a second staged write: the partial write may have left the
+// child inside ESC[200~, and the terminator is what closes the bracket —
+// without it subsequent input would be parsed as paste content. A full
+// failure that wrote ZERO bytes (session gone, manager stopped, locked
+// session, invalid transition) must NOT send the terminator: nothing was
+// written, so there is no open bracket, and emitting a stray ESC[201~ would
+// leak into the child's normal input. A raw (non-bracketed) paste sends no
+// terminator.
+func deliverPaste(input func(data []byte) error, bracketed bool, content string) {
 	payload := content
 	if bracketed {
 		payload = "\x1b[200~" + content + "\x1b[201~"
 	}
-	data := []byte(payload)
-	for len(data) > 0 {
-		chunk := data
-		if len(chunk) > termmux.PassthroughReadBufferSize {
-			chunk = chunk[:termmux.PassthroughReadBufferSize]
+	if err := input([]byte(payload)); err != nil {
+		slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
+		if bracketed && errors.Is(err, termmux.ErrShortWrite) {
+			// Partial write: the child may be stuck inside ESC[200~ — close
+			// the bracket best-effort.
+			if terr := input([]byte("\x1b[201~")); terr != nil {
+				slog.Warn("termpane paste terminator failed", "error", terr)
+			}
 		}
-		if err := m.manager.InputSession(m.sessionID, chunk); err != nil {
-			slog.Debug("termpane paste forward failed", "bytes", len(payload), "error", err)
-			return
-		}
-		data = data[len(chunk):]
 	}
 }
 

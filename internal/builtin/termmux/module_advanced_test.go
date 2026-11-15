@@ -440,8 +440,8 @@ func TestKeyToTermBytes_AltCombinations(t *testing.T) {
 		// alt+key → ESC prefix + inner key bytes
 		{"alt+a", `tm.keyToTermBytes('alt+a')`, "\x1ba"},
 		{"alt+enter", `tm.keyToTermBytes('alt+enter')`, "\x1b\r"},
-		{"alt+up", `tm.keyToTermBytes('alt+up')`, "\x1b\x1b[A"},
-		{"alt+left", `tm.keyToTermBytes('alt+left')`, "\x1b\x1b[D"},
+		{"alt+up", `tm.keyToTermBytes('alt+up')`, "\x1b[1;3A"},
+		{"alt+left", `tm.keyToTermBytes('alt+left')`, "\x1b[1;3D"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

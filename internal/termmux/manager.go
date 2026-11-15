@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -455,7 +456,7 @@ func (s *ScreenSnapshot) WriteCapture(w io.Writer, kind CaptureKind) error {
 		return err
 	}
 	if n != len(text) {
-		return fmt.Errorf("%w: wrote %d of %d bytes", io.ErrShortWrite, n, len(text))
+		return fmt.Errorf("%w: wrote %d of %d bytes", ErrShortWrite, n, len(text))
 	}
 	return nil
 }
@@ -857,6 +858,21 @@ const (
 	// session's published snapshot. Payload: snapshotReplaceForTest. Reply
 	// value: none. Test-only; never used in production paths.
 	reqReplaceSnapshotForTest
+
+	// reqInputStaged asks the worker to deliver data to a specific session
+	// in a single Write call, so large payloads (e.g. pastes) are not
+	// artificially split into multiple contiguous writes. Payload:
+	// inputSessionPayload. Reply value: nil.
+	// Declared LAST in the block so its numeric value never shifts earlier
+	// kinds (not serialized anywhere, but kept stable for hygiene).
+	reqInputStaged
+
+	// reqInputStagedActive asks the worker to deliver data to the CURRENTLY
+	// active session in a single Write call, resolving the target on the
+	// worker in the same request (same resolution handleInput uses), so the
+	// resolution and the write are atomic. Payload: []byte. Reply: nil.
+	// Declared after reqInputStaged for the same hygiene reason.
+	reqInputStagedActive
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -1291,6 +1307,11 @@ type SessionManager struct {
 	readerCtx    context.Context
 	readerCancel context.CancelFunc
 
+	// running reports whether the worker goroutine is active (set true
+	// when Run starts processing, false when Run returns). Read via
+	// IsRunning; safe from any goroutine.
+	running atomic.Bool
+
 	// --- Fields below are owned exclusively by the worker goroutine. ---
 	// They are listed here for documentation but MUST NOT be accessed
 	// outside the worker's select loop.
@@ -1439,6 +1460,7 @@ var ErrInvalidTransition = errors.New("termmux: invalid state transition")
 func (m *SessionManager) Run(ctx context.Context) error {
 	defer close(m.done)
 	defer m.eventBus.Close()
+	defer m.running.Store(false)
 
 	m.reqMu.Lock()
 	if m.closed {
@@ -1447,7 +1469,10 @@ func (m *SessionManager) Run(ctx context.Context) error {
 		return nil
 	}
 	// Publish startup while holding the admission lock so Close cannot race
-	// with this transition.
+	// with this transition. running=true is published HERE — after the
+	// closed check and together with close(m.started) — so IsRunning never
+	// reports true while every request would fail with ErrManagerNotRunning.
+	m.running.Store(true)
 	close(m.started)
 	m.reqMu.Unlock()
 
@@ -1486,6 +1511,11 @@ func (m *SessionManager) Close() {
 	m.reqMu.Lock()
 	if !m.closed {
 		m.closed = true
+		// Flip running off together with the closed barrier so IsRunning
+		// never reports true once requests start failing with
+		// ErrManagerNotRunning (the worker's deferred Store(false) is a
+		// harmless idempotent backstop).
+		m.running.Store(false)
 		close(m.closeCh)
 	}
 	m.reqMu.Unlock()
@@ -1507,6 +1537,14 @@ func (m *SessionManager) Started() <-chan struct{} {
 	return m.started
 }
 
+// IsRunning reports whether the worker goroutine is currently active — true
+// after Run has started processing and false once Run has returned (via
+// Close or context cancellation). It lets callers distinguish a stopped
+// manager from other error conditions without issuing a request.
+func (m *SessionManager) IsRunning() bool {
+	return m.running.Load()
+}
+
 // Done returns a channel that is closed when Run returns and all manager
 // resources have been released. It is safe to observe from any goroutine.
 func (m *SessionManager) Done() <-chan struct{} {
@@ -1524,6 +1562,7 @@ func (m *SessionManager) signalClose() {
 		return
 	}
 	m.closed = true
+	m.running.Store(false)
 	close(m.closeCh)
 }
 
@@ -1673,6 +1712,35 @@ type inputSessionPayload struct {
 // InputSession writes data to the specified session's PTY.
 func (m *SessionManager) InputSession(id SessionID, data []byte) error {
 	return m.sendRequest(reqInputSession, inputSessionPayload{id: id, data: data}).err
+}
+
+// InputStaged delivers data to the specified session's PTY in a single
+// Write call: the payload is copied into one buffer and handed to the
+// session whole, so this code never artificially splits a large payload
+// (e.g. a paste) into multiple contiguous writes. (A single write(2) to a
+// PTY may still be segmented by the kernel for payloads larger than the
+// line-discipline buffer; the guarantee is no artificial boundary, and
+// bracketed-paste delimiters let the child reassemble.) Ordering with
+// other input requests is preserved because this goes through the same
+// worker queue.
+//
+// The payload is copied defensively at request time so the caller may reuse
+// or mutate its buffer immediately after the call returns.
+func (m *SessionManager) InputStaged(id SessionID, data []byte) error {
+	return m.sendRequest(reqInputStaged, inputSessionPayload{id: id, data: bytes.Clone(data)}).err
+}
+
+// InputStagedActive delivers data to the currently active session's PTY in a
+// single Write call, resolving the active session ON THE WORKER in the same
+// request — the same resolution handleInput uses (active window's pane
+// manager when a window is active, else m.activeID). Unlike a separate
+// ActiveID()+InputStaged() pair, the resolution and the write are atomic: an
+// Activate/window switch between them cannot misroute the bytes. With no
+// active session it returns ErrSessionNotFound; a locked active session is
+// rejected (staged payloads must never feed the unlock prompt). The payload
+// is copied at request time like InputStaged.
+func (m *SessionManager) InputStagedActive(data []byte) error {
+	return m.sendRequest(reqInputStagedActive, bytes.Clone(data)).err
 }
 
 // SendKeys converts named keys to terminal bytes and writes them to the
@@ -2297,6 +2365,10 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleInput(req.payload.([]byte))
 	case reqInputSession:
 		resp = m.handleInputSession(req.payload.(inputSessionPayload))
+	case reqInputStaged:
+		resp = m.handleInputStaged(req.payload.(inputSessionPayload))
+	case reqInputStagedActive:
+		resp = m.handleInputStagedActive(req.payload.([]byte))
 	case reqSendKeys:
 		resp = m.handleSendKeys(req.payload.(sendKeysPayload))
 	case reqResetActivity:
@@ -2488,7 +2560,7 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 	// captures ms.
 	v.ResponseWriter = func(data []byte) {
 		if ms.session != nil {
-			if _, err := ms.session.Write(data); err != nil {
+			if err := WriteFull(ms.session, data); err != nil {
 				slog.Debug("response write failed", "sessionID", id, "error", err)
 			}
 		}
@@ -2619,7 +2691,7 @@ func (m *SessionManager) handleInput(data []byte) response {
 				}
 				continue
 			}
-			if _, err := ms.session.Write(data); err != nil && firstErr == nil {
+			if err := WriteFull(ms.session, data); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
@@ -2638,11 +2710,30 @@ func (m *SessionManager) handleInput(data []byte) response {
 	if ms.lock.IsLocked() {
 		return m.handleLockedInput(data, ms, activeSession)
 	}
-	_, err := ms.session.Write(data)
-	return response{err: err}
+	return response{err: WriteFull(ms.session, data)}
 }
 
+// handleInputSession writes data to a specific session with a single
+// session.Write call. InputStaged differs only in that the payload is
+// defensively copied at request time (InputStaged) so the caller may reuse
+// its buffer immediately, whereas InputSession aliases the caller's slice
+// for the duration of the (blocking) request — safe today because
+// sendRequest blocks until the worker has completed the Write, but do not
+// queue the payload anywhere without copying if that ever changes.
 func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
+	return m.handleInputToSession(p.id, p.data)
+}
+
+// handleInputStaged is handleInputSession with single-Write delivery: the
+// payload was copied once at request time and is written with one
+// session.Write call carrying the full payload (the sponge path for
+// pastes — no artificial split into contiguous chunks).
+//
+// Unlike handleInputSession, staged input to a LOCKED session is rejected:
+// a staged payload (typically a bracketed paste) must never feed the unlock
+// password buffer, where it would corrupt the prompt and leak its length via
+// the prompt's mask.
+func (m *SessionManager) handleInputStaged(p inputSessionPayload) response {
 	ms, ok := m.sessions[p.id]
 	if !ok {
 		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, p.id)}
@@ -2651,10 +2742,65 @@ func (m *SessionManager) handleInputSession(p inputSessionPayload) response {
 		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, p.id, ms.state)}
 	}
 	if ms.lock.IsLocked() {
-		return m.handleLockedInput(p.data, ms, p.id)
+		return response{err: fmt.Errorf("termmux: cannot send staged input to locked session %d", p.id)}
 	}
-	_, err := ms.session.Write(p.data)
-	return response{err: err}
+	return response{err: WriteFull(ms.session, p.data)}
+}
+
+// handleInputStagedActive resolves the active session exactly like
+// handleInput (active window's pane manager when a window is active) and
+// delivers the payload with a single WriteFull — resolution and write happen
+// in this one worker turn, so they cannot be separated by a concurrent
+// Activate/window switch. Locked active sessions are rejected for the same
+// reason as handleInputStaged. It intentionally does NOT fan out to
+// synchronized panes (see handleInputToSession's comment).
+func (m *SessionManager) handleInputStagedActive(data []byte) response {
+	activeSession := m.activeID
+	if m.activeWindowID != 0 {
+		activeSession = m.activePaneManager().activeSessionID()
+	}
+	if activeSession == 0 {
+		return response{err: ErrSessionNotFound}
+	}
+	ms, ok := m.sessions[activeSession]
+	if !ok {
+		return response{err: fmt.Errorf("%w: active session %d disappeared",
+			ErrSessionNotFound, activeSession)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s",
+			ErrInvalidTransition, activeSession, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return response{err: fmt.Errorf("termmux: cannot send staged input to locked session %d", activeSession)}
+	}
+	return response{err: WriteFull(ms.session, data)}
+}
+
+// handleInputToSession is the shared worker-side input path for
+// reqInputSession and reqInputStaged (both deliver to a session addressed by
+// explicit ID in one full Write): validate the session, route locked input to
+// the unlock prompt, otherwise one full Write.
+//
+// Intentional divergence from handleInput: targeted input (by explicit ID)
+// does NOT fan out to synchronized panes — Synchronize() is a property of
+// the active pane group, and a caller addressing a specific session by ID
+// wants exactly that session. handleInput (the no-ID path) resolves the
+// active session and honors Synchronize(). Note reqInputStagedActive is a
+// separate request kind with its own handler (it resolves the active session
+// on the worker). Covered by TestSessionManager_InputSession_SynchronizePanesIgnored.
+func (m *SessionManager) handleInputToSession(id SessionID, data []byte) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, id, ms.state)}
+	}
+	if ms.lock.IsLocked() {
+		return m.handleLockedInput(data, ms, id)
+	}
+	return response{err: WriteFull(ms.session, data)}
 }
 
 func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
@@ -2669,17 +2815,27 @@ func (m *SessionManager) handleSendKeys(p sendKeysPayload) response {
 		return response{err: fmt.Errorf("termmux: cannot send keys to locked session %d", p.id)}
 	}
 
+	// Encode with the child's own application-cursor AND application-keypad
+	// modes from the latest published snapshot, so keypad keys and nav keys
+	// land exactly as they would from a physical keyboard (encodeModNav
+	// ignores appCursor, but the unmodified nav/home/end branch and the
+	// keypad branch do not).
+	appCursor := false
+	appKeypad := false
+	if snap := ms.snapshot.Load(); snap != nil {
+		appCursor = snap.ApplicationCursor
+		appKeypad = snap.KeypadApplication
+	}
 	var buf strings.Builder
 	for _, key := range p.keys {
-		seq, ok := KeyToTermBytes(key, false, false)
+		seq, ok := KeyToTermBytes(key, appCursor, appKeypad)
 		if !ok {
 			return response{err: fmt.Errorf("termmux: unrecognized key %q", key)}
 		}
 		buf.WriteString(seq)
 	}
 
-	_, err := ms.session.Write([]byte(buf.String()))
-	return response{err: err}
+	return response{err: WriteFull(ms.session, []byte(buf.String()))}
 }
 
 func (m *SessionManager) handleResetActivity(id SessionID) response {
@@ -3414,7 +3570,7 @@ func (m *SessionManager) handleRespawnSession(payload any) response {
 
 	v.ResponseWriter = func(data []byte) {
 		if newMS.session != nil {
-			if _, err := newMS.session.Write(data); err != nil {
+			if err := WriteFull(newMS.session, data); err != nil {
 				slog.Debug("response write failed", "sessionID", newID, "error", err)
 			}
 		}

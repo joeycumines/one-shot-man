@@ -86,11 +86,19 @@ type muxState struct {
 	termRowsCached      atomic.Int64
 	termColsCached      atomic.Int64
 	swappedOnce         bool
-	persistenceMu       sync.Mutex
-	mu                  sync.RWMutex
-	inPassthrough       bool
-	onListeners         map[int]*onListener
-	nextOnID            int
+	// mgrOrder linearizes un-awaited manager input calls so they reach the
+	// SessionManager worker in JS call order (reserve happens synchronously
+	// on the event-loop goroutine, before the TrackPromise goroutine starts).
+	// Seeded by the constructor; mgrOrderOnce lazily initializes it for
+	// zero-value muxState values constructed in tests, without a racy write
+	// to the field itself.
+	mgrOrder      *orderChain
+	mgrOrderOnce  sync.Once
+	persistenceMu sync.Mutex
+	mu            sync.RWMutex
+	inPassthrough bool
+	onListeners   map[int]*onListener
+	nextOnID      int
 }
 
 func (s *muxState) cacheEvent(event parent.Event) {

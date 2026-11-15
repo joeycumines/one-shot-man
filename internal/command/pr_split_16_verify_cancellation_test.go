@@ -76,7 +76,7 @@ func TestKeyToTermBytes_SpecialKeys_T386(t *testing.T) {
 		// Alt+key → ESC prefix.
 		check('alt+a', fn('alt+a'), '\x1ba');
 		check('alt+enter', fn('alt+enter'), '\x1b\r');
-		check('alt+up', fn('alt+up'), '\x1b\x1b[A');
+		check('alt+up', fn('alt+up'), '\x1b[1;3A');
 
 		// Bracketed paste.
 		check('paste[hello]', fn('[hello]'), 'hello');

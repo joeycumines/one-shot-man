@@ -2,7 +2,7 @@
 // example-15-bouncing-logo.js — Bouncing Terminal: a full-colour, mouse/keyboard-capable PTY bouncing around the screen
 //
 // Demonstrates a thin JavaScript orchestration layer over reusable Go primitives:
-//   - osm:termmux      (bounded session, control router, copy mode, prefix dispatcher)
+//   - osm:termmux      (bounded session, copy mode, configurable keymap)
 //   - osm:termui/termpane (real BubbleTea-model terminal pane: colour, mouse, keys, resize)
 //   - osm:termui/compositor (panes, chrome, generation-cached rendering)
 //   - osm:bubbletea    (model/update/view/run/tick)
@@ -92,7 +92,6 @@ var state = {
     tickCount: 0,
     controlsHeight: CONFIG.controlsHeight,
     quit: false,
-    muxPrefix: false,
     message: '',
     messageUntil: 0,
     cursor: null,
@@ -152,7 +151,11 @@ var statusStyle = lipgloss.newStyle().foreground('#565F89');
 var highlightStyle = lipgloss.newStyle().foreground('#E0AF68').bold(true);
 var warningStyle = lipgloss.newStyle().foreground('#FF5370').bold(true);
 
-var router = termmux.newControlRouter({
+// All mux keys are configured in ONE place via the core Keymap: direct keys,
+// a chord prefix, and (optionally) a passthrough key. Nothing is hardcoded
+// elsewhere — rebind at runtime with km.bind(...)/km.setPrefix(...).
+var km = termmux.newKeymap({
+    prefix: 'ctrl+x',
     keys: {
         'ctrl+p': 'pause',
         'ctrl+b': 'bigger',
@@ -160,16 +163,13 @@ var router = termmux.newControlRouter({
         'ctrl+q': 'quit',
         'ctrl+c': 'quit',
     },
-    chordMode: {
-        prefix: 'ctrl+x',
-        actions: {
-            's': 'smaller',
-            'b': 'bigger',
-            'p': 'pause',
-            'q': 'quit',
-            'c': 'copyMode',
-            'ctrl+c': 'quit',
-        },
+    chords: {
+        's': 'smaller',
+        'b': 'bigger',
+        'p': 'pause',
+        'q': 'quit',
+        'c': 'copyMode',
+        'ctrl+c': 'quit',
     },
 });
 
@@ -281,7 +281,7 @@ function renderTitle() {
 }
 
 function renderChrome() {
-    var prefix = router.inChordMode() ? 'C-x-' : '';
+    var prefix = km.armed() ? 'C-x ' : '';
     var help = '^P Pause  ^B Big  ^S Small  ^Q Quit  ^X Prefix';
     var runState = state.paused ? 'PAUSED' : 'RUNNING';
     var status = 'Bounces:' + state.bounces + ' ' + runState +
@@ -345,24 +345,26 @@ function updateCompositor() {
 // ── Controls / Input ───────────────────────────────────────────────────────────
 
 function handleKey(msg) {
-    if (state.muxPrefix) {
-        state.muxPrefix = false;
-        var dispatch = termmux.handlePrefixKey({ manager: mgr, key: msg.key });
-        trackPaneOperation(Promise.resolve(dispatch).then(function(result) {
-            if (result && result.action && result.action !== 'Cancel') {
-                setMessage(result.action);
-            }
-        }), 'prefix');
-        return true;
-    }
-    if (msg.key === 'ctrl+a') {
-        state.muxPrefix = true;
-        setMessage('prefix');
-        return true;
+    // The mux keymap sees every key first. It reports {handled, action, armed}:
+    // handled=false means "forward to the child pane".
+    var r = km.handleKey(msg.key);
+    // Check handled BEFORE armed: an empty key (handled=false) must still be
+    // able to clear a stale prefix indicator, not get swallowed by the armed
+    // branch below.
+    // A chord that was cancelled/disarmed (prefix then esc/prefix, or an
+    // unbound chord key) must clear the stale "prefix" indicator immediately
+    // instead of leaving it up until the message timer expires. This runs
+    // whether or not the keymap reported the cancel as handled.
+    if (!r.armed && state.message === 'prefix') {
+        state.message = '';
+        state.messageUntil = 0;
     }
 
-    var r = router.handleKey(msg.key);
     if (r.handled) {
+        if (r.armed) {
+            setMessage('prefix');
+            return true;
+        }
         switch (r.action) {
             case 'pause':
                 state.paused = !state.paused;
@@ -376,9 +378,13 @@ function handleKey(msg) {
                 return true;
             case 'copyMode':
                 trackPaneOperation(Promise.resolve(mgr.isCopyModeActive(sid)).then(function(active) {
-                    return active ? mgr.exitCopyMode(sid) : mgr.enterCopyMode(sid);
-                }).then(function() {
-                    setMessage('copyMode');
+                    // Toggle, then label the status line with the RESULTING
+                    // state: 'copyMode' only while copy mode is active.
+                    return (active ? mgr.exitCopyMode(sid) : mgr.enterCopyMode(sid)).then(function() {
+                        return mgr.isCopyModeActive(sid);
+                    });
+                }).then(function(activeNow) {
+                    setMessage(activeNow ? 'copyMode' : '');
                 }), 'copyMode');
                 return true;
             case 'quit':
@@ -513,6 +519,10 @@ function updateModel(msg, model) {
     }
     if (msg.type === 'Key') {
         handleKey(msg);
+        // Recompose immediately so the frame reflects this key (prefix
+        // indicator, pause state, pane size) instead of waiting for the next
+        // tick.
+        updateCompositor();
         if (state.quit) {
             return updateModel({ type: 'Tick', id: 'cleanup' }, state);
         }

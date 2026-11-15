@@ -143,10 +143,13 @@ func watchForwardReader(ctx context.Context, input io.Reader, cancelReader forwa
 // The loop exits when one of these conditions occurs:
 //   - Toggle key is found in the input → ExitToggle
 //   - PreProcess reports a click → ExitToggle
-//   - Write to PTY fails → ExitError
+//   - Write to PTY fails or is short → ExitError (ErrShortWrite on n < len)
 //   - Read from stdin returns a permanent error (not EAGAIN/EWOULDBLOCK) → ExitError
 //   - Read from stdin returns io.EOF → the goroutine returns (caller detects via other signal)
 //   - fwdCtx is cancelled → goroutine returns silently
+//
+// All writes to the PTY go through WriteFull: a short write (n < len with
+// nil error) is an error, never a silent truncation of child input.
 //
 // The result is sent to resultCh. If resultCh is nil, the goroutine runs
 // without reporting results (useful for fire-and-forget scenarios).
@@ -183,7 +186,8 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 				if clicked {
 					// Write any data before the click.
 					if len(filtered) > 0 {
-						if err := writeOrLog(cfg.Writer, filtered, "pre-toggle-click"); err != nil {
+						if err := WriteFull(cfg.Writer, filtered); err != nil {
+							slog.Warn("terminal write failed", "error", err, "context", "pre-toggle-click")
 							if resultCh != nil {
 								sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, err})
 							}
@@ -210,7 +214,8 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 			for i := 0; i < len(data); i++ {
 				if data[i] == cfg.ToggleKey {
 					if i > 0 {
-						if err := writeOrLog(cfg.Writer, data[:i], "pre-toggle-key"); err != nil {
+						if err := WriteFull(cfg.Writer, data[:i]); err != nil {
+							slog.Warn("terminal write failed", "error", err, "context", "pre-toggle-key")
 							if resultCh != nil {
 								sendForwardResult(fwdCtx, resultCh, forwardResult{ExitError, err})
 							}
@@ -225,7 +230,7 @@ func forwardStdin(fwdCtx context.Context, resultCh chan<- forwardResult, cfg for
 			}
 
 			// Forward all bytes to the PTY.
-			if _, writeErr := cfg.Writer.Write(data); writeErr != nil {
+			if writeErr := WriteFull(cfg.Writer, data); writeErr != nil {
 				if fwdCtx.Err() != nil {
 					return
 				}

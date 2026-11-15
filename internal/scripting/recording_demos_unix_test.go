@@ -103,11 +103,11 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *vhs.InputCaptureRecorder
 	}
 }
 
-// waitForProcessExit waits for the spawned shell to exit with code 0 and emits
-// the recorder buffer in the error to aid debugging in case of timeout/failure.
-// The timeout context is derived from the parent test context to ensure
-// cancellation propagates.
-func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console, r *vhs.InputCaptureRecorder) {
+// waitForProcessExit waits for the spawned shell to exit with code 0. The
+// failure diagnostic comes from the console buffer (requireExpectExitCode),
+// which is the terminal state the assertions are about; the recorder's tape is
+// not evidence about the exit.
+func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console) {
 	t.Helper()
 	requireExpectExitCode(ctx, t, cp, 0)
 }
@@ -332,7 +332,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -498,7 +498,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -692,7 +692,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -870,7 +870,7 @@ func TestRecording_CodeReview(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1056,7 +1056,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1198,7 +1198,7 @@ func TestRecording_Goal(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1304,7 +1304,7 @@ func TestRecording_Quickstart(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1453,7 +1453,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1653,7 +1653,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1791,7 +1791,7 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1925,7 +1925,7 @@ func TestRecording_Example13_SplitPane(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	waitForProcessExit(ctx, t, cp, recorder)
+	waitForProcessExit(ctx, t, cp)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)

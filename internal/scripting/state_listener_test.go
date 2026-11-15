@@ -218,9 +218,6 @@ func TestStateManager_SetStateTriggerNotification(t *testing.T) {
 
 	sm.SetState("test-key", "test-value")
 
-	if len(notified) == 0 {
-		t.Fatal("SetState did not trigger listener notification")
-	}
 	if len(notified) != 1 || notified[0] != "test-key" {
 		t.Errorf("expected exactly one notification for 'test-key', got %q", notified)
 	}

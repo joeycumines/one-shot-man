@@ -45,7 +45,7 @@ func requireExpectExitCode(ctx context.Context, t *testing.T, p *termtest.Consol
 		t.Fatalf("Failed to wait for exit: %v\nBuffer: %q", err, p.String())
 	}
 	if code != exitCode {
-		t.Fatalf("Expected exit code %d, but got %d", exitCode, code)
+		t.Fatalf("Expected exit code %d, but got %d\nBuffer: %q", exitCode, code, p.String())
 	}
 }
 

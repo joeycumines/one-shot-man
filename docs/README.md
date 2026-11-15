@@ -18,6 +18,8 @@ If you just want to try it, see the [root README](../README.md).
 - [Configuration reference](reference/config.md)
 - [TUI API reference](reference/tui-api.md)
 - [TUI lifecycle](reference/tui-lifecycle.md)
+- [TUI keymap](reference/tui-keymap.md)
+- [JS runtime compliance suite](reference/js-compliance-suite.md)
 - [Sophisticated session-id auto-determination](reference/sophisticated-auto-determination-of-session-id.md)
 
 ### Scripting module reference

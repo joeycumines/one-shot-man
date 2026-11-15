@@ -20,10 +20,30 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
+    # Derive the toolchain from go.mod rather than tracking `stable`. CI also
+    # runs staticcheck, which go.mod pins in its tool directives, and a `stable`
+    # bump moves Go ahead of the version staticcheck can read: run 120798918805
+    # failed lint with `internal error in importing "cmp" (export data version 5
+    # is greater than maximum supported version 4)` for every stdlib package.
+    # Reading the module's own version keeps the compiler and the lint tools in
+    # step.
+    - name: Read Go version from go.mod
+      id: go-version
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+        if [ -z "$version" ]; then
+          echo "could not read the go directive from go.mod" >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "using Go $version from go.mod"
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 'stable'
+        go-version: ${{ steps.go-version.outputs.version }}
+        check-latest: false
     - name: Detect CPU count and run tests (Unix)
       if: runner.os != 'Windows'
       run: |

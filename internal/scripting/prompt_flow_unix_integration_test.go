@@ -18,6 +18,31 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
+// waitExit sends "exit" and waits for the process to terminate, bounding the
+// wait so a child that never exits fails this test instead of stalling the
+// whole package.
+//
+// The bound is not a latency assertion. WaitExit blocks until the context is
+// cancelled or the process exits, and these tests previously passed it a
+// context that was only cancellable at cleanup, so a child that failed to act
+// on "exit" hung until the package-level timeout killed the run: run
+// 129562188826 died at `panic: test timed out after 40m0s` with
+// TestPromptFlow_Unix_ListShowsMissing recorded as running for 38m46s and its
+// goroutine parked in Console.WaitExit. The send error is checked too, because
+// a failed write means "exit" was never delivered and waiting would be
+// pointless.
+func waitExit(t *testing.T, cp *termtest.Console) {
+	t.Helper()
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
+		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
+	}
+}
+
 // Example demonstrates a complete prompt-flow workflow
 // from setting a goal to generating and copying the final prompt.
 func Example() {
@@ -326,12 +351,7 @@ func processString(s string) string {
 	expect(snap, "-- utils.go --", 2*time.Second)
 	expect(snap, "func processString", 2*time.Second)
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_ListShowsMissing verifies that when a tracked file is removed from disk,
@@ -401,10 +421,7 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	cp.SendLine("list")
 	expect(snap, "(missing)", 30*time.Second)
 
-	cp.SendLine("exit")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_DiskReadInMeta ensures that context.toTxtar() reflects latest disk content
@@ -482,10 +499,7 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	cp.SendLine("show meta")
 	expect(snap, "v2-updated", 30*time.Second)
 
-	cp.SendLine("exit")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_DifferentTemplateConfigurations tests various template
@@ -565,12 +579,7 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	expect(snap, "Create a REST API for user management", 2*time.Second)
 	expect(snap, "CUSTOM TEMPLATE MODIFICATION", 2*time.Second)
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_GitDiffIntegration tests git diff integration
@@ -676,12 +685,7 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	expect(snap, "```diff", 2*time.Second)
 	// Note: git diff may be empty if no staged changes, which is expected
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // Ensures that in a repository with only a single commit, the default git diff
@@ -782,10 +786,7 @@ func main() {
 	expect(snap, "diff --git a/example.go b/example.go", 30*time.Second)
 	expect(snap, "new file mode 100644", 30*time.Second)
 
-	cp.SendLine("exit")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // Validates that malformed lazy-diff payloads are handled gracefully and produce
@@ -923,12 +924,7 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	expect(snap, "### Diff Error: malformed", 2*time.Second)
 	expect(snap, "Invalid payload: expected a string array", 2*time.Second)
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_MetaIncludesGitDiff is a regression test ensuring that the
@@ -1016,10 +1012,7 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	// created by setupGitRepository (Modified version with new features)
 	expect(snap, "Modified version with new features", 30*time.Second)
 
-	cp.SendLine("exit")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // TestPromptFlow_Unix_ClipboardIntegration tests clipboard operations
@@ -1133,10 +1126,7 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 		t.Errorf("Final output should contain note content, got: %s", finalContentStr)
 	}
 
-	cp.SendLine("exit")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 // Helper functions for Unix-only tests
@@ -1372,12 +1362,7 @@ func testCompletePromptFlowWorkflow(t *testing.T, ctx context.Context, cp *termt
 	}
 	expect(snap, "tokens", 2*time.Second)
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }
 
 func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []string, notes []string, expectedInMeta []string) {
@@ -1472,10 +1457,5 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 		expect(snap, expected, 2*time.Second)
 	}
 
-	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
-	}
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitExit(t, cp)
 }

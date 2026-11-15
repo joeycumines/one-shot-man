@@ -18,6 +18,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `osm pr-split` spawns the agent argv with exactly one `--mcp-config` by construction (empty provider `defaultArgs`, single builder, both `--mcp-config x` and `--mcp-config=x` user forms rejected); dead `agent-model`/`agent-config-dir` flags removed from flags, config, JS, docs, completions, and tests; help copy is honest about required agent-command, comma-rule agent-env, and non-bounding timeout.
+- CI derives its Go toolchain from the `go` directive in `go.mod` instead of `stable`. A `stable` bump moved the compiler ahead of the staticcheck version pinned in `go.mod`, failing lint with `export data version 5 is greater than maximum supported version 4` for every stdlib package and leaving the lint gate reporting tool errors instead of findings.
+
+## [v0.9.0] - 2026-11-15
+
+### Added
+- `osm:termmux` `newKeymap({prefix?, passthroughKey?, keys?, chords?})`, a self-contained key-command mapper with an optional chord prefix, a direct key→action map, a chord map, and a passthrough key. `handleKey` reports handled/action/armed state, `<esc>` or a repeated prefix cancels an armed chord, and unbound chord keys reach the child. Bindings mutate at runtime through `bind`/`bindChord`/`unbind`/`unbindChord`/`setPrefix`/`setPassthroughKey`, and `listKeys` renders a deterministic aligned table.
+- `osm:termmux` `keymapOverlay({keymap, tea, onClose?})`, a ready-to-run BubbleTea model (same shape as `chooseTree`) that renders a keymap's `listKeys` table as a centered popup and closes on any key.
+- `osm:termmux` `inputStaged(id, data)` and `session.writeStaged(data)`: a staged/atomic session write that copies the payload once and delivers it to the PTY in a single `Write`, so large pastes are never seen by the child as several contiguous chunks. Ordering against regular input is preserved because both use the same queue.
+- `.github/workflows/release.yml` publishes cross-platform binary assets for tagged releases.
+
+### Changed
+- `termpane` forwards pastes as one staged write instead of 4096-byte chunks.
+- Modified navigation and tilde keys now use the tmux-verified xterm modifier parameter `ESC[1;{mod}{letter}` (and `ESC[{num};{mod}~` for tilde keys), with `mod = 1 + shift(1)|alt(2)|ctrl(4)|meta(8)`; application cursor mode uses the SS3 form. Previously only shift/ctrl+shift prefixes were handled, so alt+left arrived as a double-ESC sequence whose trailing bytes surfaced as literal characters. `alt+<printable>` keeps the legacy ESC prefix.
+
+## [v0.8.0] - 2026-11-10
+
+### Added
+- `userk8s` accepts `gemini` as a client surface. The GenerateContent surface is a shaper capability rather than an access protocol: chat, messages, and responses accesses can each serve it by transcoding, the surface is accepted for every shaper protocol, and it is rejected on a direct transport, which can only carry its own protocol's surface.
+
+### Changed
+- A trailing `/v1beta` on a gemini endpoint is normalized so the derived shaper mount prefix matches the other surfaces.
+
+## [v0.7.1] - 2026-11-10
+
+### Changed
+- `osm version` reads the CLI version from `runtime/debug` build info instead of a hard-coded constant, so tagged releases and VCS pseudo-versions are reported accurately and missing build metadata falls back to `devel`.
+- Shaper route validation canonicalizes endpoint paths and removes the surface API suffix before deriving the mount prefix, which accepts the renderer's real layouts while rejecting API-only endpoints, repeated slashes, and dot segments that could hide a duplicate or conflicting mount.
+
+### Fixed
+- The rendered personal profile fixture and its count assertions match the current registry output.
+
+## [v0.7.0] - 2026-11-02
+
+### Added
+- `userk8s` catalog: `Model` describes only canonical identity and capabilities; provider offers move to `ModelServing`, fallback chains to `ModelSelection`, and entity access to `ModelRoute`. A serving carries the provider's wire id and narrowing overrides, a route carries the access, credential binding, exposed offers, surfaces, and transport, and `LocalSecretBinding` declares its own credential scheme. Consumers read `serving.effective` rather than merging model and serving facts themselves.
+- The userk8s JavaScript surface exposes servings, routes, selections, and bindings, resolves credentials by binding, projects by serving, and returns promises for every catalog operation.
+- Signal-delivery failures are reported on stderr, so an undelivered signal is distinguishable from a missing listener.
+
+### Fixed
+- The files backend matches the API server: it applies CRD defaults while decoding and validates the same CEL invariants in Go, including reasoning facts, tool settings against effective capabilities, route surfaces, offer ids, selection cycles, and shaper mount collisions.
+- Bubblezone markers survive the compositor: they are transcoded to APC carriers that the ultraviolet cell parser keeps, only balanced marker pairs are restored after render, and hit tests use a geometry-only layer stack.
+
+### Changed
+- Documented that client-facing `Model` context and output token limits may be lower than a provider's hard limits, so a safety-buffered budget does not imply an upstream ceiling.
+- Bumped dependencies including the Kubernetes libraries.
+
+## [v0.6.0] - 2026-10-08
+
+### Fixed
+- `exec` submits the lifetime task before starting the loop, closing the startup race that could strand a child when auto-exit terminated the loop before admission.
+- The pr-split empty-merge-base guard covers the async paths and the diff-stats path, and the regression tests use `GitMockSetupJS`.
+- Scripting suppresses the post-exit callback race when `process.exit` terminates the event loop.
+- ConPTY test probing retries three times with backoff, so a transient `exit 1` on a loaded runner no longer reads as a broken host; a genuinely broken host is still detected.
+- The MCP init watcher no longer leaks goroutines: `WatchForInit` returns a deregistering cancel function, all call sites use the leak-safe `injectOnMCPInit` helper, and bespoke pr-split MCP-inject goroutines are fully done-interruptible.
+
+### Changed
+- `GO_TEST_FLAGS` default timeout is 40 minutes, and the pr-split `EvalJS` default timeout is 2 minutes, both to accommodate heavy real-git evaluations on loaded parallel CI runners.
 
 ## [v0.5.0] - 2026-09-17
 

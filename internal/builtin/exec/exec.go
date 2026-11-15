@@ -260,7 +260,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	// child.wait(): Promise<{code, signal}>.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-			code, waitErr := child.Wait()
+			code, waitErr := child.WaitContext(ctx)
 			if waitErr != nil {
 				var closeErr *processTreeCloseError
 				var exitErr *osexec.ExitError

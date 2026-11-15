@@ -576,6 +576,25 @@ func (c *ChildProcess) Wait() (int, error) {
 	return c.exitCode, c.exitErr
 }
 
+// WaitContext blocks until the process exits or ctx is cancelled.
+//
+// A caller that can be cancelled (the JS wait() binding) must not use Wait:
+// the process may outlive the loop, and an unbounded wait there strands the
+// promise forever. Reap still happens in the background regardless of ctx.
+func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-c.done:
+	case <-ctx.Done():
+		return -1, ctx.Err()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.exitCode, c.exitErr
+}
+
 // Kill terminates the process and its descendants.
 func (c *ChildProcess) Kill() error {
 	c.mu.Lock()

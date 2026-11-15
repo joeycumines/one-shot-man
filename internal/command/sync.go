@@ -19,7 +19,7 @@ import (
 )
 
 // SyncCommand provides local notebook save/list operations and git-based
-// sync (init/push/pull). See docs/archive/notes/git-sync-design.md.
+// sync (init/push/pull).
 type SyncCommand struct {
 	*BaseCommand
 

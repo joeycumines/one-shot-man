@@ -1041,6 +1041,37 @@ func TestStripFrontmatter(t *testing.T) {
 			input: "---\ntags: [a, b]\n---\n\n# Title\n",
 			want:  "# Title\n",
 		},
+		{
+			// Notepad and most Windows tooling default to CRLF. Requiring a
+			// literal "---\n" kept the whole frontmatter in the printed body.
+			name:  "crlf frontmatter",
+			input: "---\r\ntitle: \"Test\"\r\ndate: 2025-01-01\r\n---\r\n\r\n# Heading\r\n\r\nBody text.\r\n",
+			want:  "# Heading\r\n\r\nBody text.\r\n",
+		},
+		{
+			// A frontmatter VALUE containing "---" must not be read as the
+			// closing delimiter, which truncated the entry mid-value.
+			name:  "separator inside a frontmatter value",
+			input: "---\ntitle: \"a --- b\"\n---\n\n# Heading\n",
+			want:  "# Heading\n",
+		},
+		{
+			name:  "separator-only value",
+			input: "---\nsummary: ---\ntags: [a]\n---\n\nBody.\n",
+			want:  "Body.\n",
+		},
+		{
+			// A body line that happens to be exactly "---" (a horizontal rule)
+			// survives: only the frontmatter block is stripped.
+			name:  "thematic break in the body",
+			input: "---\ntitle: \"T\"\n---\n\nAbove\n---\nBelow\n",
+			want:  "Above\n---\nBelow\n",
+		},
+		{
+			name:  "opening delimiter without a newline",
+			input: "---",
+			want:  "---",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

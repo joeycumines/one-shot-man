@@ -45,7 +45,7 @@ func NewSyncCommand(cfg *config.Config, syncDir ...string) *SyncCommand {
 		BaseCommand: NewBaseCommand(
 			"sync",
 			"Save and list prompt notebook entries; sync via git",
-			"sync <save|list|load|init|push|pull> [options]",
+			"sync <save|list|load|init|push|pull|config-push|config-pull> [options]",
 		),
 		config: cfg,
 	}
@@ -530,20 +530,64 @@ func matchEntry(entries []notebookEntry, query string) *notebookEntry {
 
 // stripFrontmatter removes YAML frontmatter delimited by "---" lines
 // and any leading blank lines from the remaining content.
+//
+// The delimiters are whole LINES, not substrings. Matching a literal "---\n"
+// meant a CRLF notebook (the Windows default) kept its entire frontmatter in the
+// printed body, and cutting on the first "---\n" inside the block truncated the
+// entry whenever a frontmatter VALUE contained the separator.
 func stripFrontmatter(content string) string {
-	if !strings.HasPrefix(content, "---\n") {
+	// The block must open at the very start of the file with a "---" line.
+	line, offset, ok := nextLine(content, 0)
+	if !ok || !isDelimiterLine(line) {
 		return content
 	}
-	// Find closing "---\n".
-	rest := content[4:]
-	_, after, ok := strings.Cut(rest, "---\n")
-	if !ok {
-		return content // no closing delimiter, return as-is
+
+	// Scan for the closing delimiter line. An unterminated block means there is
+	// no frontmatter to strip, so the content is returned as-is.
+	closed := false
+	for offset < len(content) {
+		line, next, ok := nextLine(content, offset)
+		if !ok {
+			break
+		}
+		offset = next
+		if isDelimiterLine(line) {
+			closed = true
+			break
+		}
 	}
-	body := after
-	// Trim leading blank lines.
-	body = strings.TrimLeft(body, "\n")
-	return body
+	if !closed {
+		return content
+	}
+
+	// Trim the blank lines that separate the block from the body.
+	for offset < len(content) {
+		line, next, ok := nextLine(content, offset)
+		if !ok || strings.TrimSuffix(line, "\r") != "" {
+			break
+		}
+		offset = next
+	}
+	return content[offset:]
+}
+
+// nextLine returns the line beginning at start and the offset of the following
+// line. ok is false when start is at or past the end of content.
+func nextLine(content string, start int) (line string, next int, ok bool) {
+	if start >= len(content) {
+		return "", start, false
+	}
+	rest := content[start:]
+	if i := strings.IndexByte(rest, '\n'); i >= 0 {
+		return rest[:i], start + i + 1, true
+	}
+	return rest, len(content), true
+}
+
+// isDelimiterLine reports whether line is a frontmatter delimiter, tolerating
+// the carriage return a CRLF file leaves behind.
+func isDelimiterLine(line string) bool {
+	return strings.TrimSuffix(line, "\r") == "---"
 }
 
 // notebooksDir returns the path to the notebooks directory.

@@ -15,7 +15,8 @@
 
     // --- COLORS & Styles (T006) ---
     //
-    // Design spec: docs/pr-split-tui-design.md §2
+    // Design invariant: every text-on-background pair below meets WCAG AA
+    // (>= 4.5:1 contrast) in both the light and dark palettes.
 
     // Adaptive color palette: auto-detects light/dark terminal background.
     // Uses {light, dark} objects resolved by lipgloss.AdaptiveColor.

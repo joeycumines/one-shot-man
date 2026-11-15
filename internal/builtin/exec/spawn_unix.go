@@ -86,6 +86,12 @@ func processExitSignal(err error) string {
 	if !errors.As(err, &exitErr) {
 		return ""
 	}
+	if exitErr.ProcessState == nil {
+		// Defensive: a synthesized ExitError has no process state to read a
+		// signal from. No signal is reported for it, and callers treat the
+		// child as having no signal.
+		return ""
+	}
 	status, ok := exitErr.Sys().(syscall.WaitStatus)
 	if !ok || !status.Signaled() {
 		return ""

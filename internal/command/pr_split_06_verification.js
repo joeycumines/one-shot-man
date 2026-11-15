@@ -647,7 +647,13 @@
             return buf;
         }
 
-        var streamResults = await Promise.all([
+        // child.wait() can reject (a cancelled wait reports its context error).
+        // Guarding it here matters beyond this function's result: an unhandled
+        // rejection is fatal to the event loop, so an unguarded wait would tear
+        // down every other pending promise in the process.
+        var waitResult = null;
+        var waitError = null;
+        await Promise.all([
             readStream(child.stdout, function(chunk) {
                 stdoutBuf += chunk;
                 emitChunk(chunk);
@@ -656,11 +662,14 @@
                 stderrBuf += chunk;
                 emitChunk(chunk);
             }),
-            child.wait()
+            child.wait().then(function(r) { waitResult = r || {}; }, function(err) { waitError = err; })
         ]);
 
-        var exitResult = streamResults[2];
+        var exitResult = waitResult;
         var exitCode = (exitResult && exitResult.code !== undefined) ? exitResult.code : 1;
+        if (waitError) {
+            exitCode = -1;
+        }
         var elapsedMs = Date.now() - startMs;
 
         if (cancelled || isCancelledNow()) {

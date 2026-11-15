@@ -22,32 +22,45 @@ func TestWaitRejection(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
+		code int
 		err  error
 		want bool // true = must reject
 	}{
-		{name: "no error", err: nil, want: false},
-		{name: "exit status", err: exitStatus, want: false},
+		{name: "no error", code: 0, err: nil, want: false},
+		{name: "exit status", code: 7, err: exitStatus, want: false},
 		{
 			name: "exit status with tree close failure",
+			code: 0,
 			err:  errors.Join(exitStatus, &processTreeCloseError{err: syscall.EPERM}),
 			want: false,
 		},
 		{
 			name: "tree close failure only",
+			code: 0,
 			err:  &processTreeCloseError{err: syscall.EPERM},
 			want: true,
 		},
-		{name: "opaque failure", err: fmt.Errorf("wait failed"), want: true},
+		{name: "opaque failure", code: 0, err: fmt.Errorf("wait failed"), want: true},
 		{
 			name: "context cancellation",
+			code: -1,
 			err:  fmt.Errorf("wait: %w", errors.New("context canceled")),
+			want: true,
+		},
+		{
+			// A negative code with no signal is unclassified: the reaper sets
+			// -1 whenever it cannot extract an exit status, so it must not be
+			// presented as one.
+			name: "unclassified negative code with exit status in chain",
+			code: -1,
+			err:  exitStatus,
 			want: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := waitRejection(tc.err) != nil
+			got := waitRejection(tc.code, tc.err) != nil
 			if got != tc.want {
-				t.Fatalf("waitRejection(%v) rejected = %v, want %v", tc.err, got, tc.want)
+				t.Fatalf("waitRejection(%d, %v) rejected = %v, want %v", tc.code, tc.err, got, tc.want)
 			}
 		})
 	}

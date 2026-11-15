@@ -579,10 +579,27 @@ func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Prefer an exit that has already been recorded: when the process is reaped
+	// and the caller's context is also done, a bare select picks a ready case at
+	// random and reports a successful child as cancelled. settlePumps uses the
+	// same pre-check for the same reason.
+	select {
+	case <-c.done:
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.exitCode, c.exitErr
+	default:
+	}
 	select {
 	case <-c.done:
 	case <-ctx.Done():
-		return -1, ctx.Err()
+		// Re-check under the current state: the reaper may have closed done
+		// concurrently with the cancellation.
+		select {
+		case <-c.done:
+		default:
+			return -1, ctx.Err()
+		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

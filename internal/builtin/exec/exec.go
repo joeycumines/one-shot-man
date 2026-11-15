@@ -261,7 +261,7 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.WaitContext(ctx)
-			if rejectErr := waitRejection(waitErr); rejectErr != nil {
+			if rejectErr := waitRejection(code, waitErr); rejectErr != nil {
 				handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
 					return rt.NewGoError(rejectErr)
 				}))
@@ -349,17 +349,26 @@ const outputAbortGrace = 100 * time.Millisecond
 // the child demonstrably exited, JS saw an unhandled rejection, and the
 // adapter's fatal-exit path (goja-eventloop processrejection.go:380 ->
 // requestFatalExit) shut the event loop down, stranding every other pending
-// promise in the process. The cleanup failure remains visible through
-// ChildProcess.Wait's error for Go callers.
-func waitRejection(waitErr error) error {
+// promise in the process. The cleanup failure is still carried in
+// ChildProcess.exitErr for Go callers.
+//
+// The discriminator is an *osexec.ExitError in the chain, because that is what
+// the reaper records an exit status from. Note that a signalled child's
+// ExitCode is -1, so a negative code on its own means nothing: only a negative
+// code with no signal is genuinely unclassified, and that must reject rather
+// than present itself as a status.
+func waitRejection(code int, waitErr error) error {
 	if waitErr == nil {
 		return nil
 	}
 	var exitErr *osexec.ExitError
-	if errors.As(waitErr, &exitErr) {
-		return nil
+	if !errors.As(waitErr, &exitErr) {
+		return waitErr
 	}
-	return waitErr
+	if code < 0 && processExitSignal(waitErr) == "" {
+		return waitErr
+	}
+	return nil
 }
 
 // outputEOFCeiling bounds how long runExec waits for output readers to reach EOF.

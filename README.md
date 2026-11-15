@@ -180,7 +180,7 @@ These are the builtin commands to generate prompts from your codebase.
 
 **Key flags:** `-base` (target branch), `-strategy`, `-max` (max files per PR), `-agent-command` (path to agent CLI), `-verify` (run verification after each split), `-resume` (continue from a saved plan).
 
-See [docs/architecture-pr-split-chunks.md](docs/architecture-pr-split-chunks.md) for the internal chunk architecture.
+See [docs/architecture.md](docs/architecture.md) for how `osm` is put together internally, and the chunk sources under [`internal/command/pr_split_*.js`](internal/command/) for the PR-split pipeline itself.
 
 ### Session Persistence
 

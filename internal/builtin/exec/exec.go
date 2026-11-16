@@ -268,7 +268,11 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 				return
 			}
 			m := map[string]any{"code": code}
-			if signal := processExitSignal(waitErr); signal != "" {
+			signal := child.recordedSignalAtSettlement()
+			if signal == "" && waitErr != nil {
+				signal = processExitSignal(waitErr)
+			}
+			if signal != "" {
 				m["signal"] = signal
 			} else {
 				m["signal"] = nil
@@ -354,10 +358,10 @@ const outputAbortGrace = 100 * time.Millisecond
 // promise in the process.
 //
 // The discriminator is therefore the recorded exit status, not the error type.
-// A status is rejected only when it cannot be presented honestly: the wait was
-// cut short by the caller's context, the reaper recorded no status at all, or
-// the code is unclassified on this platform (exitStatusUnclassified). The
-// cleanup failure is still carried in ChildProcess.exitErr for Go callers.
+// A status is rejected only when the reaper recorded none at all (the wait was
+// cut short before the child was reaped), or when the code is unclassified on
+// this platform (exitStatusUnclassified). The cleanup failure is still carried
+// in ChildProcess.exitErr for Go callers.
 //
 // Both code and waitErr are the values WaitContext returned, so the settlement
 // cannot disagree with what the caller observed; recordExit's fields are read
@@ -367,18 +371,23 @@ func (c *ChildProcess) waitRejection(code int, waitErr error) error {
 	if waitErr == nil {
 		return nil
 	}
-	// A wait cut short by context cancellation observed no status by
-	// definition, and the reaper may be finishing concurrently: reject rather
-	// than reporting a status the caller never received.
-	if errors.Is(waitErr, context.Canceled) || errors.Is(waitErr, context.DeadlineExceeded) {
-		return waitErr
-	}
+	// A real exit status outranks a process-tree cleanup failure AND a context
+	// error returned alongside it. os/exec returns the context error when
+	// Cmd.Cancel ran on an already-exited child, yet ProcessState holds the
+	// real status; rejecting that case is exactly the bug this guard fixes.
+	// Only a wait that never observed a status rejects here.
 	c.mu.Lock()
 	exitStatus := c.exitStatus
+	recordedSignal := c.recordedSignal
 	c.mu.Unlock()
 
 	if !exitStatus {
 		return waitErr
+	}
+	// A recorded signal is authoritative: a context-error chain can hide the
+	// ExitError that exitStatusUnclassified would otherwise look for.
+	if recordedSignal != "" {
+		return nil
 	}
 	if exitStatusUnclassified(code, waitErr) {
 		return waitErr

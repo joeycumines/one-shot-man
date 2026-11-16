@@ -10,15 +10,20 @@ import (
 	"testing"
 )
 
+// exitCodeCommand returns a shell command that exits with the given code.
+func exitCodeCommand(code int) (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd.exe", []string{"/C", fmt.Sprintf("exit %d", code)}
+	}
+	return "sh", []string{"-c", fmt.Sprintf("exit %d", code)}
+}
+
 // exitErrorFor produces a real *osexec.ExitError with the given code by
 // running a trivial child, so the decision table is fed the same value type
 // the reaper records rather than a synthesized struct with no ProcessState.
 func exitErrorFor(t *testing.T, code int) *osexec.ExitError {
 	t.Helper()
-	command, args := "sh", []string{"-c", fmt.Sprintf("exit %d", code)}
-	if runtime.GOOS == "windows" {
-		command, args = "cmd.exe", []string{"/C", fmt.Sprintf("exit %d", code)}
-	}
+	command, args := exitCodeCommand(code)
 	cmd := osexec.Command(command, args...)
 	err := cmd.Run()
 	if err == nil {
@@ -122,7 +127,11 @@ func TestWaitRejection(t *testing.T) {
 			if child.exitCode != tc.wantCode {
 				t.Fatalf("exitCode = %d, want %d", child.exitCode, tc.wantCode)
 			}
-			if got := child.waitRejection(tc.wantCode, tc.waitErr) != nil; got != tc.wantReject {
+			// Use the values the reaper actually recorded, not the table's
+			// inputs: passing (tc.wantCode, tc.waitErr) let the headline
+			// exit-zero-with-tree-close row call waitRejection(0, nil) and
+			// assert nothing about exitStatus.
+			if got := child.waitRejection(child.exitCode, child.exitErr) != nil; got != tc.wantReject {
 				t.Fatalf("waitRejection(%v) rejected = %v, want %v (exitCode=%d exitStatus=%v exitErr=%v)",
 					tc.waitErr, got, tc.wantReject, child.exitCode, child.exitStatus, child.exitErr)
 			}
@@ -138,9 +147,8 @@ func TestWaitRejection(t *testing.T) {
 // member is the exited-but-unreaped leader and the pre-reap signal returns
 // EPERM.
 func TestWaitRejection_TreeCloseFailureAfterCleanExit(t *testing.T) {
-	skipIfWindows(t)
-
-	cmd := osexec.Command("sh", "-c", "exit 0")
+	command, args := immediateExitCommand()
+	cmd := osexec.Command(command, args...)
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start helper process: %v", err)
 	}
@@ -174,9 +182,8 @@ func TestWaitRejection_TreeCloseFailureAfterCleanExit(t *testing.T) {
 // already worked from regressing: a non-zero exit alongside a cleanup failure
 // resolves with its code.
 func TestWaitRejection_TreeCloseFailureAfterNonZeroExit(t *testing.T) {
-	skipIfWindows(t)
-
-	cmd := osexec.Command("sh", "-c", "exit 1")
+	command, args := exitCodeCommand(1)
+	cmd := osexec.Command(command, args...)
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start helper process: %v", err)
 	}

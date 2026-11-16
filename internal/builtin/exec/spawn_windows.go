@@ -243,6 +243,13 @@ func processExitSignal(error) string {
 	return ""
 }
 
+// processStateSignal is always empty on Windows: the platform reports an exit
+// code, never a POSIX signal, and the signed-code heuristic that Unix needs
+// does not apply (see exitStatusUnclassified above).
+func processStateSignal(*os.ProcessState) string {
+	return ""
+}
+
 // signalFromName resolves the POSIX-style signal names the JS surface
 // accepts. Windows has no POSIX signal delivery: every known name maps to
 // os.Interrupt as a dummy accepted os.Signal, and signalProcess provides the

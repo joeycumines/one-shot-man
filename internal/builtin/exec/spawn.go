@@ -49,6 +49,23 @@ type processTree interface {
 // waitProcessBeforeReapFn is the platform probe (variable for test override).
 var waitProcessBeforeReapFn = waitProcessBeforeReap
 
+// retryProcessGroupClose retries one transient EPERM from a post-wait close.
+// BSD/Darwin kernels can reject a process-group signal while its only member is
+// the exited, unreaped leader; reaping first makes the group addressable again
+// (a live descendant) or returns ESRCH (an empty group, already closed) on the
+// retry. The retry belongs to every post-wait close path, not just the
+// pre-reap-close branch: the Darwin probe-failure path closes after Wait too.
+func retryProcessGroupClose(tree processTree, cmd *osexec.Cmd, closeErr error) error {
+	if !errors.Is(closeErr, syscall.EPERM) {
+		return closeErr
+	}
+	if retryErr := tree.close(cmd); retryErr == nil {
+		return nil
+	} else {
+		return errors.Join(closeErr, retryErr)
+	}
+}
+
 func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeErr error) {
 	preClose, probeErr := waitProcessBeforeReapFn(cmd)
 	if probeErr != nil {
@@ -56,28 +73,17 @@ func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeE
 		closeErr = tree.close(cmd)
 		slog.Debug("pre-reap process observation failed, closing tree after wait",
 			"error", probeErr)
-		return waitErr, closeErr
+		return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
 	}
 	if preClose {
 		closeErr = tree.close(cmd)
 		waitErr = cmd.Wait()
-		if errors.Is(closeErr, syscall.EPERM) {
-			// BSD kernels can reject a process-group signal while its only
-			// member is the exited, unreaped leader. Retry after reaping: a
-			// live descendant keeps the group addressable, while an empty
-			// group returns ESRCH and is already closed.
-			if retryErr := tree.close(cmd); retryErr == nil {
-				closeErr = nil
-			} else {
-				closeErr = errors.Join(closeErr, retryErr)
-			}
-		}
-		return waitErr, closeErr
+		return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
 	}
 	// The platform reports no safe pre-reap close point.
 	waitErr = cmd.Wait()
 	closeErr = tree.close(cmd)
-	return waitErr, closeErr
+	return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
 }
 
 // ChildProcess represents a running child process with piped I/O.
@@ -92,10 +98,13 @@ type ChildProcess struct {
 	exitErr  error
 	// exitStatus records whether the reaper observed a real exit status for
 	// this child. It is the authority the JS wait() settlement consults: an
-	// observed status outranks a process-tree cleanup failure, because the
-	// command's outcome is known even when tidying its group failed. See
-	// recordExit and waitRejection.
+	// observed status outranks both a process-tree cleanup failure and a
+	// context error returned alongside it by cmd.Wait. See recordExit and
+	// waitRejection.
 	exitStatus bool
+	// recordedSignal is the signal name read from cmd.ProcessState at reap
+	// time, before an error chain can hide it. Empty means no signal.
+	recordedSignal string
 	// abort cuts the output pump drain promptly.
 	abort     chan struct{}
 	abortOnce sync.Once
@@ -420,11 +429,14 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 // recordExit stores the outcome of the reaper so WaitContext and the JS wait()
 // settlement read one consistent account of how the child ended.
 //
-// The exit status is recorded as a fact (exitStatus), not inferred from the
-// error's type at settlement time. `cmd.Wait()` returns nil for a child that
-// exited 0, so a nil waitErr IS an observed status; a wrapped
-// *osexec.ExitError is one too, which is why this inspects the chain with
-// errors.As rather than a bare type assertion.
+// The exit status is recorded as a fact (exitStatus), read from the
+// ProcessState that cmd.Wait always populates when the child was reaped — not
+// inferred from the error's type. That distinction is essential: os/exec
+// returns the context error when Cmd.Cancel ran on an already-exited child
+// (the documented nil-Cancel case), yet ProcessState still carries the child's
+// real status. Treating that context error as "no status" used to reject a
+// command whose outcome was fully known. A wrapped *osexec.ExitError is also
+// an observed status; errors.As handles the chain.
 //
 // A failed process-tree close is joined into exitErr for Go callers, but it
 // never erases the status: the drain is aborted because a tree close that
@@ -435,12 +447,22 @@ func (c *ChildProcess) recordExit(waitErr, closeErr error) {
 	defer c.mu.Unlock()
 
 	c.closed = true
-	c.exitStatus = waitErr == nil
-	if waitErr != nil {
+	// Prefer the authoritative ProcessState over the error shape. It is set
+	// by cmd.Wait on every reaped child, including the context-error case.
+	if c.cmd != nil && c.cmd.ProcessState != nil {
+		ps := c.cmd.ProcessState
+		c.exitStatus, c.exitCode = true, ps.ExitCode()
+		c.recordedSignal = processStateSignal(ps)
+	} else if waitErr == nil {
+		c.exitStatus, c.exitCode = true, 0
+	} else {
 		var exitErr *osexec.ExitError
 		if errors.As(waitErr, &exitErr) {
 			c.exitCode = exitErr.ExitCode()
 			c.exitStatus = true
+			if exitErr.ProcessState != nil {
+				c.recordedSignal = processStateSignal(exitErr.ProcessState)
+			}
 		} else {
 			c.exitCode = -1
 		}
@@ -450,6 +472,13 @@ func (c *ChildProcess) recordExit(waitErr, closeErr error) {
 		c.exitErr = errors.Join(c.exitErr, &processTreeCloseError{err: closeErr})
 		c.AbortDrain()
 	}
+}
+
+// recordedSignalAtSettlement reads the signal captured by recordExit.
+func (c *ChildProcess) recordedSignalAtSettlement() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.recordedSignal
 }
 
 // AbortDrain cuts the output pump drain promptly.

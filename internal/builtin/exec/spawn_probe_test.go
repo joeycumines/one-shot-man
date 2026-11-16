@@ -228,9 +228,10 @@ func TestWaitAndCloseProcessTree_PropagatesPersistentPermissionFailure(t *testin
 
 // TestWaitAndCloseProcessTree_ProbeErrorStillWaits pins the failure-path
 // ordering: when the pre-reap probe fails, the tree is closed AFTER cmd.Wait
-// and the wait's verdict decides the outcome. On Windows the probe is a no-op
-// that reports failure, so this exercises exactly the Windows path: a child
-// that exits 0 must come back waitErr=nil even though the probe errored.
+// and the wait's verdict decides the outcome. The POSIX shell helper keeps
+// this test on non-Windows platforms; Windows has its own real pre-reap probe
+// (waitProcessBeforeReap in spawn_windows.go uses OpenProcess/WaitForSingleObject),
+// so the probe-error branch is exercised here with an injected probe failure.
 func TestWaitAndCloseProcessTree_ProbeErrorStillWaits(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell helper")

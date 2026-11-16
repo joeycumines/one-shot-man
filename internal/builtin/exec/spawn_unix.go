@@ -102,7 +102,14 @@ func processExitSignal(err error) string {
 		// child as having no signal.
 		return ""
 	}
-	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	return processStateSignal(exitErr.ProcessState)
+}
+
+// processStateSignal names the signal that terminated a reaped child, or ""
+// when it exited normally. Reading it at reap time keeps the name available
+// even when cmd.Wait returned a context error whose chain hides the ExitError.
+func processStateSignal(ps *os.ProcessState) string {
+	status, ok := ps.Sys().(syscall.WaitStatus)
 	if !ok || !status.Signaled() {
 		return ""
 	}

@@ -1528,18 +1528,41 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 	<-evtCh
 
 	// Send output to transition to Running, then close the channel for EOF.
+	// The reader goroutine forwards chunks over the merged channel to the
+	// worker, which applies them in order; poll until the worker has observed
+	// the EOF sentinel instead of sleeping a fixed interval — on a loaded
+	// runner the 50ms/100ms sleeps fired before the worker drained the
+	// channel (CI run 43785914039: state still running after both sleeps).
 	session.readerCh <- []byte("data")
-	time.Sleep(50 * time.Millisecond)
-
 	session.closeReader()
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify state transitioned to Exited.
-	infos := m.Sessions()
-	for _, info := range infos {
-		if info.ID == 1 && info.State != SessionExited {
-			t.Errorf("state = %s, want exited", info.State)
+	// Verify state transitioned to Exited (poll with a deadline, not a
+	// fixed sleep: the transition happens on the worker goroutine, so its
+	// timing is scheduling-dependent). A non-remain-on-exit session is
+	// removed from Sessions() once it reaches Closed, so wait for either
+	// the Exited observation or the session's disappearance — both mean the
+	// EOF sentinel was processed.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		infos := m.Sessions()
+		exited := len(infos) == 0
+		for _, info := range infos {
+			if info.ID == 1 && info.State == SessionExited {
+				exited = true
+			}
 		}
+		if exited {
+			break
+		}
+		if time.Now().After(deadline) {
+			for _, info := range infos {
+				if info.ID == 1 {
+					t.Fatalf("state = %s, want exited", info.State)
+				}
+			}
+			t.Fatal("session 1 still present and not exited after deadline")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Verify EventSessionExited.

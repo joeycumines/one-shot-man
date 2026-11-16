@@ -22,8 +22,21 @@ func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
 // closeSchedulingSlack is how far past a configured Close bound a test tolerates
 // the shutdown finishing. It is scheduling allowance, not part of the Close
 // contract: CI runners oversubscribe their CPUs, so a correct Close can be
-// descheduled well past the configured grace and force-wait totals.
-const closeSchedulingSlack = 5 * time.Second
+// descheduled well past the configured grace and force-wait totals. 30s
+// rather than 5s: a loaded windows-latest runner once descheduled the Close
+// goroutine for 163ms past grace+force (run 43785914039 measured 12.163s
+// against a 12s bound with the old 5s slack already in place), and the tests
+// assert bounded shutdown, not wall-clock precision — the bound being
+// asserted is the configured grace+force total, not the slack.
+const closeSchedulingSlack = 30 * time.Second
+
+// conPTYOutputDeadline bounds how long a ConPTY test waits for the child to
+// produce recognisable output on a loaded runner. PowerShell CLR startup on
+// an oversubscribed windows-latest host has exceeded 10s without any defect
+// in Spawn/Read (run 43785914039 emitted only the ConPTY enable sequences
+// within 10s), so the deadline is a generous ceiling, not a performance
+// assertion.
+const conPTYOutputDeadline = 60 * time.Second
 
 func skipIfWindows(t *testing.T) {
 	t.Helper()
@@ -1233,7 +1246,7 @@ func TestConPTY_Smoke(t *testing.T) {
 	requireConPTYRuntime(t)
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), conPTYOutputDeadline)
 	defer cancel()
 
 	proc, err := Spawn(ctx, SpawnConfig{
@@ -1249,7 +1262,7 @@ func TestConPTY_Smoke(t *testing.T) {
 
 	// Read output — should contain the echo string.
 	var output strings.Builder
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(conPTYOutputDeadline)
 	done := false
 	for !done {
 		readCh := make(chan struct {

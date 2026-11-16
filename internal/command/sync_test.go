@@ -1072,6 +1072,20 @@ func TestStripFrontmatter(t *testing.T) {
 			input: "---",
 			want:  "---",
 		},
+		{
+			// A closing delimiter with no trailing newline still terminates the
+			// block; there are no blank separator lines to trim afterwards.
+			name:  "closing delimiter without a newline",
+			input: "---\ntitle: \"T\"\n---",
+			want:  "",
+		},
+		{
+			// A CRLF block whose closing delimiter is immediately followed by
+			// body text (no blank separator line) strips only the frontmatter.
+			name:  "crlf without a blank separator",
+			input: "---\r\ntitle: \"T\"\r\n---\r\nBody\r\n",
+			want:  "Body\r\n",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1536,50 +1536,36 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 	session.readerCh <- []byte("data")
 	session.closeReader()
 
-	// Verify state transitioned to Exited (poll with a deadline, not a
-	// fixed sleep: the transition happens on the worker goroutine, so its
-	// timing is scheduling-dependent). A non-remain-on-exit session is
-	// removed from Sessions() once it reaches Closed, so wait for either
-	// the Exited observation or the session's disappearance — both mean the
-	// EOF sentinel was processed.
+	// Verify the state transition by waiting for the authoritative exit event,
+	// with a deadline. Polling Sessions() for `len == 0` or "session 1 absent"
+	// produced false passes (a session can disappear for another reason) and a
+	// false "session 1 still present" message when it was absent while another
+	// session remained. A non-remain-on-exit session may still be removed, so
+	// the snapshot is diagnostic context only, never the verdict.
 	deadline := time.Now().Add(10 * time.Second)
-	for {
-		infos := m.Sessions()
-		exited := len(infos) == 0
-		for _, info := range infos {
-			if info.ID == 1 && info.State == SessionExited {
-				exited = true
-			}
-		}
-		if exited {
-			break
-		}
-		if time.Now().After(deadline) {
-			for _, info := range infos {
-				if info.ID == 1 {
-					t.Fatalf("state = %s, want exited", info.State)
-				}
-			}
-			t.Fatal("session 1 still present and not exited after deadline")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	// Verify EventSessionExited.
 	var foundExited bool
-	for {
+	var lastState string
+	for !foundExited {
 		select {
 		case evt := <-evtCh:
 			if evt.Kind == EventSessionExited && evt.SessionID == 1 {
 				foundExited = true
 			}
 		default:
-			goto done
 		}
-	}
-done:
-	if !foundExited {
-		t.Error("EventSessionExited not received")
+		if foundExited {
+			break
+		}
+		lastState = "absent"
+		for _, info := range m.Sessions() {
+			if info.ID == 1 {
+				lastState = info.State.String()
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session 1 exit event not received after deadline (last state: %s)", lastState)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

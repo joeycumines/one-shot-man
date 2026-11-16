@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm sync load` strips YAML frontmatter from files with CRLF line endings and no longer truncates an entry whose frontmatter value contains `---`; `osm sync --help` lists the `config-push`/`config-pull` subcommands its own usage omitted.
 - CI installs the exact Go version named by `go.mod` (`actions/setup-go` with `go-version-file: go.mod`) instead of deriving a `major.minor` line from the `go` directive. The derived line left the installed patch to each runner image's toolcache, so the compiler could silently drift below `go.mod` and be re-downloaded by `GOTOOLCHAIN=auto`, defeating the pin that keeps the staticcheck version pinned in `go.mod`'s tool block able to read this Go version's export data.
 - `osm pr-split` waits for a prompt submission with the test-facing knobs pinned, so a loaded runner cannot starve the prompt-ready poll and fail `TestIntegration_SendToHandle_ObservedSubmission*`.
+- `osm pr-split` test harness evaluates each script under the same 10-minute ceiling as the pipeline tests (previously 2 minutes), so a large pure-JS workload such as the 10,000-file grouping check no longer times out on a loaded runner while it still makes progress; the reap order that decides a child's exit status is now pinned by a test on every platform (close the process tree after `Wait` when the pre-reap probe is unavailable, as on Windows).
 
 ## [v0.9.0] - 2026-11-15
 

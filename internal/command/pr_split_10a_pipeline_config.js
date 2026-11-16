@@ -282,6 +282,17 @@
     prSplit.SEND_TEXT_NEWLINE_DELAY_MS = SEND_TEXT_NEWLINE_DELAY_MS;
     prSplit.SEND_TEXT_CHUNK_BYTES = SEND_TEXT_CHUNK_BYTES;
     prSplit.SEND_TEXT_CHUNK_DELAY_MS = SEND_TEXT_CHUNK_DELAY_MS;
+    // assertNumberKnob guards the test-facing prompt knobs: a typo in a test's
+    // `prSplit.SEND_* = N` assignment would otherwise silently create a new
+    // property and leave the real knob at its slow default, un-fixing a flake
+    // without any signal. Callers pass the value read back after assignment.
+    function assertNumberKnob(name, value) {
+        if (typeof value !== 'number' || !isFinite(value)) {
+            throw new Error('invalid numeric test knob ' + name + ': ' + String(value));
+        }
+    }
+
+    prSplit._assertNumberKnob = assertNumberKnob;
     prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS;
     prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = SEND_PRE_SUBMIT_STABLE_POLL_MS;
     prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = SEND_PRE_SUBMIT_STABLE_SAMPLES;

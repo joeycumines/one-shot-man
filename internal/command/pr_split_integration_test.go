@@ -833,6 +833,21 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
+			// Assert the intended knobs took effect: a typo'd assignment would
+			// create a new property and leave the real knob at its default, so
+			// checking the read-back value catches it.
+			var promptKnobs = {
+				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
+				'SEND_PROMPT_READY_POLL_MS': 1,
+				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
+				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
+				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
+				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1
+			};
+			Object.keys(promptKnobs).forEach(function(k) {
+				prSplit._assertNumberKnob(k, prSplit[k]);
+				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
+			});
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -919,6 +934,21 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
+			// Assert the intended knobs took effect: a typo'd assignment would
+			// create a new property and leave the real knob at its default, so
+			// checking the read-back value catches it.
+			var promptKnobs = {
+				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
+				'SEND_PROMPT_READY_POLL_MS': 1,
+				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
+				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
+				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
+				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1
+			};
+			Object.keys(promptKnobs).forEach(function(k) {
+				prSplit._assertNumberKnob(k, prSplit[k]);
+				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
+			});
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 

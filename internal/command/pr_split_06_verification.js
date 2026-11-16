@@ -246,8 +246,10 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            // Mark pre-existing failures.
-            if (!result.passed && !result.truncated && baselineFailure) {
+            // A truncated capture or a broken exec layer is an unknown verdict,
+            // never a deterministic failure: neither may be forgiven as
+            // pre-existing, even when the baseline also failed.
+            if (!result.passed && !result.truncated && !result.execFailed && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
             } else if (!result.passed && baselineUnknown) {
@@ -507,6 +509,27 @@
     // Git worktree setup/teardown uses gitExecAsync. The actual verify
     // command uses exec.spawn (see T34 for full CaptureSession-based verify).
     async function verifySplitAsync(branchName, config) {
+        // This function must not reject: an unhandled rejection is fatal to the
+        // event loop, and the TUI fallback and automated pipelines both await
+        // it without a catch. Every source that can reject — resolveVerifyCommand,
+        // gitExecAsync worktree setup, shellSpawnAsync, a throwing output
+        // callback — is contained here and reported as a structured failure
+        // tagged execFailed, never as an unknown verdict.
+        try {
+            return await verifySplitAsyncInner(branchName, config);
+        } catch (e) {
+            return {
+                name: branchName,
+                passed: false,
+                output: '',
+                exitCode: -1,
+                execFailed: true,
+                error: 'verify exec-layer failure: ' + String((e && e.message) || e)
+            };
+        }
+    }
+
+    async function verifySplitAsyncInner(branchName, config) {
         var gitExecAsync = prSplit._gitExecAsync;
         config = config || {};
         var cancellationCheck = typeof config.isCancelled === 'function'
@@ -730,16 +753,22 @@
                 passed: false,
                 output: stdoutBuf,
                 exitCode: exitCode,
+                execFailed: true,
                 error: 'verify wait failed after ' + elapsedMs + 'ms with no exit status: ' + String((waitError && waitError.message) || waitError)
             };
         }
 
+        var signal = exitResult && exitResult.signal ? String(exitResult.signal) : '';
+        var failureDetail = stderrBuf.trim() !== '' ? stderrBuf : '';
+        if (signal && failureDetail.indexOf(signal) < 0) {
+            failureDetail = failureDetail ? (failureDetail + ' (' + signal + ')') : signal;
+        }
         return {
             name: branchName,
             passed: exitCode === 0,
             output: stdoutBuf,
             exitCode: exitCode,
-            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + (stderrBuf.trim() !== '' ? stderrBuf : '') : null
+            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + failureDetail : null
         };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
@@ -863,8 +892,10 @@
                 result.scopedVerify = scopedCmd;
             }
 
-            // Truncated branch is never pre-existing.
-            if (!result.passed && !result.truncated && baselineFailure) {
+            // A truncated branch is never pre-existing. Nor is a wait/exec
+            // failure with no exit status: that is an unknown verdict, and
+            // forgiving it would let a broken exec layer report allPassed:true.
+            if (!result.passed && !result.truncated && !result.execFailed && baselineFailure) {
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
             } else if (!result.passed && baselineUnknown) {

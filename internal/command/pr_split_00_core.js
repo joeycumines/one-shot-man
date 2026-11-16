@@ -387,9 +387,9 @@
 
         // Collect stdout and stderr in parallel to avoid deadlock
         // (the command may fill stderr while we drain stdout). wait() is
-        // guarded: a failed process-tree close rejects it, and that rejection
-        // is an exec-layer failure of the command, not an unhandled rejection
-        // of the whole collection.
+        // guarded: an unrecorded exit rejects it, and that rejection is an
+        // exec-layer failure of the command, not an unhandled rejection of the
+        // whole collection. A recorded status outranks cleanup failures.
         var waitResult = {};
         var waitError = null;
         var results = await Promise.all([

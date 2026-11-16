@@ -225,3 +225,35 @@ func TestWaitAndCloseProcessTree_PropagatesPersistentPermissionFailure(t *testin
 		t.Errorf("tree closed %d times, want 2", tree.closed)
 	}
 }
+
+// TestWaitAndCloseProcessTree_ProbeErrorStillWaits pins the failure-path
+// ordering: when the pre-reap probe fails, the tree is closed AFTER cmd.Wait
+// and the wait's verdict decides the outcome. On Windows the probe is a no-op
+// that reports failure, so this exercises exactly the Windows path: a child
+// that exits 0 must come back waitErr=nil even though the probe errored.
+func TestWaitAndCloseProcessTree_ProbeErrorStillWaits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell helper")
+	}
+	orig := waitProcessBeforeReapFn
+	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
+	probeErr := errors.New("probe unavailable")
+	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return false, probeErr }
+
+	cmd := osexec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start helper process: %v", err)
+	}
+	tree := &recordingTree{}
+
+	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	if waitErr != nil {
+		t.Fatalf("waitErr = %v, want nil for an exit-0 command despite the probe failure", waitErr)
+	}
+	if closeErr != nil {
+		t.Fatalf("closeErr = %v, want nil", closeErr)
+	}
+	if tree.closed != 1 {
+		t.Errorf("tree closed %d times, want 1 (after wait, not before)", tree.closed)
+	}
+}

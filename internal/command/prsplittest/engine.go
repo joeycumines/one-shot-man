@@ -108,12 +108,19 @@ func (e *Engine) LoadChunks(t testing.TB, names ...string) {
 // test infrastructure.
 func (e *Engine) EvalJS(t testing.TB) func(string) (any, error) {
 	t.Helper()
-	// 2m rather than 30s: heavy real-git evaluations (executeSplit,
-	// cleanupBranches) can legitimately exceed 30s of wall-clock on a loaded
-	// parallel CI runner while still making progress; the package-level test
-	// timeout still bounds genuine hangs.
-	return makeEvalJS(t, e.engine, 2*time.Minute)
+	// 10m, matching the pr_split_test_pipeline_test.go prSplitEvalTimeout: heavy
+	// real-git evaluations (executeSplit, cleanupBranches) and large pure-JS
+	// workloads (the 10k-file grouping tests) can legitimately exceed 2m of
+	// wall-clock on a loaded parallel windows-latest runner while still making
+	// progress; the package-level test timeout still bounds genuine hangs.
+	return makeEvalJS(t, e.engine, prsplittestEvalTimeout)
 }
+
+// prsplittestEvalTimeout is the default bound for [Engine.EvalJS]. It mirrors
+// the 10-minute prSplitEvalTimeout used by the pipeline tests so the
+// prsplittest helpers and the older loadPrSplitEngineWithEval helpers impose
+// the same ceiling on CI-loaded runners.
+const prsplittestEvalTimeout = 10 * time.Minute
 
 // EvalJSTimeout is like [Engine.EvalJS] but with a custom timeout.
 func (e *Engine) EvalJSTimeout(t testing.TB, timeout time.Duration) func(string) (any, error) {

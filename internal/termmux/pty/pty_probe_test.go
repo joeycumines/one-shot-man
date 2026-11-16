@@ -3,6 +3,7 @@ package pty
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -31,13 +32,13 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 		{
 			// The runner limitation: the child cannot initialise its console.
 			name:        "dll init failed",
-			attempt:     conPTYProbeAttempt{code: conPTYStatusDLLInitFailed},
+			attempt:     conPTYProbeAttempt{code: probeExitCode(conPTYStatusDLLInitFailed)},
 			wantVerdict: conPTYProbeUnavailable,
 			wantReason:  true,
 		},
 		{
 			name:        "dll init failed with a close failure",
-			attempt:     conPTYProbeAttempt{code: conPTYStatusDLLInitFailed, closeErr: errors.New("close conpty")},
+			attempt:     conPTYProbeAttempt{code: probeExitCode(conPTYStatusDLLInitFailed), closeErr: errors.New("close conpty")},
 			wantVerdict: conPTYProbeUnavailable,
 			wantReason:  true,
 		},
@@ -83,6 +84,15 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 			wantReason:  true,
 		},
 		{
+			// The output tail is the evidence the next failure needs: an exit
+			// 1 alone could not distinguish a console-init failure from a
+			// broken Spawn/Wait contract.
+			name:        "unexpected exit code with output tail",
+			attempt:     conPTYProbeAttempt{code: 1, outputTail: "The system cannot find the file specified.\r\n"},
+			wantVerdict: conPTYProbeFailure,
+			wantReason:  true,
+		},
+		{
 			// A Close that cannot release the pseudoconsole would leak across
 			// every caller in the package, so it is a failure, not a skip.
 			name:        "clean exit with a close failure",
@@ -104,6 +114,9 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 			if !tc.wantReason && reason != "" {
 				t.Fatalf("ready verdict carries a reason: %q", reason)
 			}
+			if tc.attempt.outputTail != "" && !strings.Contains(reason, "cannot find the file") {
+				t.Fatalf("reason %q must carry the probe output tail", reason)
+			}
 		})
 	}
 }
@@ -113,7 +126,7 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 // failure on every headless runner.
 func TestConPTYStatusDLLInitFailed(t *testing.T) {
 	t.Parallel()
-	if conPTYStatusDLLInitFailed != 3221225794 {
-		t.Fatalf("conPTYStatusDLLInitFailed = %d, want 3221225794 (0xC0000142)", conPTYStatusDLLInitFailed)
+	if uint64(conPTYStatusDLLInitFailed) != 3221225794 {
+		t.Fatalf("conPTYStatusDLLInitFailed = %d, want 3221225794 (0xC0000142)", uint64(conPTYStatusDLLInitFailed))
 	}
 }

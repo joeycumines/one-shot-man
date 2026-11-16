@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,17 +44,18 @@ func skipIfWindows(t *testing.T) {
 	}
 }
 
-// conPTYProbeResult caches the outcome of probing the host for a working
-// ConPTY. Ten tests call requireConPTYRuntime and several of them t.Parallel
-// with each other, so probing per call meant up to thirty spawns per package
-// run, each up to 10s, competing for the same loaded runner.
+// conPTYProbeResult caches the ready/unavailable outcome of probing the host
+// for a working ConPTY. Ten tests call requireConPTYRuntime and several of
+// them t.Parallel with each other, so probing per call meant up to thirty
+// spawns per package run, each up to 10s, competing for the same loaded runner.
+// A FAILURE is deliberately NOT cached: one unlucky three-attempt window would
+// otherwise fail every ConPTY test for the rest of the package run, hiding a
+// transient runner problem as a permanent contract failure.
 var conPTYProbeResult struct {
-	once sync.Once
+	mu     sync.Mutex
+	probed bool // true once a ready/unavailable verdict has been cached
 	// unavailable is a human-readable reason, or empty when ConPTY works.
 	unavailable string
-	// failure is set when the probe observed a broken pty contract rather than
-	// an unusable host; requireConPTYRuntime turns it into t.Fatalf.
-	failure string
 }
 
 // conPTYStatusDLLInitFailed is STATUS_DLL_INIT_FAILED (0xC0000142), the
@@ -63,6 +63,16 @@ var conPTYProbeResult struct {
 // initialise. Together with the API-absence errnos below it is the only probe
 // outcome that legitimately means "this host cannot run these tests".
 const conPTYStatusDLLInitFailed = 3221225794
+
+// probeExitCode converts an unsigned Windows status code to the int field the
+// probe records. The conversion must happen at runtime: writing
+// `conPTYProbeAttempt{code: conPTYStatusDLLInitFailed}` is a compile-time
+// constant conversion that overflows on windows/386, where release binaries are
+// built. On 32-bit the wrapped value is negative; classifyConPTYAttempt reads
+// it back through uint32, so the verdict is identical.
+func probeExitCode(status uint32) int {
+	return int(status)
+}
 
 // Windows errnos meaning the ConPTY API itself is not present on this host.
 // They are declared as plain syscall.Errno values because this file builds on
@@ -88,10 +98,21 @@ const (
 
 // conPTYProbeAttempt is one attempt's raw observations.
 type conPTYProbeAttempt struct {
-	spawnErr error
-	waitErr  error
-	closeErr error
-	code     int
+	spawnErr   error
+	waitErr    error
+	closeErr   error
+	code       int
+	outputTail string
+}
+
+// truncateForProbeReason keeps a diagnostic tail bounded so a pathological
+// child cannot turn the probe reason into an unbounded log line.
+func truncateForProbeReason(s string) string {
+	const max = 512
+	if len(s) <= max {
+		return s
+	}
+	return s[len(s)-max:]
 }
 
 // classifyConPTYAttempt decides what one probe attempt means.
@@ -123,7 +144,11 @@ func classifyConPTYAttempt(attempt conPTYProbeAttempt) (conPTYProbeVerdict, stri
 		return conPTYProbeFailure, fmt.Sprintf("pty.Close failed: %v", attempt.closeErr)
 	}
 	if attempt.code != 0 {
-		return conPTYProbeFailure, fmt.Sprintf("probe command exited with code %d", attempt.code)
+		reason := fmt.Sprintf("probe command exited with code %d", attempt.code)
+		if tail := strings.TrimSpace(attempt.outputTail); tail != "" {
+			reason += "; output tail: " + truncateForProbeReason(tail)
+		}
+		return conPTYProbeFailure, reason
 	}
 	return conPTYProbeReady, ""
 }
@@ -134,9 +159,10 @@ func classifyConPTYAttempt(attempt conPTYProbeAttempt) (conPTYProbeVerdict, stri
 // The distinction matters: a host that cannot spawn a working console is a
 // reason to skip, because no ConPTY test in this package can then say anything
 // about the code (run 129562188488 reported `ConPTY runtime probe exited with
-// code 1 after 3 attempts` from eight tests on a runner that could not
-// initialise a console). But a Spawn or Wait regression is exactly what these
-// tests exist to catch, so it must fail the package instead of silently
+// code 1 after 3 attempts`; that exit 1 came from the old PowerShell CLR
+// startup timing out, not from STATUS_DLL_INIT_FAILED 0xC0000142, and is now a
+// hard failure). But a Spawn or Wait regression is exactly what these tests
+// exist to catch, so it must fail the package instead of silently
 // skipping all ten callers.
 func requireConPTYRuntime(t *testing.T) {
 	t.Helper()
@@ -144,14 +170,28 @@ func requireConPTYRuntime(t *testing.T) {
 		t.Skip("ConPTY runtime probe requires Windows")
 	}
 
-	conPTYProbeResult.once.Do(func() {
-		conPTYProbeResult.unavailable, conPTYProbeResult.failure = probeConPTY()
-	})
-	if failure := conPTYProbeResult.failure; failure != "" {
-		t.Fatalf("ConPTY runtime probe failed: %s", failure)
+	conPTYProbeResult.mu.Lock()
+	probed := conPTYProbeResult.probed
+	cachedUnavailable := conPTYProbeResult.unavailable
+	conPTYProbeResult.mu.Unlock()
+	if !probed {
+		unavailable, failure := probeConPTY()
+		conPTYProbeResult.mu.Lock()
+		// Only a definitive readiness or host-capability verdict is cached. A
+		// failure may be transient (handle exhaustion, runner load); the next
+		// caller re-probes instead of inheriting a permanent t.Fatalf.
+		if failure == "" {
+			conPTYProbeResult.probed = true
+			conPTYProbeResult.unavailable = unavailable
+		}
+		conPTYProbeResult.mu.Unlock()
+		if failure != "" {
+			t.Fatalf("ConPTY runtime probe failed: %s", failure)
+		}
+		cachedUnavailable = unavailable
 	}
-	if reason := conPTYProbeResult.unavailable; reason != "" {
-		t.Skipf("skipping ConPTY tests: %s", reason)
+	if cachedUnavailable != "" {
+		t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
 	}
 }
 
@@ -207,12 +247,31 @@ func probeConPTYAttempt() (conPTYProbeVerdict, string) {
 		return classifyConPTYAttempt(observed)
 	}
 
-	// Drain concurrently: an undrained ConPTY output pipe can block the child
-	// before it exits, which would surface as a bogus Wait timeout.
-	proc.DrainOutput(io.Discard)
+	// Drain concurrently into a bounded tail: an undrained ConPTY output pipe
+	// can block the child before it exits, which would surface as a bogus Wait
+	// timeout, and discarding the output made a repeat exit-1 undiagnosable.
+	var tailMu sync.Mutex
+	var tail strings.Builder
+	proc.DrainOutput(writerFunc(func(p []byte) (int, error) {
+		n := len(p)
+		tailMu.Lock()
+		defer tailMu.Unlock()
+		remaining := 4096 - tail.Len()
+		if remaining > 0 {
+			chunk := p
+			if len(chunk) > remaining {
+				chunk = chunk[len(chunk)-remaining:]
+			}
+			_, _ = tail.Write(chunk)
+		}
+		return n, nil
+	}))
 
 	observed.code, observed.waitErr = proc.Wait()
 	observed.closeErr = proc.Close()
+	tailMu.Lock()
+	observed.outputTail = tail.String()
+	tailMu.Unlock()
 
 	return classifyConPTYAttempt(observed)
 }

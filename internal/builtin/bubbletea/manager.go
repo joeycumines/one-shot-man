@@ -83,6 +83,18 @@ func (c *programCompletion) wait() error {
 	return c.err
 }
 
+// waitCtx blocks until the completion fires or ctx is cancelled. On
+// cancellation it returns ctx.Err(); the completion itself is left running
+// so later callers can still observe the real result.
+func (c *programCompletion) waitCtx(ctx context.Context) error {
+	select {
+	case <-c.done:
+		return c.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (c *programCompletion) completed() bool {
 	select {
 	case <-c.done:

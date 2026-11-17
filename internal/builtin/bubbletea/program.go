@@ -16,15 +16,25 @@ import (
 // callers observe the same completion result. Returns nil if no program has
 // been started. This keeps callers alive after non-blocking tea.run() without
 // consuming a one-shot completion notification.
+//
+// If the manager's context is cancelled while waiting (engine shutdown or the
+// unlistened-signal force-cancel), WaitForProgram returns the context error
+// instead of blocking forever on a program that teardown is in the process of
+// ending — the program itself observes the same cancellation via
+// tea.WithContext and exits, completing the record for any later caller.
 func (m *Manager) WaitForProgram() error {
 	m.mu.Lock()
 	completion := m.programDone
+	ctx := m.ctx
 	m.mu.Unlock()
 
 	if completion == nil {
 		return nil
 	}
 
+	if ctx != nil {
+		return completion.waitCtx(ctx)
+	}
 	return completion.wait()
 }
 
@@ -164,15 +174,36 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// but wrap one.  We check for the UnwrapFile() interface to recover the
 	// underlying file in those cases.
 	var opts []tea.ProgramOption
-	if f := unwrapOSFile(input); f != nil {
-		opts = append(opts, tea.WithInput(f))
-	} else if input != nil {
-		opts = append(opts, tea.WithInput(input))
-	}
-	if f := unwrapOSFile(output); f != nil {
-		opts = append(opts, tea.WithOutput(f))
-	} else if output != nil {
-		opts = append(opts, tea.WithOutput(output))
+	if isTTY {
+		// A real terminal: pass it through so BubbleTea owns raw mode and
+		// renders to it.
+		if f := unwrapOSFile(input); f != nil {
+			opts = append(opts, tea.WithInput(f))
+		} else if input != nil {
+			opts = append(opts, tea.WithInput(input))
+		}
+		if f := unwrapOSFile(output); f != nil {
+			opts = append(opts, tea.WithOutput(f))
+		} else if output != nil {
+			opts = append(opts, tea.WithOutput(output))
+		}
+	} else {
+		// No terminal (pipes, buffers, test harnesses, CI): run headless.
+		// The program must not touch stdin at all — in a non-TTY environment
+		// (e.g. `go test` where stdin is /dev/null or a closed pipe) the
+		// cancelreader's kqueue/select interest on that fd can fire
+		// immediately and repeatedly, and bubbletea's own shutdown then
+		// waits on that read loop (up to its 500ms cap per shutdown), which
+		// under loaded CI runners starves the Promisify worker that owns
+		// WaitForProgram and wedges the whole script teardown. Disabling
+		// input removes the blocking read entirely; the renderer is also
+		// disabled so no terminal escape sequences are written.
+		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
+		if f := unwrapOSFile(output); f != nil {
+			opts = append(opts, tea.WithOutput(f))
+		} else if output != nil {
+			opts = append(opts, tea.WithOutput(output))
+		}
 	}
 	// Signal ownership belongs to the embedding runtime, not the program:
 	// bubbletea's own handler turns SIGTERM into QuitMsg and SIGINT into
@@ -182,6 +213,11 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// that does not is still covered because the engine cancels the runtime,
 	// which lands on the ctx.Done() arm of the watchdog goroutine below.
 	opts = append(opts, tea.WithoutSignalHandler())
+	// Tie the program's lifecycle to the manager context: when the engine
+	// force-cancels (unlistened signal, shutdown), the event loop's p.ctx
+	// closes and eventLoop returns immediately, so p.Run() cannot stay
+	// parked waiting for input that will never arrive.
+	opts = append(opts, tea.WithContext(ctx))
 
 	p := tea.NewProgram(model, opts...)
 

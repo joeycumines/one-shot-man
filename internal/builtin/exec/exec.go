@@ -364,6 +364,10 @@ const outputAbortGrace = 100 * time.Millisecond
 // code is unclassified on this platform (exitStatusUnclassified). The cleanup
 // failure is still carried in ChildProcess.exitErr for Go callers.
 //
+// A caller whose context cancelled AFTER recordExit published a status does not
+// get a waitAbortedError — WaitContext returns the recorded (code, exitErr)
+// pair — so the settlement below resolves with the observed outcome.
+//
 // Both code and waitErr are the values WaitContext returned, so the settlement
 // cannot disagree with what the caller observed; recordExit's fields are read
 // under the mutex because the reaper may still be recording when a cancelled

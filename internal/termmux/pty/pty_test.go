@@ -29,6 +29,16 @@ func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
 // asserted is the configured grace+force total, not the slack.
 const closeSchedulingSlack = 30 * time.Second
 
+// closeGraceSchedulingSlack bounds how far past the CONFIGURED grace period a
+// Close may be descheduled before the custom-grace test concludes the
+// configured value was ignored. It is deliberately far tighter than
+// closeSchedulingSlack: the wide total allowance exists for loaded runners,
+// but it must not also cover the difference between a 500ms configured grace
+// and the 5s default (a mutation substituting DefaultCloseGracePeriod for the
+// configured value must fail). 2s is runner slack on top of the configured
+// 500ms, not a second bound on Close.
+const closeGraceSchedulingSlack = 2 * time.Second
+
 // conPTYOutputDeadline bounds how long a ConPTY test waits for the child to
 // produce recognisable output on a loaded runner. PowerShell CLR startup on
 // an oversubscribed windows-latest host has exceeded 10s without any defect
@@ -292,9 +302,13 @@ func probeConPTYAttempt() (conPTYProbeVerdict, string) {
 
 	proc, err := Spawn(ctx, SpawnConfig{
 		Command: "cmd.exe",
-		Args:    []string{"/c", "exit 0"},
-		Rows:    24,
-		Cols:    80,
+		// /d disables the machine/user Command Processor AutoRun hooks, so
+		// the probe cannot execute unrelated startup code (which could exit
+		// non-zero or block) before reaching `exit 0`. The previous
+		// PowerShell invocation used -NoProfile for the same reason.
+		Args: []string{"/d", "/c", "exit 0"},
+		Rows: 24,
+		Cols: 80,
 	})
 	if err != nil {
 		observed.spawnErr = err
@@ -1217,14 +1231,23 @@ func TestProcess_Close_CustomGracePeriod(t *testing.T) {
 	// the configured bounds Close is expected to honour. The upper allowance is
 	// scheduling slack, not a second contract — a hard 2s ceiling failed a
 	// loaded windows-latest runner at 3.4769077s (run 129562188488) while Close
-	// was behaving correctly.
+	// was behaving correctly. But the slack must not swallow the configured
+	// grace period itself: with a 500ms grace the default 5s grace would land
+	// inside this allowance and pass. The configured grace is therefore
+	// bounded tightly (its own scheduling slack), while only the total gets
+	// the wide runner-contention allowance. The force-wait value is already
+	// pinned exactly via timeoutErr.Wait above.
 	minExpected := gracePeriod + forceWait
 	maxExpected := minExpected + closeSchedulingSlack
+	graceMax := gracePeriod + closeGraceSchedulingSlack
 	if elapsed < minExpected {
 		t.Fatalf("Close returned too quickly: %v (min expected ~%v)", elapsed, minExpected)
 	}
 	if elapsed > maxExpected {
 		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
+	}
+	if elapsed > graceMax+forceWait {
+		t.Fatalf("Close ignored the configured grace period %v: elapsed %v exceeds grace bound %v + forceWait %v", gracePeriod, elapsed, graceMax, forceWait)
 	}
 }
 

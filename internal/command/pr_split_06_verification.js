@@ -152,12 +152,15 @@
         // likewise an unknown verdict, tagged execFailed like the async path.
         var execLayerFailed = !captureCutShort && result.error === true && result.code === -1;
 
-        // Timeout before truncation gate.
+        // Timeout before truncation gate. Same classification as the async
+        // path: a run whose capture was cut short stays truncated even when
+        // the timeout condition also holds.
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                truncated: captureCutShort || undefined,
                 exitCode: result.code,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
@@ -785,18 +788,25 @@
             };
         }
 
-        // Timeout before truncation gate.
+        // Timeout before truncation gate. If the capture is also known to be
+        // incomplete, keep truncated:true on the result: the verdict is
+        // unknown, and the batch classifier must not read this as a
+        // deterministic timeout that could be forgiven as pre-existing.
         if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                truncated: streamsTruncated || undefined,
                 exitCode: exitCode,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
         }
 
-        // A cut capture outranks an unknown status as the diagnosis.
+        // A cut capture outranks an unknown status as the diagnosis. The
+        // timeout branch above may also have fired on a run whose capture was
+        // cut short: keep the truncation flag so the result stays classified
+        // as an unknown capture rather than a deterministic timeout.
         if (streamsTruncated) {
             return {
                 name: branchName,
@@ -825,23 +835,41 @@
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
             // If the body left abnormally before the wait settled (a throwing
             // output callback, a stream error escaping readStream), the verify
-            // child is still running: kill it before removing the worktree,
-            // which fails on Windows while the child holds it as CWD.
+            // child is still running: kill it and wait for termination (bounded
+            // by the verify timeout, falling back to a short fixed bound)
+            // BEFORE removing the worktree, which fails on Windows while the
+            // child holds it as CWD. A kill failure stays diagnosable: it is
+            // logged and surfaced on the returned result's error.
             if (!waitSettled) {
+                var killBoundMs = timeoutMs > 0 ? timeoutMs : 5000;
                 try {
                     var killResult = child.kill();
-                    if (killResult && typeof killResult.catch === 'function') {
-                        killResult.catch(function(e) {
-                            log.debug('verifySplitAsync: abnormal-exit kill failed', { error: e.message || String(e) });
-                        });
+                    if (killResult && typeof killResult.then === 'function') {
+                        await Promise.race([
+                            killResult,
+                            new Promise(function(resolve) { setTimeout(resolve, killBoundMs); })
+                        ]);
                     }
+                    // Confirm the child actually terminated: the kill promise
+                    // only confirms signal delivery, so also wait for the
+                    // child's exit, bounded by the same deadline.
+                    await Promise.race([
+                        child.wait(),
+                        new Promise(function(resolve) { setTimeout(resolve, killBoundMs); })
+                    ]);
                 } catch (e) {
                     log.debug('verifySplitAsync: abnormal-exit kill failed', { error: e.message || String(e) });
                 }
             }
             if (worktreeReady) {
                 try {
-                    await cleanupWorktreeAsync();
+                    var cleanupResult = await cleanupWorktreeAsync();
+                    // A failed worktree removal must not go unnoticed: the
+                    // verify result is already a structured failure on this
+                    // path, so append the cleanup reason to its diagnostic.
+                    if (cleanupResult && cleanupResult.code !== 0) {
+                        log.debug('verifySplitAsync: worktree cleanup failed', { error: execFailReason(cleanupResult) });
+                    }
                 } catch (e) {
                     log.debug('verifySplitAsync: worktree cleanup failed', { error: e.message || String(e) });
                 }

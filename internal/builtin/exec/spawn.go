@@ -92,6 +92,10 @@ type ChildProcess struct {
 	cmd      *osexec.Cmd
 	tree     processTree
 	closed   bool
+	// reaped is set by recordExit, i.e. only when the background reaper has
+	// stored the child's outcome. Unlike closed (which Kill sets early), it
+	// means a status was actually observed and published under mu.
+	reaped   bool
 	done     chan struct{} // closed when process exits
 	settled  chan struct{} // closed when drain settles
 	exitCode int
@@ -411,6 +415,10 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	go func() {
 		waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
 
+		// recordExit and close(done) are deliberately separate: recordExit
+		// publishes the observed status under mu first, so a caller whose
+		// context cancels in between still reads the recorded exit via the
+		// reaped flag in WaitContext rather than losing it to the abort.
 		child.recordExit(waitErr, closeErr)
 
 		pumpDone := make(chan struct{})
@@ -442,11 +450,18 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 // never erases the status: the drain is aborted because a tree close that
 // failed cannot vouch for the pipe writers (mirrors runExecCommand's
 // captureAbort).
+//
+// reaped records whether recordExit ran at all, which is distinct from
+// closed: Kill() sets closed before the reaper runs, so closed is NOT proof
+// that a status was observed. WaitContext's cancellation branch consults
+// reaped, so a wait cancelled after the reaper recorded a status still
+// reports the recorded exit instead of losing it to the abort.
 func (c *ChildProcess) recordExit(waitErr, closeErr error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.closed = true
+	c.reaped = true
 	// Preserve the wait error for Go callers of WaitContext: a reaped child
 	// exiting non-zero (or returning a context error alongside a real status)
 	// must keep its *osexec.ExitError / context error in exitErr. JS
@@ -631,7 +646,9 @@ func (c *ChildProcess) CloseStdinContext(ctx context.Context) error {
 // cancelled before the reaper recorded anything. It unwraps to the context
 // error for Go callers, and waitRejection rejects it unconditionally: a wait
 // that never observed the reaper's record must not consult exitStatus, which
-// the reaper may have set concurrently with the cancellation.
+// the reaper may have set concurrently with the cancellation. A wait whose
+// cancellation raced a COMPLETED recordExit is not wrapped — it returns the
+// recorded (exitCode, exitErr) instead.
 type waitAbortedError struct {
 	err error
 }
@@ -646,6 +663,13 @@ func (e *waitAbortedError) Unwrap() error { return e.err }
 // exit that may never arrive. Reaping happens on the background reaper
 // regardless of ctx, so a cancelled wait reports ctx.Err() without abandoning
 // the process.
+//
+// Completion boundary: recordExit publishes the observed status under mu
+// (reaped=true) BEFORE close(done). A caller whose context cancels after the
+// reaper recorded therefore still receives the recorded (exitCode, exitErr) —
+// an already-observed exit wins over the abort. Only a cancellation that
+// lands before any record returns waitAbortedError, which waitRejection
+// rejects unconditionally.
 func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -664,21 +688,24 @@ func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
 	select {
 	case <-c.done:
 	case <-ctx.Done():
-		// Re-check under the lock: the reaper may have recorded and closed done
-		// concurrently with the cancellation. If it has, the recorded exit is
-		// the answer. If it has not, this wait never observed a status: report
-		// the abort wrapped so waitRejection rejects it unconditionally instead
-		// of consulting a record that may land a moment later.
+		// Re-check under the lock: the reaper may have recorded and closed
+		// done concurrently with the cancellation. If it has, the recorded
+		// exit is the answer — an already-observed status wins over the
+		// caller's abort. If it has not, this wait never observed a status:
+		// report the abort wrapped so waitRejection rejects it
+		// unconditionally instead of consulting a record that may land a
+		// moment later. `reaped` (not `closed`, which Kill sets early) is
+		// the authority that a status was actually recorded.
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		if !c.closed {
+		if !c.reaped {
 			return -1, &waitAbortedError{err: ctx.Err()}
 		}
 		select {
 		case <-c.done:
 			return c.exitCode, c.exitErr
 		default:
-			return -1, &waitAbortedError{err: ctx.Err()}
+			return c.exitCode, c.exitErr
 		}
 	}
 	c.mu.Lock()

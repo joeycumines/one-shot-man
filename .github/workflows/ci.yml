@@ -28,11 +28,14 @@ jobs:
     # Reading the module's own version keeps the compiler and the lint tools in
     # step.
     #
-    # go-version-file honours the exact patch in the `go` directive and prefers
-    # a `toolchain` directive when one exists, instead of leaving the installed
-    # patch to whatever each runner image happens to cache. That is also why
-    # there is no hand-rolled go.mod parsing: awk would re-implement the action,
-    # miss `toolchain`, and pass a stray CR on Windows runners.
+    # go-version-file honours the exact patch in the `go` directive (this
+    # go.mod names 1.27.3 and has no `toolchain` line, so that is what CI
+    # installs), instead of leaving the installed patch to whatever each
+    # runner image happens to cache. That is also why there is no hand-rolled
+    # go.mod parsing: awk would re-implement the action and pass a stray CR on
+    # Windows runners. Note actions/setup-go@v5 reads only the `go` directive
+    # — it does not prefer a `toolchain` directive if one is ever added, so a
+    # future `toolchain` line would still need an action that honours it.
     - name: Set up Go
       uses: actions/setup-go@v5
       with:

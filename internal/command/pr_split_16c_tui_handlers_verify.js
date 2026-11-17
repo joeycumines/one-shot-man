@@ -253,6 +253,12 @@
         if (!s._baselineVerifyResult || !s._baselineVerifyResult.sourceBranch) return '';
         return ' (pre-existing on ' + s._baselineVerifyResult.sourceBranch + ')';
     }
+    // An unknown verdict (exec-layer failure, cut capture, cancellation) is
+    // NOT a verification result: it must never forgive a failing split as
+    // pre-existing, matching the batch verifiers in pr_split_06.
+    function _isUnknownVerdict(result) {
+        return !!(result && (result.execFailed || result.truncated || result.cancelled));
+    }
 
     function isThenable(value) {
         return value && typeof value.then === 'function';
@@ -541,8 +547,12 @@
                     outputFn: null
                 }).then(function(result) {
                     if (!baselineStillCurrent()) return;
+                    // An unknown baseline verdict (exec-layer failure, cut
+                    // capture, cancellation) is NOT a baseline failure: it
+                    // disables pre-existing detection instead of forgiving
+                    // failing splits, matching the batch verifiers.
                     s._baselineVerifyResult = {
-                        failed: !result.passed,
+                        failed: !result.passed && !_isUnknownVerdict(result),
                         sourceBranch: sourceBranch
                     };
                 }, function() {
@@ -1181,10 +1191,12 @@
 
         // T115: Detect pre-existing failures using cached baseline result.
         // verifySplitAsync (singular) never sets preExisting — only the batch
-        // verifySplitsAsync does, so we must check the baseline cache here.
+        // verifySplitsAsync does, so we must check the baseline cache here. A
+        // split whose own verdict is unknown (execFailed/truncated) must not
+        // acquire preExisting either: an unknown result is never forgiven.
         var preExisting = false;
         var errorMsg = verifyResult.error || null;
-        if (!verifyResult.passed && !verifyResult.skipped && _isPreExistingFailure(s)) {
+        if (!verifyResult.passed && !verifyResult.skipped && !_isUnknownVerdict(verifyResult) && _isPreExistingFailure(s)) {
             preExisting = true;
             if (errorMsg) {
                 errorMsg += _preExistingAnnotation(s);

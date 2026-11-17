@@ -100,12 +100,12 @@ func TestRecordExit_ReapedNonZeroExitPreservesWaitErr(t *testing.T) {
 	}
 }
 
-// TestWaitContext_CallerAbortRejectsWhenReaperRecorded pins the race the
-// caller-cancellation path can lose: recordExit has recorded a status (here a
-// signal) but done is not closed yet when the caller's context cancels.
-// WaitContext must report the abort as an error, and waitRejection must reject
-// it — never resolve the JS wait() as {code: -1, signal: ...}.
-func TestWaitContext_CallerAbortRejectsWhenReaperRecorded(t *testing.T) {
+// TestWaitContext_CallerAbortBeforeReapRejects pins the other side of the
+// completion boundary: when the caller's context cancels BEFORE the reaper has
+// recorded anything, WaitContext must report the abort as a waitAbortedError
+// (never resolve {code: -1} from a status this wait never observed), and
+// waitRejection must reject it.
+func TestWaitContext_CallerAbortBeforeReapRejects(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX signal semantics")
 	}
@@ -118,18 +118,14 @@ func TestWaitContext_CallerAbortRejectsWhenReaperRecorded(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
 	}
-	waitErr := cmd.Wait()
+	_ = cmd.Wait()
 	if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != -1 {
 		t.Fatalf("ProcessState = %v, want a signal exit (-1)", cmd.ProcessState)
 	}
 
-	// Simulate the window between recordExit and close(done): the reaper has
-	// recorded, but done is still open.
+	// done is never closed and recordExit never ran: the reaper has not
+	// recorded, so a caller-aborted wait must report the abort.
 	child := &ChildProcess{cmd: cmd, done: make(chan struct{})}
-	child.recordExit(waitErr, nil)
-	if child.recordedSignal == "" {
-		t.Fatal("recordedSignal is empty, want the signal from ProcessState")
-	}
 
 	abortCtx, abort := context.WithCancel(context.Background())
 	abort()
@@ -137,8 +133,53 @@ func TestWaitContext_CallerAbortRejectsWhenReaperRecorded(t *testing.T) {
 	if code != -1 || !errors.Is(err, context.Canceled) {
 		t.Fatalf("WaitContext = (%d, %v), want (-1, context.Canceled) for a caller-aborted wait", code, err)
 	}
+	var aborted *waitAbortedError
+	if !errors.As(err, &aborted) {
+		t.Fatalf("WaitContext error = %T, want *waitAbortedError so waitRejection rejects unconditionally", err)
+	}
 	if rejectErr := child.waitRejection(code, err); rejectErr == nil || !errors.Is(rejectErr, context.Canceled) {
 		t.Fatalf("a caller-aborted wait must reject with the context error, got %v", rejectErr)
+	}
+}
+
+// TestWaitContext_RecordedExitWinsOverConcurrentCancel pins the completion
+// boundary from the other side: recordExit has recorded a real status but
+// done is not closed yet when the caller's context cancels. WaitContext must
+// return the recorded exit — not (-1, context.Canceled) — and waitRejection
+// must resolve it, because the status was observed before the abort.
+func TestWaitContext_RecordedExitWinsOverConcurrentCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a short-lived helper process")
+	}
+	command, args := exitCodeCommand(0)
+	cmd := osexec.Command(command, args...)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		t.Fatalf("Wait error = %v, want nil for exit 0", waitErr)
+	}
+	if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("ProcessState = %v, want an observed exit code 0", cmd.ProcessState)
+	}
+
+	// Simulate the window between recordExit and close(done): the reaper has
+	// recorded, but done is still open.
+	child := &ChildProcess{cmd: cmd, done: make(chan struct{})}
+	child.recordExit(waitErr, nil)
+	if !child.exitStatus || child.exitCode != 0 {
+		t.Fatalf("(exitStatus, exitCode) = (%v, %d), want (true, 0)", child.exitStatus, child.exitCode)
+	}
+
+	abortCtx, abort := context.WithCancel(context.Background())
+	abort()
+	code, err := child.WaitContext(abortCtx)
+	if code != 0 || err != nil {
+		t.Fatalf("WaitContext = (%d, %v), want (0, nil): an already-recorded exit wins over the concurrent cancel", code, err)
+	}
+	if rejectErr := child.waitRejection(code, err); rejectErr != nil {
+		t.Fatalf("a recorded exit 0 must resolve, rejected with: %v", rejectErr)
 	}
 }
 

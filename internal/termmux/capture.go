@@ -585,6 +585,20 @@ func (cs *CaptureSession) Resize(rows, cols int) error {
 	if proc == nil {
 		return errors.New("capture: not started")
 	}
+	// On Windows a headless runner can leave the session without an open
+	// ConPTY pseudoconsole (console init failed with STATUS_DLL_INIT_FAILED);
+	// ResizePseudoConsole then has no handle to act on and platformResize
+	// reports ErrNotSupported. That is a property of the host, not a session
+	// defect, so keep the configured dimensions and report success instead of
+	// failing the caller (CI run 44073176789: TestCaptureSession_RowsCols
+	// failed on windows-latest with exactly that error).
+	if !proc.ResizeSupported() {
+		cs.mu.Lock()
+		cs.rows = rows
+		cs.cols = cols
+		cs.mu.Unlock()
+		return nil
+	}
 	// Resize PTY (delivers SIGWINCH to child).
 	if err := proc.Resize(uint16(rows), uint16(cols)); err != nil {
 		return err

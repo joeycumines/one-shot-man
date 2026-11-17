@@ -293,6 +293,17 @@
     }
 
     prSplit._assertNumberKnob = assertNumberKnob;
+    // _setNumberKnob guards the test-facing prompt knobs: assigning a name that
+    // is not an own property of prSplit is a typo, not a new knob, so it throws
+    // instead of silently leaving the real knob at its default.
+    function setNumberKnob(name, value) {
+        if (!Object.prototype.hasOwnProperty.call(prSplit, name)) {
+            throw new Error('unknown numeric test knob ' + name);
+        }
+        assertNumberKnob(name, value);
+        prSplit[name] = value;
+    }
+    prSplit._setNumberKnob = setNumberKnob;
     prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS;
     prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = SEND_PRE_SUBMIT_STABLE_POLL_MS;
     prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = SEND_PRE_SUBMIT_STABLE_SAMPLES;
@@ -302,6 +313,9 @@
     prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = SEND_SUBMIT_ACK_STABLE_SAMPLES;
     prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS;
     prSplit.SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS = SEND_OPENCODE_PROMPT_READY_TIMEOUT_MS;
+    prSplit.SEND_PROMPT_READY_TIMEOUT_MS = SEND_PROMPT_READY_TIMEOUT_MS;
+    prSplit.SEND_PROMPT_READY_POLL_MS = SEND_PROMPT_READY_POLL_MS;
+    prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = SEND_PROMPT_READY_STABLE_SAMPLES;
 
     // Cross-chunk exports — utility functions.
     prSplit._resolveSendConfig = resolveSendConfig;

@@ -1542,30 +1542,30 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 	// false "session 1 still present" message when it was absent while another
 	// session remained. A non-remain-on-exit session may still be removed, so
 	// the snapshot is diagnostic context only, never the verdict.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundExited bool
-	var lastState string
 	for !foundExited {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the session 1 exit event arrived")
+			}
 			if evt.Kind == EventSessionExited && evt.SessionID == 1 {
 				foundExited = true
 			}
-		default:
-		}
-		if foundExited {
-			break
-		}
-		lastState = "absent"
-		for _, info := range m.Sessions() {
-			if info.ID == 1 {
-				lastState = info.State.String()
+		case <-timer.C:
+			// Diagnostic context only, never the verdict: report the last
+			// observed state of session 1 (absent if it is no longer listed).
+			lastState := "absent"
+			for _, info := range m.Sessions() {
+				if info.ID == 1 {
+					lastState = info.State.String()
+				}
 			}
+			t.Fatalf("session 1 exit event not received after %s (last state: %s)", deadline, lastState)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("session 1 exit event not received after deadline (last state: %s)", lastState)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 

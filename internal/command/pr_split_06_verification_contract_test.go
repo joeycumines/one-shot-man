@@ -113,3 +113,78 @@ func TestVerifySplitsAsync_WaitFailureIsNotPreExisting(t *testing.T) {
 		t.Error("a wait failure must never be marked preExisting")
 	}
 }
+
+// TestVerifySplitsAsync_BaselineExecFailureIsNotBaselineFailure pins the
+// asymmetric hole the symmetric wait-failure test above cannot reach: when the
+// BASELINE's wait() rejects (execFailed, unknown verdict) while the split's
+// verify command deterministically exits 1, the split failure must NOT be
+// forgiven as preExisting — a broken exec layer on the baseline must disable
+// pre-existing detection, not enable it.
+func TestVerifySplitsAsync_BaselineExecFailureIsNotBaselineFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("git mock: %v", err)
+	}
+	// The spawn mock rejects wait() only for the baseline branch: the split
+	// gets a child that deterministically exits 1. shellSpawnAsync builds
+	// `sh -c "cd <worktree> && make test"`; the worktree path embeds the
+	// branch name only via the git mock's worktree add, so branch detection
+	// keys off the verify command target instead: the baseline runs before
+	// any split, so the FIRST spawned verify child is the baseline.
+	if _, err := evalJS(`
+		globalThis.__origSpawn06base = globalThis.prSplit._modules.exec.spawn;
+		globalThis.__spawnCallCount06 = 0;
+		globalThis.prSplit._modules.exec.spawn = function(cmd, opts) {
+			function doneStream() {
+				return { read: function() { return Promise.resolve({done: true}); } };
+			}
+			globalThis.__spawnCallCount06++;
+			var failWait = globalThis.__spawnCallCount06 === 1;
+			return {
+				stdout: doneStream(), stderr: doneStream(),
+				wait: function() {
+					if (failWait) return Promise.reject(new Error('wait: no exit status'));
+					return Promise.resolve({code: 1, signal: null});
+				},
+				kill: function() {}, isAlive: function() { return false; }, close: function() {}
+			};
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn06base; globalThis.__origSpawn06base = undefined; globalThis.__spawnCallCount06 = undefined;`); err != nil {
+			t.Logf("restore spawn mock: %v", err)
+		}
+	})
+
+	raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitsAsync({
+		sourceBranch: 'feature',
+		splits: [{ name: 'split/01' }],
+		verifyCommand: 'make test'
+	}))`)
+	if err != nil {
+		t.Fatalf("evalJS: %v", err)
+	}
+	var result struct {
+		AllPassed bool `json:"allPassed"`
+		Results   []struct {
+			Name        string `json:"name"`
+			PreExisting bool   `json:"preExisting"`
+			ExecFailed  bool   `json:"execFailed"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("unmarshal %v: %v", raw, err)
+	}
+	if result.AllPassed {
+		t.Error("a deterministic split failure must not be forgiven (allPassed) when the baseline verdict is unknown")
+	}
+	if len(result.Results) != 1 {
+		t.Fatalf("results = %d, want 1", len(result.Results))
+	}
+	if result.Results[0].PreExisting {
+		t.Error("a deterministically failing split must not be marked preExisting when the baseline is execFailed")
+	}
+}

@@ -109,6 +109,9 @@ func processExitSignal(err error) string {
 // when it exited normally. Reading it at reap time keeps the name available
 // even when cmd.Wait returned a context error whose chain hides the ExitError.
 func processStateSignal(ps *os.ProcessState) string {
+	if ps == nil {
+		return ""
+	}
 	status, ok := ps.Sys().(syscall.WaitStatus)
 	if !ok || !status.Signaled() {
 		return ""

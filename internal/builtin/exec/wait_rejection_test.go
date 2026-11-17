@@ -161,7 +161,9 @@ func TestWaitRejection_TreeCloseFailureAfterCleanExit(t *testing.T) {
 		t.Fatalf("closeErr = %v, want EPERM", closeErr)
 	}
 
-	child := &ChildProcess{}
+	// cmd is attached so recordExit takes the real ProcessState branch (the
+	// branch every production child takes), not the nil-cmd fallback.
+	child := &ChildProcess{cmd: cmd}
 	child.recordExit(waitErr, closeErr)
 
 	if child.exitCode != 0 {
@@ -189,7 +191,9 @@ func TestWaitRejection_TreeCloseFailureAfterNonZeroExit(t *testing.T) {
 	}
 
 	waitErr, closeErr := waitAndCloseProcessTree(cmd, &failingCloseTree{err: syscall.EPERM})
-	child := &ChildProcess{}
+	// cmd is attached so recordExit takes the real ProcessState branch (the
+	// branch every production child takes), not the nil-cmd fallback.
+	child := &ChildProcess{cmd: cmd}
 	child.recordExit(waitErr, closeErr)
 
 	if child.exitCode != 1 {
@@ -197,6 +201,9 @@ func TestWaitRejection_TreeCloseFailureAfterNonZeroExit(t *testing.T) {
 	}
 	if !child.exitStatus {
 		t.Fatal("exitStatus = false, want true for a child whose exit 1 was observed")
+	}
+	if child.exitErr == nil || !errors.As(child.exitErr, new(*osexec.ExitError)) {
+		t.Fatalf("exitErr = %v, want the wait error preserved for Go callers", child.exitErr)
 	}
 	if rejectErr := child.waitRejection(child.exitCode, child.exitErr); rejectErr != nil {
 		t.Fatalf("non-zero exit must resolve, rejected with: %v", rejectErr)

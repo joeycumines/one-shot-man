@@ -358,10 +358,11 @@ const outputAbortGrace = 100 * time.Millisecond
 // promise in the process.
 //
 // The discriminator is therefore the recorded exit status, not the error type.
-// A status is rejected only when the reaper recorded none at all (the wait was
-// cut short before the child was reaped), or when the code is unclassified on
-// this platform (exitStatusUnclassified). The cleanup failure is still carried
-// in ChildProcess.exitErr for Go callers.
+// A status is rejected when the reaper recorded none at all (the wait was cut
+// short before the child was reaped), when the caller's wait was aborted
+// before the reaper recorded (a waitAbortedError from WaitContext), or when the
+// code is unclassified on this platform (exitStatusUnclassified). The cleanup
+// failure is still carried in ChildProcess.exitErr for Go callers.
 //
 // Both code and waitErr are the values WaitContext returned, so the settlement
 // cannot disagree with what the caller observed; recordExit's fields are read
@@ -371,11 +372,20 @@ func (c *ChildProcess) waitRejection(code int, waitErr error) error {
 	if waitErr == nil {
 		return nil
 	}
+	// A wait the caller aborted before the reaper recorded anything never
+	// observed a status, even if recordExit lands a moment later: reject it
+	// unconditionally instead of resolving {code: -1} from a status this wait
+	// never waited for.
+	var aborted *waitAbortedError
+	if errors.As(waitErr, &aborted) {
+		return waitErr
+	}
 	// A real exit status outranks a process-tree cleanup failure AND a context
 	// error returned alongside it. os/exec returns the context error when
 	// Cmd.Cancel ran on an already-exited child, yet ProcessState holds the
 	// real status; rejecting that case is exactly the bug this guard fixes.
-	// Only a wait that never observed a status rejects here.
+	// Note an observed status can still reject below when it is unclassified
+	// (a negative code with no signal on Unix).
 	c.mu.Lock()
 	exitStatus := c.exitStatus
 	recordedSignal := c.recordedSignal

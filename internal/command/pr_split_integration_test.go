@@ -823,19 +823,20 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
-			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS', 25);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_SAMPLES', 1);
 			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
 			// Assert the intended knobs took effect: a typo'd assignment would
 			// create a new property and leave the real knob at its default, so
-			// checking the read-back value catches it.
+			// checking the read-back value catches it. The resolved send config
+			// is what sendToHandle actually consumes, so assert against it too.
 			var promptKnobs = {
 				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
 				'SEND_PROMPT_READY_POLL_MS': 1,
@@ -847,6 +848,18 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			Object.keys(promptKnobs).forEach(function(k) {
 				prSplit._assertNumberKnob(k, prSplit[k]);
 				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
+			});
+			var resolved = prSplit._resolveSendConfig();
+			var resolvedExpect = {
+				promptReadyTimeoutMs: 2000,
+				promptReadyPollMs: 1,
+				promptReadyStableSamples: 1,
+				preSubmitStableTimeoutMs: 25,
+				preSubmitStablePollMs: 1,
+				preSubmitStableSamples: 1
+			};
+			Object.keys(resolvedExpect).forEach(function(k) {
+				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
 			});
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
@@ -924,19 +937,20 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
-			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS', 25);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_SAMPLES', 1);
 			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
 			// Assert the intended knobs took effect: a typo'd assignment would
 			// create a new property and leave the real knob at its default, so
-			// checking the read-back value catches it.
+			// checking the read-back value catches it. The resolved send config
+			// is what sendToHandle actually consumes, so assert against it too.
 			var promptKnobs = {
 				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
 				'SEND_PROMPT_READY_POLL_MS': 1,
@@ -948,6 +962,18 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 			Object.keys(promptKnobs).forEach(function(k) {
 				prSplit._assertNumberKnob(k, prSplit[k]);
 				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
+			});
+			var resolved = prSplit._resolveSendConfig();
+			var resolvedExpect = {
+				promptReadyTimeoutMs: 2000,
+				promptReadyPollMs: 1,
+				promptReadyStableSamples: 1,
+				preSubmitStableTimeoutMs: 25,
+				preSubmitStablePollMs: 1,
+				preSubmitStableSamples: 1
+			};
+			Object.keys(resolvedExpect).forEach(function(k) {
+				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
 			});
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
@@ -1016,9 +1042,9 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 20;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 20);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -1084,9 +1110,9 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 50);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -1161,9 +1187,9 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 10;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 10);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
 			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
 			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;

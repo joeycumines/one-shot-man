@@ -56,6 +56,12 @@ var conPTYProbeResult struct {
 	probed bool // true once a ready/unavailable verdict has been cached
 	// unavailable is a human-readable reason, or empty when ConPTY works.
 	unavailable string
+	// probeMu serializes probeConPTY calls: the check-then-probe sequence must
+	// be single-flight, or parallel t.Parallel callers all probe at once — the
+	// spawn storm the cache exists to prevent. Held across the probe so later
+	// callers reuse the cached verdict; a failure is still not cached, so the
+	// next caller re-probes sequentially instead of inheriting a bad verdict.
+	probeMu sync.Mutex
 }
 
 // conPTYStatusDLLInitFailed is STATUS_DLL_INIT_FAILED (0xC0000142), the
@@ -105,14 +111,42 @@ type conPTYProbeAttempt struct {
 	outputTail string
 }
 
+// probeTail is a bounded rolling buffer keeping the MOST RECENT max bytes:
+// for startup diagnosis the tail of the output is the evidence, and a buffer
+// that stops accepting after max bytes would keep the head and drop exactly
+// the diagnostic tail. Writes crossing the cap keep the end of the new data.
+type probeTail struct {
+	buf []byte
+	max int
+}
+
+func (t *probeTail) write(p []byte) {
+	if len(p) >= t.max {
+		t.buf = append(t.buf[:0], p[len(p)-t.max:]...)
+		return
+	}
+	if len(t.buf)+len(p) > t.max {
+		drop := len(t.buf) + len(p) - t.max
+		t.buf = t.buf[drop:]
+	}
+	t.buf = append(t.buf, p...)
+}
+
+func (t *probeTail) String() string { return string(t.buf) }
+
 // truncateForProbeReason keeps a diagnostic tail bounded so a pathological
-// child cannot turn the probe reason into an unbounded log line.
+// child cannot turn the probe reason into an unbounded log line. The cut is
+// rune-aware so a multi-byte UTF-8 sequence is never split mid-rune.
 func truncateForProbeReason(s string) string {
 	const max = 512
 	if len(s) <= max {
 		return s
 	}
-	return s[len(s)-max:]
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[len(runes)-max:])
 }
 
 // classifyConPTYAttempt decides what one probe attempt means.
@@ -174,24 +208,44 @@ func requireConPTYRuntime(t *testing.T) {
 	probed := conPTYProbeResult.probed
 	cachedUnavailable := conPTYProbeResult.unavailable
 	conPTYProbeResult.mu.Unlock()
-	if !probed {
-		unavailable, failure := probeConPTY()
-		conPTYProbeResult.mu.Lock()
-		// Only a definitive readiness or host-capability verdict is cached. A
-		// failure may be transient (handle exhaustion, runner load); the next
-		// caller re-probes instead of inheriting a permanent t.Fatalf.
-		if failure == "" {
-			conPTYProbeResult.probed = true
-			conPTYProbeResult.unavailable = unavailable
+	if probed {
+		if cachedUnavailable != "" {
+			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
 		}
-		conPTYProbeResult.mu.Unlock()
-		if failure != "" {
-			t.Fatalf("ConPTY runtime probe failed: %s", failure)
-		}
-		cachedUnavailable = unavailable
+		return
 	}
-	if cachedUnavailable != "" {
-		t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
+	// Single-flight: hold probeMu across the probe and the cache write so
+	// parallel callers wait for the one active probe and reuse its verdict
+	// instead of stampeding the host with concurrent spawns.
+	conPTYProbeResult.probeMu.Lock()
+	defer conPTYProbeResult.probeMu.Unlock()
+	// Re-check under the probe lock: another caller may have completed the
+	// probe while this one waited.
+	conPTYProbeResult.mu.Lock()
+	probed = conPTYProbeResult.probed
+	cachedUnavailable = conPTYProbeResult.unavailable
+	conPTYProbeResult.mu.Unlock()
+	if probed {
+		if cachedUnavailable != "" {
+			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
+		}
+		return
+	}
+	unavailable, failure := probeConPTY()
+	conPTYProbeResult.mu.Lock()
+	// Only a definitive readiness or host-capability verdict is cached. A
+	// failure may be transient (handle exhaustion, runner load); the next
+	// caller re-probes instead of inheriting a permanent t.Fatalf.
+	if failure == "" {
+		conPTYProbeResult.probed = true
+		conPTYProbeResult.unavailable = unavailable
+	}
+	conPTYProbeResult.mu.Unlock()
+	if failure != "" {
+		t.Fatalf("ConPTY runtime probe failed: %s", failure)
+	}
+	if unavailable != "" {
+		t.Skipf("skipping ConPTY tests: %s", unavailable)
 	}
 }
 
@@ -247,23 +301,19 @@ func probeConPTYAttempt() (conPTYProbeVerdict, string) {
 		return classifyConPTYAttempt(observed)
 	}
 
-	// Drain concurrently into a bounded tail: an undrained ConPTY output pipe
-	// can block the child before it exits, which would surface as a bogus Wait
-	// timeout, and discarding the output made a repeat exit-1 undiagnosable.
+	// Drain concurrently into a bounded ROLLING tail: an undrained ConPTY
+	// output pipe can block the child before it exits, which would surface as
+	// a bogus Wait timeout, and discarding the output made a repeat exit-1
+	// undiagnosable. The tail keeps the most recent 4096 bytes — the end of
+	// the output is what distinguishes a console-init failure from a broken
+	// Spawn/Wait contract.
 	var tailMu sync.Mutex
-	var tail strings.Builder
+	tail := &probeTail{max: 4096}
 	proc.DrainOutput(writerFunc(func(p []byte) (int, error) {
 		n := len(p)
 		tailMu.Lock()
-		defer tailMu.Unlock()
-		remaining := 4096 - tail.Len()
-		if remaining > 0 {
-			chunk := p
-			if len(chunk) > remaining {
-				chunk = chunk[len(chunk)-remaining:]
-			}
-			_, _ = tail.Write(chunk)
-		}
+		tail.write(p)
+		tailMu.Unlock()
 		return n, nil
 	}))
 

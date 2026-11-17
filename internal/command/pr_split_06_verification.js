@@ -34,6 +34,26 @@
 
     // --- verifySplit — runs verify command on a single branch ---
     async function verifySplit(branchName, config) {
+        // This function must not reject: an unhandled rejection is fatal to the
+        // event loop, and callers (verifySplits, pipelines) await it without a
+        // catch. Every failure — a throwing spawn, a failed worktree setup, a
+        // non-exit exec error — is contained here as a structured result
+        // tagged execFailed so it can never be forgiven as pre-existing.
+        try {
+            return await verifySplitInner(branchName, config);
+        } catch (e) {
+            return {
+                name: branchName,
+                passed: false,
+                output: '',
+                exitCode: -1,
+                execFailed: true,
+                error: 'verify exec-layer failure: ' + String((e && e.message) || e)
+            };
+        }
+    }
+
+    async function verifySplitInner(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
         var command = await resolveVerifyCommand(config.verifyCommand || prSplit.runtime.verifyCommand, dir);
@@ -56,10 +76,15 @@
             await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
             wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
+                // Worktree setup is an environment/exec failure, not a verify
+                // verdict: tag it execFailed so it is never forgiven as
+                // pre-existing.
                 return {
                     name: branchName,
                     passed: false,
                     output: '',
+                    exitCode: wtAdd.code,
+                    execFailed: true,
                     error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
@@ -123,6 +148,9 @@
         // empty: the verdict is unknown, so it can neither pass nor count as
         // a deterministic failure (and must never be forgiven as pre-existing).
         var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
+        // A non-exit exec error (spawn/wait failure, code -1 with error) is
+        // likewise an unknown verdict, tagged execFailed like the async path.
+        var execLayerFailed = !captureCutShort && result.error === true && result.code === -1;
 
         // Timeout before truncation gate.
         if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
@@ -144,6 +172,17 @@
                 exitCode: result.code,
                 error: 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
                     (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
+            };
+        }
+
+        if (execLayerFailed) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: result.code,
+                execFailed: true,
+                error: 'verify exec-layer failure: ' + execFailReason(result)
             };
         }
 
@@ -190,7 +229,11 @@
                 verifyTimeoutMs: verifyTimeoutMs,
                 outputFn: options.outputFn || null
             });
-            if (baselineResult.truncated) {
+            // A baseline whose verdict is UNKNOWN — a truncated capture or an
+            // exec-layer failure with no exit status — is not a baseline
+            // failure: it disables pre-existing detection rather than
+            // forgiving failing branches.
+            if (baselineResult.truncated || baselineResult.execFailed) {
                 baselineUnknown = true;
             } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
@@ -253,7 +296,7 @@
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
             } else if (!result.passed && baselineUnknown) {
-                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: no deterministic baseline failure to compare against)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;
@@ -568,10 +611,15 @@
             await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
             wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
             if (wtAdd.code !== 0) {
+                // Worktree setup is an environment/exec failure, not a verify
+                // verdict: tag it execFailed so it is never forgiven as
+                // pre-existing.
                 return {
                     name: branchName,
                     passed: false,
                     output: '',
+                    exitCode: wtAdd.code,
+                    execFailed: true,
                     error: 'create worktree failed: ' + execFailReason(wtAdd)
                 };
             }
@@ -689,6 +737,7 @@
         // down every other pending promise in the process.
         var waitResult = null;
         var waitError = null;
+        var waitSettled = false;
         await Promise.all([
             readStream(child.stdout, function(chunk) {
                 stdoutBuf += chunk;
@@ -698,7 +747,7 @@
                 stderrBuf += chunk;
                 emitChunk(chunk);
             }),
-            child.wait().then(function(r) { waitResult = r || {}; }, function(err) { waitError = err; })
+            child.wait().then(function(r) { waitResult = r || {}; waitSettled = true; }, function(err) { waitError = err; waitSettled = true; })
         ]);
 
         var exitResult = waitResult;
@@ -719,34 +768,12 @@
             };
         }
 
-        // Timeout before truncation gate.
-        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
-            return {
-                name: branchName,
-                passed: false,
-                output: stdoutBuf,
-                exitCode: exitCode,
-                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
-            };
-        }
-
-        // A rejected wait is reported below, after the truncation gate, so a
-        // cut capture still outranks an unknown status as the diagnosis.
-        if (streamsTruncated) {
-            return {
-                name: branchName,
-                passed: false,
-                output: stdoutBuf,
-                truncated: true,
-                exitCode: exitCode,
-                error: 'verification output capture was cut short before EOF: the verdict is unknown'
-            };
-        }
-
         // A rejected wait means the exec layer never recorded an exit status.
         // Reporting it as `exit -1` with an empty explanation told the operator
         // nothing: a broken spawn/wait looked exactly like a verify command that
         // failed without writing to stderr. The reason is carried through.
+        // This gate runs before the timeout gate: a wait that failed for a
+        // non-timeout reason must not be mislabelled as a timeout.
         if (waitError) {
             return {
                 name: branchName,
@@ -758,8 +785,32 @@
             };
         }
 
+        // Timeout before truncation gate.
+        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: exitCode,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
+
+        // A cut capture outranks an unknown status as the diagnosis.
+        if (streamsTruncated) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                truncated: true,
+                exitCode: exitCode,
+                error: 'verification output capture was cut short before EOF: the verdict is unknown'
+            };
+        }
+
         var signal = exitResult && exitResult.signal ? String(exitResult.signal) : '';
-        var failureDetail = stderrBuf.trim() !== '' ? stderrBuf : '';
+        var trimmedStderr = stderrBuf.trim();
+        var failureDetail = trimmedStderr !== '' ? trimmedStderr : '';
         if (signal && failureDetail.indexOf(signal) < 0) {
             failureDetail = failureDetail ? (failureDetail + ' (' + signal + ')') : signal;
         }
@@ -772,6 +823,22 @@
         };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
+            // If the body left abnormally before the wait settled (a throwing
+            // output callback, a stream error escaping readStream), the verify
+            // child is still running: kill it before removing the worktree,
+            // which fails on Windows while the child holds it as CWD.
+            if (!waitSettled) {
+                try {
+                    var killResult = child.kill();
+                    if (killResult && typeof killResult.catch === 'function') {
+                        killResult.catch(function(e) {
+                            log.debug('verifySplitAsync: abnormal-exit kill failed', { error: e.message || String(e) });
+                        });
+                    }
+                } catch (e) {
+                    log.debug('verifySplitAsync: abnormal-exit kill failed', { error: e.message || String(e) });
+                }
+            }
             if (worktreeReady) {
                 try {
                     await cleanupWorktreeAsync();
@@ -817,9 +884,10 @@
         var failedBranches = {};
 
         // Pre-existing failure detection: run verification on the source
-        // branch first. A baseline whose verdict is UNKNOWN (truncated capture)
-        // is not a baseline failure: it disables pre-existing detection rather
-        // than forgiving failing branches.
+        // branch first. A baseline whose verdict is UNKNOWN — a truncated
+        // capture OR an exec-layer failure with no exit status — is not a
+        // baseline failure: it disables pre-existing detection rather than
+        // forgiving failing branches.
         var baselineFailure = null;
         var baselineUnknown = false;
         if (verifyCommand && plan.sourceBranch) {
@@ -833,7 +901,7 @@
             if (baselineResult.cancelled || isCancelledNow()) {
                 return { allPassed: false, results: [], error: 'verification cancelled by user' };
             }
-            if (baselineResult.truncated) {
+            if (baselineResult.truncated || baselineResult.execFailed) {
                 baselineUnknown = true;
             } else if (!baselineResult.passed) {
                 baselineFailure = baselineResult;
@@ -899,7 +967,7 @@
                 result.preExisting = true;
                 result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
             } else if (!result.passed && baselineUnknown) {
-                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: capture was cut short)';
+                result.error = (result.error || 'verification failed') + ' (baseline verdict unknown: no deterministic baseline failure to compare against)';
             }
 
             var branchElapsedMs = Date.now() - branchStartTime;

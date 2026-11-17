@@ -520,19 +520,33 @@ func startCommandOutputReaders(stdout, stderr io.ReadCloser) <-chan commandOutpu
 	return results
 }
 
+// abortCause reports why a closed captureAbort channel fired: the context
+// error when the caller's context is done (a close-tree failure cannot vouch
+// for the pipe writers, so the abort is what cut the capture), nil otherwise.
+func abortCause(abort <-chan struct{}, ctx context.Context) error {
+	select {
+	case <-abort:
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
 // collectCommandOutput returns the command's stdout and stderr.
-func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (string, string, error) {
+func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (stdoutText, stderrText string, err error, complete bool) {
 	var output [2]string
-	var outputErr error
 	received := 0
 
 	store := func(result commandOutputResult) {
 		output[result.index] = string(result.data)
-		outputErr = errors.Join(outputErr, result.err)
+		err = errors.Join(err, result.err)
 		received++
 	}
 
-	abortCapture := func(cause error) (string, string, error) {
+	abortCapture := func(cause error) (string, string, error, bool) {
 		induced := false
 		clearInduced := func(result commandOutputResult) commandOutputResult {
 			if induced && errors.Is(result.err, os.ErrClosed) {
@@ -557,14 +571,14 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 						store(clearInduced(result))
 					case <-timer.C:
 						timer.Stop()
-						return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+						return output[0], output[1], errors.Join(err, &outputCaptureAbortedError{cause: cause}), false
 					}
 				}
 				timer.Stop()
-				return output[0], output[1], errors.Join(outputErr, &outputCaptureAbortedError{cause: cause})
+				return output[0], output[1], errors.Join(err, &outputCaptureAbortedError{cause: cause}), false
 			}
 		}
-		return output[0], output[1], outputErr
+		return output[0], output[1], err, received == 2
 	}
 
 	ceiling := time.NewTimer(eofCeiling)
@@ -580,14 +594,15 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 		case result := <-results:
 			store(result)
 		case <-abort:
-			return abortCapture(nil)
+			return abortCapture(abortCause(abort, ctx))
 		case <-ctx.Done():
 			return abortCapture(ctx.Err())
 		case <-ceiling.C:
 			return abortCapture(fmt.Errorf("no EOF within %s of process-tree teardown: a writer outside the command's process group may still hold the output pipe", eofCeiling))
 		}
 	}
-	return output[0], output[1], outputErr
+	complete = true
+	return output[0], output[1], err, complete
 }
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
@@ -677,14 +692,37 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
 	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
 
+	// A cancelled context can surface from cmd.Wait as a bare ctx.Err() when
+	// the child had already exited (os/exec's watchCtx path). The capture
+	// below is aborted by the same cancellation, so join the context cause
+	// into the wait error unconditionally: the joined message must always
+	// carry both the cancellation and the aborted-capture diagnostic, which
+	// is the exec-layer failure this path presents.
+	if ctx.Err() != nil {
+		waitErr = errors.Join(waitErr, ctx.Err())
+	}
+
 	var captureAbort chan struct{}
 	if closeErr != nil {
 		captureAbort = make(chan struct{})
 		close(captureAbort)
 	}
-	stdoutText, stderrText, outputErr := collectCommandOutput(ctx, eofCeiling, captureAbort, outputResults, stdoutReader, stderrReader)
+	stdoutText, stderrText, outputErr, captureComplete := collectCommandOutput(ctx, eofCeiling, captureAbort, outputResults, stdoutReader, stderrReader)
 	stdoutData = []byte(stdoutText)
 	stderrData = []byte(stderrText)
+
+	// A capture abort is an exec-layer failure: an abandoned stream must never
+	// be presented as the command's output. Make sure the incomplete-capture
+	// diagnostic is present even when ctx was already done before collection
+	// started (the abort/ctx select can then report only the context cause).
+	// A capture that actually reached EOF on both readers is complete, so it
+	// must not gain the diagnostic.
+	if ctx.Err() != nil && !captureComplete {
+		var aborted *outputCaptureAbortedError
+		if !errors.As(outputErr, &aborted) {
+			outputErr = errors.Join(outputErr, &outputCaptureAbortedError{cause: ctx.Err()})
+		}
+	}
 
 	return result(errors.Join(waitErr, closeErr, outputErr))
 }

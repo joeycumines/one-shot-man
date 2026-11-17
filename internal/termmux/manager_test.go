@@ -1644,23 +1644,28 @@ func TestSessionManager_Pipeline_BellEvent(t *testing.T) {
 
 	// Send BEL character through the Reader channel.
 	session.readerCh <- []byte("\x07")
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify EventBell was published.
+	// Verify EventBell was published. Wait for the authoritative event with
+	// a deadline instead of sleeping a fixed interval — on a loaded runner
+	// (CI run 44060799468, windows-latest) the 100ms sleep fired before the
+	// worker had drained the merged output channel, so the bell event was
+	// not yet visible and the test flaked.
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundBell bool
-	for {
+	for !foundBell {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the bell event arrived")
+			}
 			if evt.Kind == EventBell && evt.SessionID == 1 {
 				foundBell = true
 			}
-		default:
-			goto done
+		case <-timer.C:
+			t.Fatalf("EventBell not received after BEL character within %s", deadline)
 		}
-	}
-done:
-	if !foundBell {
-		t.Error("EventBell not received after BEL character")
 	}
 }
 
@@ -1682,26 +1687,30 @@ func TestSessionManager_Pipeline_OSCTitleEvent(t *testing.T) {
 
 	// Send OSC 0 (set window title) through the Reader channel.
 	session.readerCh <- []byte("\x1b]0;My Title\x07")
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify EventTitle was published with correct data.
+	// Verify EventTitle was published with correct data, waiting with a
+	// deadline rather than a fixed sleep (see TestSessionManager_Pipeline_BellEvent:
+	// a loaded runner can outrun a 100ms sleep before the worker drains the
+	// merged output channel).
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundTitle bool
-	for {
+	for !foundTitle {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the title event arrived")
+			}
 			if evt.Kind == EventTitle && evt.SessionID == 1 {
 				foundTitle = true
 				if data, ok := evt.Data.(string); !ok || data != "My Title" {
 					t.Errorf("EventTitle data = %q; want %q", data, "My Title")
 				}
 			}
-		default:
-			goto doneTitle
+		case <-timer.C:
+			t.Fatalf("EventTitle not received after OSC 0 sequence within %s", deadline)
 		}
-	}
-doneTitle:
-	if !foundTitle {
-		t.Error("EventTitle not received after OSC 0 sequence")
 	}
 }
 
@@ -1723,26 +1732,28 @@ func TestSessionManager_Pipeline_OSCWorkingDirectoryEvent(t *testing.T) {
 
 	// Send OSC 7 (set working directory) through the Reader channel.
 	session.readerCh <- []byte("\x1b]7;file:///home/user\x07")
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify EventWorkingDirectory was published.
+	// Verify EventWorkingDirectory was published, waiting with a deadline
+	// rather than a fixed sleep (see TestSessionManager_Pipeline_BellEvent).
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundCwd bool
-	for {
+	for !foundCwd {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the working-directory event arrived")
+			}
 			if evt.Kind == EventWorkingDirectory && evt.SessionID == 1 {
 				foundCwd = true
 				if data, ok := evt.Data.(string); !ok || data != "file:///home/user" {
 					t.Errorf("EventWorkingDirectory data = %q; want %q", data, "file:///home/user")
 				}
 			}
-		default:
-			goto doneCwd
+		case <-timer.C:
+			t.Fatalf("EventWorkingDirectory not received after OSC 7 sequence within %s", deadline)
 		}
-	}
-doneCwd:
-	if !foundCwd {
-		t.Error("EventWorkingDirectory not received after OSC 7 sequence")
 	}
 }
 
@@ -1764,26 +1775,28 @@ func TestSessionManager_Pipeline_OSCClipboardEvent(t *testing.T) {
 
 	// Send OSC 52 (clipboard) through the Reader channel.
 	session.readerCh <- []byte("\x1b]52;c;SGVsbG8=\x07")
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify EventClipboard was published.
+	// Verify EventClipboard was published, waiting with a deadline rather
+	// than a fixed sleep (see TestSessionManager_Pipeline_BellEvent).
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundClip bool
-	for {
+	for !foundClip {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the clipboard event arrived")
+			}
 			if evt.Kind == EventClipboard && evt.SessionID == 1 {
 				foundClip = true
 				if data, ok := evt.Data.(string); !ok || data != "c;SGVsbG8=" {
 					t.Errorf("EventClipboard data = %q; want %q", data, "c;SGVsbG8=")
 				}
 			}
-		default:
-			goto doneClip
+		case <-timer.C:
+			t.Fatalf("EventClipboard not received after OSC 52 sequence within %s", deadline)
 		}
-	}
-doneClip:
-	if !foundClip {
-		t.Error("EventClipboard not received after OSC 52 sequence")
 	}
 }
 
@@ -1805,26 +1818,28 @@ func TestSessionManager_Pipeline_OSC2TitleEvent(t *testing.T) {
 
 	// Send OSC 2 (set window title) through the Reader channel.
 	session.readerCh <- []byte("\x1b]2;XTerm Title\x07")
-	time.Sleep(100 * time.Millisecond)
 
-	// Verify EventTitle was published.
+	// Verify EventTitle was published, waiting with a deadline rather than
+	// a fixed sleep (see TestSessionManager_Pipeline_BellEvent).
+	deadline := 10 * time.Second
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
 	var foundTitle bool
-	for {
+	for !foundTitle {
 		select {
-		case evt := <-evtCh:
+		case evt, ok := <-evtCh:
+			if !ok {
+				t.Fatal("event channel closed before the OSC 2 title event arrived")
+			}
 			if evt.Kind == EventTitle && evt.SessionID == 1 {
 				foundTitle = true
 				if data, ok := evt.Data.(string); !ok || data != "XTerm Title" {
 					t.Errorf("EventTitle data = %q; want %q", data, "XTerm Title")
 				}
 			}
-		default:
-			goto doneOsc2
+		case <-timer.C:
+			t.Fatalf("EventTitle not received after OSC 2 sequence within %s", deadline)
 		}
-	}
-doneOsc2:
-	if !foundTitle {
-		t.Error("EventTitle not received after OSC 2 sequence")
 	}
 }
 

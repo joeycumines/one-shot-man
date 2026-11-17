@@ -126,8 +126,8 @@ func newPrSplitEvalWithMgr(t testing.TB) (*termmux.SessionManager, func(string) 
 		select {
 		case <-done:
 			return result, resultErr
-		case <-time.After(30 * time.Second):
-			return nil, fmt.Errorf("eval timeout after 30s")
+		case <-time.After(prSplitEvalTimeout):
+			return nil, fmt.Errorf("eval timeout after %s", prSplitEvalTimeout)
 		}
 	}
 

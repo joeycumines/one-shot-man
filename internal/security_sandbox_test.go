@@ -412,7 +412,7 @@ func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 			var execmod = require('osm:exec');
 			execmod.execv(['echo', 'test']).then(function(result) {
 				var resultKeys = Object.keys(result).sort();
-				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
+				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout', 'truncated'];
 				if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
 					__testErr('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
 					return;

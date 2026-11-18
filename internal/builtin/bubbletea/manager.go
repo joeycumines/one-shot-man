@@ -162,6 +162,23 @@ func NewManager(
 	return NewManagerWithStderr(ctx, input, output, nil, jsRunner, signalNotify, signalStop)
 }
 
+// stdinBackedReader reports whether input is backed by the process's real
+// stdin: either the stdin *os.File itself or a wrapper (e.g. TUIReader with
+// isStdin) that unwraps to it. Such a reader must be treated like the defaulted
+// case when stdin is not a terminal — see NewManagerWithStderr.
+func stdinBackedReader(input io.Reader) bool {
+	if input == nil {
+		return false
+	}
+	if f, ok := input.(*os.File); ok {
+		return f == os.Stdin
+	}
+	if u, ok := input.(interface{ UnwrapFile() *os.File }); ok {
+		return u.UnwrapFile() == os.Stdin
+	}
+	return false
+}
+
 // NewManagerWithStderr creates a new bubbletea manager with explicit stderr for error logging.
 // Input, output, and stderr can be nil to use os.Stdin, os.Stdout, and os.Stderr.
 // Automatically detects TTY and sets up proper terminal handling.
@@ -205,6 +222,61 @@ func NewManagerWithStderr(
 		signalStop = signal.Stop
 	}
 
+	// Detect TTY for input - check TerminalChecker interface first (for TUIReader/TUIWriter wrappers).
+	// Skipped entirely when the caller passed nil for both input and output:
+	// that signals the caller doesn't need terminal detection (e.g. engine
+	// construction for non-interactive scripts), and probing stdin there would
+	// touch the process console for no reason.
+	isTTY := false
+	ttyFd := -1
+	if !skipTTYDetection {
+		if tc, ok := input.(TerminalChecker); ok {
+			if tc.IsTerminal() {
+				if fd := tc.Fd(); fd != ^uintptr(0) {
+					isTTY = true
+					ttyFd = int(fd)
+				}
+			}
+		} else if f, ok := input.(*os.File); ok {
+			// Fallback for direct *os.File
+			fd := int(f.Fd())
+			if term.IsTerminal(fd) {
+				isTTY = true
+				ttyFd = fd
+			}
+		}
+
+		// If input isn't a TTY, check output
+		if !isTTY {
+			if tc, ok := output.(TerminalChecker); ok {
+				if tc.IsTerminal() {
+					if fd := tc.Fd(); fd != ^uintptr(0) {
+						isTTY = true
+						ttyFd = int(fd)
+					}
+				}
+			} else if f, ok := output.(*os.File); ok {
+				fd := int(f.Fd())
+				if term.IsTerminal(fd) {
+					isTTY = true
+					ttyFd = fd
+				}
+			}
+		}
+	}
+
+	// A stdin-backed input that is NOT a terminal carries no usable interactive
+	// input: in a non-TTY environment (CI, pipes, redirected stdin) handing it
+	// to bubbletea makes its read loop wrap the reader in a cancelreader, and
+	// the platform terminal reader (go-tty on Windows) can dereference a nil
+	// console handle at teardown. Treat it exactly like the defaulted case so
+	// the headless branch drops it (tea.WithInput(nil) => disableInput). An
+	// explicitly provided NON-stdin reader (e.g. a scripted strings.Reader)
+	// stays preserved — the caller wired it deliberately.
+	if !isTTY && stdinBackedReader(input) {
+		inputDefaulted = true
+	}
+
 	m := &Manager{
 		ctx:            ctx,
 		input:          input,
@@ -212,54 +284,10 @@ func NewManagerWithStderr(
 		stderr:         stderr,
 		signalNotify:   signalNotify,
 		signalStop:     signalStop,
-		isTTY:          false,
-		ttyFd:          -1,
+		isTTY:          isTTY,
+		ttyFd:          ttyFd,
 		inputDefaulted: inputDefaulted,
 		jsRunner:       jsRunner, // REQUIRED: set at construction time
-	}
-
-	// Skip TTY detection if caller passed nil for both input and output.
-	// This indicates the caller doesn't need terminal detection (e.g., during
-	// engine construction for non-interactive scripts).
-	if skipTTYDetection {
-		return m
-	}
-
-	// Detect TTY for input - check TerminalChecker interface first (for TUIReader/TUIWriter wrappers)
-	if tc, ok := input.(TerminalChecker); ok {
-		if tc.IsTerminal() {
-			fd := tc.Fd()
-			if fd != ^uintptr(0) {
-				m.isTTY = true
-				m.ttyFd = int(fd)
-			}
-		}
-	} else if f, ok := input.(*os.File); ok {
-		// Fallback for direct *os.File
-		fd := int(f.Fd())
-		if term.IsTerminal(fd) {
-			m.isTTY = true
-			m.ttyFd = fd
-		}
-	}
-
-	// If input isn't a TTY, check output
-	if !m.isTTY {
-		if tc, ok := output.(TerminalChecker); ok {
-			if tc.IsTerminal() {
-				fd := tc.Fd()
-				if fd != ^uintptr(0) {
-					m.isTTY = true
-					m.ttyFd = int(fd)
-				}
-			}
-		} else if f, ok := output.(*os.File); ok {
-			fd := int(f.Fd())
-			if term.IsTerminal(fd) {
-				m.isTTY = true
-				m.ttyFd = fd
-			}
-		}
 	}
 
 	return m

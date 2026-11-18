@@ -212,9 +212,12 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		// input removes the blocking read entirely; the renderer is also
 		// disabled so no terminal escape sequences are written.
 		//
-		// An EXPLICITLY provided non-TTY input is preserved, though: a caller
-		// that wired up a reader (e.g. a scripted `strings.Reader`) intends
-		// the program to consume it. Only the defaulted stdin is dropped.
+		// An EXPLICITLY provided non-stdin input is preserved, though: a
+		// caller that wired up a reader (e.g. a scripted `strings.Reader`)
+		// intends the program to consume it. Only the defaulted stdin — or
+		// a stdin-backed wrapper on a non-TTY stdin, which bubbletea would
+		// otherwise wrap in a cancelreader whose platform reader (go-tty on
+		// Windows) can nil-deref at teardown — is dropped.
 		if inputDefaulted {
 			opts = append(opts, tea.WithInput(nil))
 		} else if input != nil {

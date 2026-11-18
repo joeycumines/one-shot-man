@@ -363,8 +363,14 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 }
 
 // platformResize resizes the ConPTY using ResizePseudoConsole.
-// Must be called with p.mu held.
+// Must be called with p.mu held. A closed process (p.closed, checked by
+// Resize) or a session that never obtained a ConPTY handle reports ErrClosed
+// / ErrNotSupported respectively, so a post-close resize fails loudly instead
+// of acting on a stale handle.
 func (p *Process) platformResize(rows, cols uint16) error {
+	if p.closed {
+		return ErrClosed
+	}
 	h, ok := p.cmd.(*windowsProcessHandle)
 	if !ok {
 		return ErrNotSupported

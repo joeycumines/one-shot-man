@@ -73,6 +73,16 @@ func unwrapOSFile(v any) *os.File {
 	return nil
 }
 
+// isTTYForProgram reports whether escape-sequence writes to the output are
+// appropriate: only a real terminal should receive bracketed-paste DECSET
+// sequences. It reads the manager's TTY flag under lock so the check is
+// race-free even if configuration changes concurrently.
+func isTTYForProgram(m *Manager) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.isTTY
+}
+
 func (m *Manager) runProgram(model tea.Model) (err error) {
 	// Debug: check if manager is properly initialized
 	if m == nil {
@@ -86,8 +96,10 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// recognized as paste events (tea.PasteStartMsg/PasteEndMsg/PasteMsg).
 	// We send this to the terminal here, before BubbleTea's read loop starts.
 	// Note: bracketed paste mode is always enabled; the jsModel-level field was
-	// removed as it was dead code (never read, only written).
-	if m.output != nil {
+	// removed as it was dead code (never read, only written). Escape sequences
+	// are only meaningful on a real terminal: in headless mode writing them to
+	// a pipe/buffer pollutes captured output with raw ESC bytes.
+	if m.output != nil && isTTYForProgram(m) {
 		_, _ = m.output.Write([]byte("\x1b[?2004h"))
 	}
 
@@ -103,6 +115,7 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	signalStop := m.signalStop
 	isTTY := m.isTTY
 	ttyFd := m.ttyFd
+	inputDefaulted := m.inputDefaulted
 	if m.program != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("runProgram: program is already running")
@@ -131,7 +144,7 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// restoreTerminal restores the terminal state and disables bracketed paste mode.
 	restoreTerminal := func() {
 		// Disable bracketed paste mode (DECRST 200)
-		if m.output != nil {
+		if m.output != nil && isTTYForProgram(m) {
 			_, _ = m.output.Write([]byte("\x1b[?2004l"))
 		}
 		if origState != nil && ttyFd >= 0 {
@@ -198,7 +211,16 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		// WaitForProgram and wedges the whole script teardown. Disabling
 		// input removes the blocking read entirely; the renderer is also
 		// disabled so no terminal escape sequences are written.
-		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
+		//
+		// An EXPLICITLY provided non-TTY input is preserved, though: a caller
+		// that wired up a reader (e.g. a scripted `strings.Reader`) intends
+		// the program to consume it. Only the defaulted stdin is dropped.
+		if inputDefaulted {
+			opts = append(opts, tea.WithInput(nil))
+		} else if input != nil {
+			opts = append(opts, tea.WithInput(input))
+		}
+		opts = append(opts, tea.WithoutRenderer())
 		if f := unwrapOSFile(output); f != nil {
 			opts = append(opts, tea.WithOutput(f))
 		} else if output != nil {

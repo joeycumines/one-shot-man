@@ -18,6 +18,13 @@ import (
 // status was observed. The contract: once the reaper has recorded an exit,
 // the streams must terminate cleanly (done without an error), never truncated.
 //
+// SCOPE NOTE: this invariant covers the child ITSELF exiting and its pipes
+// draining. It does NOT cover an escaped descendant that keeps the pipe open
+// past the recorded exit — in that case the capture genuinely can be cut
+// after the reaper ran (see TestSettlePumpsAbortStillCutsEscapedWriter and
+// TestPumpPipe_ReadFailureAfterRecordedExitStaysTruncated), and the stream is
+// correctly reported truncated.
+//
 // The helper is cross-platform: POSIX uses sh, Windows uses cmd.exe. Each
 // iteration spawns a child that writes a line and exits 0, waits for the
 // recorded exit, then reads stdout to its terminal chunk and asserts

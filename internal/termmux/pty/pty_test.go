@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -28,16 +29,6 @@ func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
 // assert bounded shutdown, not wall-clock precision — the bound being
 // asserted is the configured grace+force total, not the slack.
 const closeSchedulingSlack = 30 * time.Second
-
-// closeGraceSchedulingSlack bounds how far past the CONFIGURED grace period a
-// Close may be descheduled before the custom-grace test concludes the
-// configured value was ignored. It is deliberately far tighter than
-// closeSchedulingSlack: the wide total allowance exists for loaded runners,
-// but it must not also cover the difference between a 500ms configured grace
-// and the 5s default (a mutation substituting DefaultCloseGracePeriod for the
-// configured value must fail). 2s is runner slack on top of the configured
-// 500ms, not a second bound on Close.
-const closeGraceSchedulingSlack = 2 * time.Second
 
 // conPTYOutputDeadline bounds how long a ConPTY test waits for the child to
 // produce recognisable output on a loaded runner. PowerShell CLR startup on
@@ -1190,65 +1181,64 @@ func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
 
 // TestProcess_Close_CustomGracePeriod verifies that Close uses the configured
 // grace period and force wait durations from SpawnConfig.
+//
+// Written with testing/synctest: the fake clock advances instantly when every
+// goroutine in the bubble is blocked, so the 500ms grace + 300ms force wait
+// elapse in zero wall-clock time and the assertions on elapsed become exact.
+// A mutation substituting DefaultCloseGracePeriod (5s) for the configured
+// 500ms fails deterministically because the fake clock would advance 5s, not
+// 500ms, before SIGKILL.
 func TestProcess_Close_CustomGracePeriod(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in short mode")
 	}
+	synctest.Test(t, func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
+		}
 
-	t.Parallel()
+		handle := &stuckHandle{}
+		gracePeriod := 500 * time.Millisecond
+		forceWait := 300 * time.Millisecond
+		proc := &Process{
+			ptyFile:           r,
+			ttyFile:           w,
+			done:              make(chan struct{}),
+			exitCode:          -1,
+			cmd:               handle,
+			closeGracefulWait: gracePeriod,
+			closeForceWait:    forceWait,
+		}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
+		start := time.Now()
+		closeErr := proc.Close()
+		elapsed := time.Since(start)
 
-	handle := &stuckHandle{}
-	gracePeriod := 500 * time.Millisecond
-	forceWait := 300 * time.Millisecond
-	proc := &Process{
-		ptyFile:           r,
-		ttyFile:           w,
-		done:              make(chan struct{}),
-		exitCode:          -1,
-		cmd:               handle,
-		closeGracefulWait: gracePeriod,
-		closeForceWait:    forceWait,
-	}
+		var timeoutErr *ErrForceKillTimeout
+		if !errors.As(closeErr, &timeoutErr) {
+			t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
+		}
+		if timeoutErr.Wait != forceWait {
+			t.Fatalf("expected Wait=%v, got %v", forceWait, timeoutErr.Wait)
+		}
 
-	start := time.Now()
-	closeErr := proc.Close()
-	elapsed := time.Since(start)
-
-	var timeoutErr *ErrForceKillTimeout
-	if !errors.As(closeErr, &timeoutErr) {
-		t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
-	}
-	if timeoutErr.Wait != forceWait {
-		t.Fatalf("expected Wait=%v, got %v", forceWait, timeoutErr.Wait)
-	}
-
-	// Elapsed time should be approximately gracePeriod + forceWait: those are
-	// the configured bounds Close is expected to honour. The upper allowance is
-	// scheduling slack, not a second contract — a hard 2s ceiling failed a
-	// loaded windows-latest runner at 3.4769077s (run 129562188488) while Close
-	// was behaving correctly. But the slack must not swallow the configured
-	// grace period itself: with a 500ms grace the default 5s grace would land
-	// inside this allowance and pass. The configured grace is therefore
-	// bounded tightly (its own scheduling slack), while only the total gets
-	// the wide runner-contention allowance. The force-wait value is already
-	// pinned exactly via timeoutErr.Wait above.
-	minExpected := gracePeriod + forceWait
-	maxExpected := minExpected + closeSchedulingSlack
-	graceMax := gracePeriod + closeGraceSchedulingSlack
-	if elapsed < minExpected {
-		t.Fatalf("Close returned too quickly: %v (min expected ~%v)", elapsed, minExpected)
-	}
-	if elapsed > maxExpected {
-		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
-	}
-	if elapsed > graceMax+forceWait {
-		t.Fatalf("Close ignored the configured grace period %v: elapsed %v exceeds grace bound %v + forceWait %v", gracePeriod, elapsed, graceMax, forceWait)
-	}
+		// With the fake clock the elapsed time is exactly grace + force:
+		// Close waits the full grace (done never closes), then SIGKILLs and
+		// waits the full force wait. Any deviation means the configured
+		// values were not honoured — e.g. the 5s default grace would show up
+		// as elapsed = 5s + 300ms.
+		want := gracePeriod + forceWait
+		if elapsed != want {
+			t.Fatalf("elapsed = %v, want exactly %v (grace %v + force wait %v); a default-grace mutation would report ~%v", elapsed, want, gracePeriod, forceWait, DefaultCloseGracePeriod+forceWait)
+		}
+		if handle.SignalCount(syscall.SIGTERM) != 1 {
+			t.Fatalf("expected exactly one SIGTERM, got %d", handle.SignalCount(syscall.SIGTERM))
+		}
+		if handle.SignalCount(syscall.SIGKILL) != 1 {
+			t.Fatalf("expected exactly one SIGKILL, got %d", handle.SignalCount(syscall.SIGKILL))
+		}
+	})
 }
 
 // TestProcess_Close_CustomGracePeriod_QuickExit verifies that Close returns

@@ -19,6 +19,7 @@ type TestEventLoopProvider struct {
 	vm       *goja.Runtime
 	registry *require.Registry
 	adapter  *gojaeventloop.Adapter
+	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
@@ -53,8 +54,14 @@ func NewTestEventLoopProvider() *TestEventLoopProvider {
 		vm:       vm,
 		registry: registry,
 		adapter:  adapter,
+		ctx:      ctx,
 		cancel:   cancel,
 	}
+}
+
+// Ctx implements builtin.EventLoopProvider.
+func (p *TestEventLoopProvider) Ctx() context.Context {
+	return p.ctx
 }
 
 // Loop implements builtin.EventLoopProvider.

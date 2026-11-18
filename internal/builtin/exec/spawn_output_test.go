@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -619,5 +620,58 @@ func TestReadableStreamReportsCutShort(t *testing.T) {
 				t.Fatalf("truncated = %v, want %v (result %#v)", value["truncated"], test.wantTruncated, value)
 			}
 		})
+	}
+}
+
+// prefixThenEIOReader serves prefix on the first Read, then fails with a
+// non-EOF error — modeling a pipe whose read breaks (EIO) after the child
+// was already reaped and some output was captured.
+type prefixThenEIOReader struct {
+	prefix []byte
+	sent   bool
+}
+
+func (r *prefixThenEIOReader) Read(buf []byte) (int, error) {
+	if !r.sent {
+		r.sent = true
+		return copy(buf, r.prefix), nil
+	}
+	return 0, syscall.EIO
+}
+func (r *prefixThenEIOReader) Close() error { return nil }
+
+// TestPumpPipe_ReadFailureAfterRecordedExitStaysTruncated pins V10: a pump
+// read that fails with a NON-EOF error must mark the stream truncated, even
+// when the child's exit was already recorded (wait code 0). The recorded exit
+// establishes the verdict, but it does not make the capture complete — an
+// escaped descendant holding the pipe can still cut it after the reaper ran.
+// The terminal read must therefore surface done + errOutputStreamCutShort,
+// never a clean EOF.
+func TestPumpPipe_ReadFailureAfterRecordedExitStaysTruncated(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{
+		stdout: newPipeQueue(),
+		stderr: newPipeQueue(),
+		done:   make(chan struct{}),
+	}
+	// Simulate a recorded exit: done closed, exit code 0.
+	child.exitCode = 0
+	close(child.done)
+
+	child.pumpPipe(&prefixThenEIOReader{prefix: []byte("partial\n")}, &child.stdout)
+
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "partial\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want the prefix chunk", data, done, err)
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); !errors.Is(err, errOutputStreamCutShort) || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want (errOutputStreamCutShort, true) — a non-EOF read failure after a recorded exit is still a truncated capture", done, err)
+	}
+	if !child.stdout.cutShort() {
+		t.Fatal("stdout queue not marked cut short after a non-EOF read failure")
+	}
+	// The recorded exit code is still observable and unaffected.
+	if code, waitErr := child.WaitContext(context.Background()); waitErr != nil || code != 0 {
+		t.Fatalf("WaitContext = (%d, %v), want (0, nil) — the truncation must not corrupt the recorded exit", code, waitErr)
 	}
 }

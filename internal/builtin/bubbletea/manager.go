@@ -85,12 +85,25 @@ func (c *programCompletion) wait() error {
 
 // waitCtx blocks until the completion fires or ctx is cancelled. On
 // cancellation it returns ctx.Err(); the completion itself is left running
-// so later callers can still observe the real result.
+// so later callers can still observe the real result. If the completion has
+// already fired, its recorded result wins even when ctx is already done:
+// select chooses randomly among ready cases, so both a done completion and a
+// cancelled ctx are checked explicitly to make the outcome deterministic.
 func (c *programCompletion) waitCtx(ctx context.Context) error {
 	select {
 	case <-c.done:
 		return c.err
+	default:
+	}
+	select {
+	case <-c.done:
+		return c.err
 	case <-ctx.Done():
+		select {
+		case <-c.done:
+			return c.err
+		default:
+		}
 		return ctx.Err()
 	}
 }
@@ -115,6 +128,7 @@ type Manager struct {
 	signalStop   func(c chan<- os.Signal)
 	isTTY        bool                   // Whether input is a TTY
 	ttyFd        int                    // TTY file descriptor (if available)
+	inputDefaulted bool                 // Whether input was defaulted from nil (not explicitly provided)
 	program      *tea.Program           // Currently running program (if any)
 	jsRunner     JSRunner               // REQUIRED: thread-safe JS execution via event loop
 	promisify    PromisifyFunc          // Optional: keeps loop alive while program runs
@@ -174,7 +188,8 @@ func NewManagerWithStderr(
 	// Track if we received nil inputs - if so, skip TTY detection entirely.
 	// This avoids triggering stdin access during engine construction in tests.
 	skipTTYDetection := input == nil && output == nil
-	if input == nil {
+	inputDefaulted := input == nil
+	if inputDefaulted {
 		input = os.Stdin
 	}
 	if output == nil {
@@ -191,15 +206,16 @@ func NewManagerWithStderr(
 	}
 
 	m := &Manager{
-		ctx:          ctx,
-		input:        input,
-		output:       output,
-		stderr:       stderr,
-		signalNotify: signalNotify,
-		signalStop:   signalStop,
-		isTTY:        false,
-		ttyFd:        -1,
-		jsRunner:     jsRunner, // REQUIRED: set at construction time
+		ctx:            ctx,
+		input:          input,
+		output:         output,
+		stderr:         stderr,
+		signalNotify:   signalNotify,
+		signalStop:     signalStop,
+		isTTY:          false,
+		ttyFd:          -1,
+		inputDefaulted: inputDefaulted,
+		jsRunner:       jsRunner, // REQUIRED: set at construction time
 	}
 
 	// Skip TTY detection if caller passed nil for both input and output.

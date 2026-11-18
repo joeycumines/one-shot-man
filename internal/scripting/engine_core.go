@@ -91,6 +91,7 @@ type Engine struct {
 	bubblezoneManager      builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 	requireModule          *require.RequireModule    // CommonJS require module for file-based script execution
 	stateRefreshDispatcher *stateRefreshDispatcher
+	cancel                 context.CancelFunc // cancels the engine's own lifecycle ctx on Close
 }
 
 // stateRefreshDispatcher coalesces rapid state refreshes per key into a single
@@ -309,11 +310,19 @@ func NewEngine(
 
 	vm := runtime.Runtime()
 
+	// Derive the engine's own lifecycle context from the caller's ctx. The
+	// engine ctx is cancelled by Close() (via runtime.Close -> rt.cancel),
+	// independently of the caller's ctx: subsystems that must shut down with
+	// the engine (e.g. the bubbletea manager, via EventLoopProvider.Ctx())
+	// derive theirs from this one, so engine.Close() unblocks them even when
+	// the caller's ctx is never cancelled.
+	engineCtx, engineCancel := context.WithCancel(ctx)
+
 	engine := &Engine{
 		runtime:        runtime,
 		vm:             vm,
 		registry:       registry,
-		ctx:            ctx,
+		ctx:            engineCtx,
 		stdout:         stdout,
 		stderr:         stderr,
 		globals:        make(map[string]any),
@@ -321,6 +330,7 @@ func NewEngine(
 		logger:         NewTUILogger(stdout, logFile, logBufferSize, logLevel),
 		terminalIO:     terminalIO,
 	}
+	engine.cancel = engineCancel
 
 	// Register native Go modules. These are all prefixed with "osm:".
 	// Pass through the engine's context and a TUI sink for modules that need them.
@@ -844,6 +854,16 @@ func (e *Engine) Loop() *goeventloop.Loop {
 	return e.runtime.Loop()
 }
 
+// Ctx returns the engine's base lifecycle context: the context that owns the
+// event loop's lifetime. It is cancelled when the engine closes, so
+// long-lived subsystems (e.g. the bubbletea manager) derive their own
+// context from it and shut down with the engine rather than with the
+// per-call context that happened to register them.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Ctx() context.Context {
+	return e.ctx
+}
+
 // Runtime returns the goja.Runtime for JavaScript execution.
 // This implements builtin.EventLoopProvider.
 func (e *Engine) Runtime() *goja.Runtime {
@@ -893,6 +913,15 @@ func (e *Engine) Close() error {
 	// a double-close would re-close the TUI manager, btBridge, etc.
 	if !e.closed.CompareAndSwap(false, true) {
 		return nil
+	}
+
+	// Cancel the engine's own lifecycle context first: subsystems that
+	// derived from EventLoopProvider.Ctx() (e.g. the bubbletea manager) and
+	// the parked WaitForProgram observe this cancellation and unblock, so the
+	// rest of teardown cannot wedge on a still-running program even when the
+	// caller's parent ctx is never cancelled.
+	if e.cancel != nil {
+		e.cancel()
 	}
 
 	// Close TUI manager if it exists (this persists state)

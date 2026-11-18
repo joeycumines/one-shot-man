@@ -571,7 +571,10 @@ func (cs *CaptureSession) IsPaused() bool {
 }
 
 // Resize changes the PTY dimensions. Returns an error if the session has
-// not been started.
+// not been started. The resize and the dimensions update are serialized
+// under the session mutex, and the stored dimensions are only updated when
+// the PTY resize itself succeeds — a failed resize leaves the old dims in
+// place and propagates the error instead of silently claiming success.
 func (cs *CaptureSession) Resize(rows, cols int) error {
 	if rows <= 0 || cols <= 0 {
 		return errors.New("capture: rows and cols must be positive")
@@ -580,33 +583,19 @@ func (cs *CaptureSession) Resize(rows, cols int) error {
 		return errors.New("capture: rows and cols must be <= 65535")
 	}
 	cs.mu.Lock()
-	proc := cs.proc
-	cs.mu.Unlock()
-	if proc == nil {
+	defer cs.mu.Unlock()
+	if cs.proc == nil {
 		return errors.New("capture: not started")
 	}
-	// On Windows a headless runner can leave the session without an open
-	// ConPTY pseudoconsole (console init failed with STATUS_DLL_INIT_FAILED);
-	// ResizePseudoConsole then has no handle to act on and platformResize
-	// reports ErrNotSupported. That is a property of the host, not a session
-	// defect, so keep the configured dimensions and report success instead of
-	// failing the caller (CI run 44073176789: TestCaptureSession_RowsCols
-	// failed on windows-latest with exactly that error).
-	if !proc.ResizeSupported() {
-		cs.mu.Lock()
-		cs.rows = rows
-		cs.cols = cols
-		cs.mu.Unlock()
-		return nil
-	}
-	// Resize PTY (delivers SIGWINCH to child).
-	if err := proc.Resize(uint16(rows), uint16(cols)); err != nil {
+	// Resize PTY (delivers SIGWINCH to the child). On Windows a headless
+	// runner can leave the session without an open ConPTY pseudoconsole, in
+	// which case platformResize reports ErrNotSupported — that error now
+	// propagates to the caller instead of being swallowed as success.
+	if err := cs.proc.Resize(uint16(rows), uint16(cols)); err != nil {
 		return err
 	}
-	cs.mu.Lock()
 	cs.rows = rows
 	cs.cols = cols
-	cs.mu.Unlock()
 	return nil
 }
 

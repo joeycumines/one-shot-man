@@ -147,26 +147,24 @@
         // An aborted capture is an exec-layer failure whose stderr may be
         // empty: the verdict is unknown, so it can neither pass nor count as
         // a deterministic failure (and must never be forgiven as pre-existing).
-        var captureCutShort = result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || ''));
+        // The structural flag from the exec layer is authoritative; the message
+        // regex is a fallback for results that predate the flag.
+        var captureCutShort = result.truncated === true ||
+            (result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || '')));
         // A non-exit exec error (spawn/wait failure, code -1 with error) is
         // likewise an unknown verdict, tagged execFailed like the async path.
         var execLayerFailed = !captureCutShort && result.error === true && result.code === -1;
+        // An incomplete capture with ANY exit code (including a real nonzero
+        // code) is an unknown verdict: a prefix followed by a read error is
+        // not a complete capture, so it can never be a deterministic failure.
+        var captureIncomplete = captureCutShort || result.truncated === true;
 
-        // Timeout before truncation gate. Same classification as the async
-        // path: a run whose capture was cut short stays truncated even when
-        // the timeout condition also holds.
-        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
-            return {
-                name: branchName,
-                passed: false,
-                output: stdoutBuf,
-                truncated: captureCutShort || undefined,
-                exitCode: result.code,
-                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
-            };
-        }
-
-        if (captureCutShort) {
+        // Unknown-verdict gates run BEFORE timeout classification: a run with
+        // no observed exit status (or a cut capture) must not be relabelled as
+        // a deterministic timeout just because the elapsed-time condition also
+        // holds (elapsedMs includes worktree removal, so slow cleanup can
+        // otherwise push an exec-layer failure across this boundary).
+        if (captureIncomplete) {
             return {
                 name: branchName,
                 passed: false,
@@ -186,6 +184,17 @@
                 exitCode: result.code,
                 execFailed: true,
                 error: 'verify exec-layer failure: ' + execFailReason(result)
+            };
+        }
+
+        // Timeout gate: reached only when the verdict is NOT unknown.
+        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: result.code,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
         }
 
@@ -629,8 +638,40 @@
         }
 
         async function cleanupWorktreeAsync() {
-            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            return await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
         }
+
+        // Cleanup runs as an explicit phase that preserves the verification
+        // result: the body assigns `outcome` and the finally may amend it with
+        // cleanup status, so a removal failure is part of the returned result
+        // instead of only a debug log.
+        var outcome = null;
+        // One absolute cleanup deadline shared by kill, exit-wait, and
+        // removal: at most 5s, shortened when the configured positive verify
+        // timeout is smaller. Each bounded wait clears its timer in finally,
+        // so successful termination leaves no referenced timers keeping the
+        // event loop alive.
+        var cleanupDeadlineMs = Date.now() + (timeoutMs > 0 ? Math.min(timeoutMs, 5000) : 5000);
+        var cleanupNotes = [];
+        // boundedAwait waits for promise with at most msLeft milliseconds,
+        // always clearing its timer. Returns {settled: bool, value/reason}.
+        function boundedAwait(promise, msLeft) {
+            var left = msLeft;
+            if (!(left > 0)) left = 0;
+            var timer = null;
+            var timeoutP = new Promise(function(resolve) {
+                timer = setTimeout(function() { resolve({ timedOut: true }); }, left);
+            });
+            return Promise.race([promise, timeoutP]).then(function(v) {
+                if (timer !== null) clearTimeout(timer);
+                if (v && v.timedOut) return { settled: false };
+                return { settled: true, value: v };
+            }, function(e) {
+                if (timer !== null) clearTimeout(timer);
+                return { settled: true, rejected: true, reason: e };
+            });
+        }
+        var msLeft = function() { return cleanupDeadlineMs - Date.now(); };
 
         var worktreeReady = true;
         try {
@@ -741,6 +782,10 @@
         var waitResult = null;
         var waitError = null;
         var waitSettled = false;
+        // waitResolvedWithStatus distinguishes a wait that FULFILLED with an
+        // observed exit status from a rejected one: only a fulfilled wait
+        // establishes that the child terminated.
+        var waitResolvedWithStatus = false;
         await Promise.all([
             readStream(child.stdout, function(chunk) {
                 stdoutBuf += chunk;
@@ -750,7 +795,7 @@
                 stderrBuf += chunk;
                 emitChunk(chunk);
             }),
-            child.wait().then(function(r) { waitResult = r || {}; waitSettled = true; }, function(err) { waitError = err; waitSettled = true; })
+            child.wait().then(function(r) { waitResult = r || {}; waitSettled = true; waitResolvedWithStatus = true; }, function(err) { waitError = err; waitSettled = true; })
         ]);
 
         var exitResult = waitResult;
@@ -761,7 +806,7 @@
         var elapsedMs = Date.now() - startMs;
 
         if (cancelled || isCancelledNow()) {
-            return {
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -769,31 +814,30 @@
                 error: 'verification cancelled by user',
                 cancelled: true
             };
-        }
-
-        // A rejected wait means the exec layer never recorded an exit status.
-        // Reporting it as `exit -1` with an empty explanation told the operator
-        // nothing: a broken spawn/wait looked exactly like a verify command that
-        // failed without writing to stderr. The reason is carried through.
-        // This gate runs before the timeout gate: a wait that failed for a
-        // non-timeout reason must not be mislabelled as a timeout.
-        if (waitError) {
-            return {
+        } else if (waitError) {
+            // A rejected wait means the exec layer never recorded an exit
+            // status. Reporting it as `exit -1` with an empty explanation told
+            // the operator nothing: a broken spawn/wait looked exactly like a
+            // verify command that failed without writing to stderr. The
+            // reason is carried through. This gate runs before the timeout
+            // gate: a wait that failed for a non-timeout reason must not be
+            // mislabelled as a timeout.
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
                 exitCode: exitCode,
                 execFailed: true,
+                truncated: streamsTruncated || undefined,
                 error: 'verify wait failed after ' + elapsedMs + 'ms with no exit status: ' + String((waitError && waitError.message) || waitError)
             };
-        }
-
-        // Timeout before truncation gate. If the capture is also known to be
-        // incomplete, keep truncated:true on the result: the verdict is
-        // unknown, and the batch classifier must not read this as a
-        // deterministic timeout that could be forgiven as pre-existing.
-        if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
-            return {
+        } else if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
+            // Timeout gate, reached only when the verdict is not unknown. If
+            // the capture is also known to be incomplete, keep truncated:true
+            // on the result: the verdict is unknown, and the batch classifier
+            // must not read this as a deterministic timeout that could be
+            // forgiven as pre-existing.
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -801,14 +845,13 @@
                 exitCode: exitCode,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
-        }
-
-        // A cut capture outranks an unknown status as the diagnosis. The
-        // timeout branch above may also have fired on a run whose capture was
-        // cut short: keep the truncation flag so the result stays classified
-        // as an unknown capture rather than a deterministic timeout.
-        if (streamsTruncated) {
-            return {
+        } else if (streamsTruncated) {
+            // A cut capture outranks an unknown status as the diagnosis. The
+            // timeout branch above may also have fired on a run whose capture
+            // was cut short: keep the truncation flag so the result stays
+            // classified as an unknown capture rather than a deterministic
+            // timeout.
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -816,65 +859,102 @@
                 exitCode: exitCode,
                 error: 'verification output capture was cut short before EOF: the verdict is unknown'
             };
+        } else {
+            var signal = exitResult && exitResult.signal ? String(exitResult.signal) : '';
+            var trimmedStderr = stderrBuf.trim();
+            var failureDetail = trimmedStderr !== '' ? trimmedStderr : '';
+            if (signal && failureDetail.indexOf(signal) < 0) {
+                failureDetail = failureDetail ? (failureDetail + ' (' + signal + ')') : signal;
+            }
+            outcome = {
+                name: branchName,
+                passed: exitCode === 0,
+                output: stdoutBuf,
+                exitCode: exitCode,
+                error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + failureDetail : null
+            };
         }
-
-        var signal = exitResult && exitResult.signal ? String(exitResult.signal) : '';
-        var trimmedStderr = stderrBuf.trim();
-        var failureDetail = trimmedStderr !== '' ? trimmedStderr : '';
-        if (signal && failureDetail.indexOf(signal) < 0) {
-            failureDetail = failureDetail ? (failureDetail + ' (' + signal + ')') : signal;
-        }
-        return {
-            name: branchName,
-            passed: exitCode === 0,
-            output: stdoutBuf,
-            exitCode: exitCode,
-            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + failureDetail : null
-        };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
             // If the body left abnormally before the wait settled (a throwing
             // output callback, a stream error escaping readStream), the verify
-            // child is still running: kill it and wait for termination (bounded
-            // by the verify timeout, falling back to a short fixed bound)
+            // child may still be running: kill it and confirm its exit (both
+            // bounded by ONE shared cleanup deadline, with every timer cleared)
             // BEFORE removing the worktree, which fails on Windows while the
-            // child holds it as CWD. A kill failure stays diagnosable: it is
-            // logged and surfaced on the returned result's error.
-            if (!waitSettled) {
-                var killBoundMs = timeoutMs > 0 ? timeoutMs : 5000;
+            // child holds it as CWD. Only a wait that RESOLVED with a status
+            // establishes termination; a rejected wait, a failed kill, or a
+            // deadline expiry does not — in those cases the worktree is
+            // retained and reported rather than removed while the child may
+            // still hold it.
+            if (!waitSettled || !waitResolvedWithStatus) {
+                var killOutcome = null;
                 try {
                     var killResult = child.kill();
                     if (killResult && typeof killResult.then === 'function') {
-                        await Promise.race([
-                            killResult,
-                            new Promise(function(resolve) { setTimeout(resolve, killBoundMs); })
-                        ]);
+                        killOutcome = await boundedAwait(killResult, msLeft());
+                    } else {
+                        killOutcome = { settled: true, value: killResult };
                     }
-                    // Confirm the child actually terminated: the kill promise
-                    // only confirms signal delivery, so also wait for the
-                    // child's exit, bounded by the same deadline.
-                    await Promise.race([
-                        child.wait(),
-                        new Promise(function(resolve) { setTimeout(resolve, killBoundMs); })
-                    ]);
                 } catch (e) {
-                    log.debug('verifySplitAsync: abnormal-exit kill failed', { error: e.message || String(e) });
+                    killOutcome = { settled: true, rejected: true, reason: e };
+                }
+                if (killOutcome && killOutcome.settled && killOutcome.rejected) {
+                    cleanupNotes.push('kill failed: ' + String((killOutcome.reason && killOutcome.reason.message) || killOutcome.reason));
+                    log.debug('verifySplitAsync: abnormal-exit kill failed', { error: (killOutcome.reason && killOutcome.reason.message) || String(killOutcome.reason) });
+                } else if (killOutcome && !killOutcome.settled) {
+                    cleanupNotes.push('kill did not settle before the cleanup deadline');
+                }
+                // Confirm the child actually terminated: the kill promise only
+                // confirms signal delivery, so also wait for the child's exit,
+                // bounded by the remaining shared deadline.
+                var waitOutcome = null;
+                try {
+                    waitOutcome = await boundedAwait(child.wait(), msLeft());
+                } catch (e) {
+                    waitOutcome = { settled: true, rejected: true, reason: e };
+                }
+                if (waitOutcome && waitOutcome.settled && waitOutcome.value && waitOutcome.value.code !== undefined) {
+                    waitResolvedWithStatus = true;
+                } else if (waitOutcome && waitOutcome.settled && waitOutcome.rejected) {
+                    cleanupNotes.push('exit wait rejected: ' + String((waitOutcome.reason && waitOutcome.reason.message) || waitOutcome.reason));
+                } else if (waitOutcome && !waitOutcome.settled) {
+                    cleanupNotes.push('exit wait did not settle before the cleanup deadline');
                 }
             }
             if (worktreeReady) {
-                try {
-                    var cleanupResult = await cleanupWorktreeAsync();
-                    // A failed worktree removal must not go unnoticed: the
-                    // verify result is already a structured failure on this
-                    // path, so append the cleanup reason to its diagnostic.
-                    if (cleanupResult && cleanupResult.code !== 0) {
-                        log.debug('verifySplitAsync: worktree cleanup failed', { error: execFailReason(cleanupResult) });
+                if (waitResolvedWithStatus) {
+                    try {
+                        var cleanupResult = await cleanupWorktreeAsync();
+                        // A failed worktree removal must be part of the
+                        // returned result, not just a debug log.
+                        if (cleanupResult && cleanupResult.code !== 0) {
+                            cleanupNotes.push('worktree removal failed: ' + execFailReason(cleanupResult));
+                            log.debug('verifySplitAsync: worktree cleanup failed', { error: execFailReason(cleanupResult) });
+                        }
+                    } catch (e) {
+                        cleanupNotes.push('worktree removal failed: ' + String((e && e.message) || e));
+                        log.debug('verifySplitAsync: worktree cleanup failed', { error: (e && e.message) || String(e) });
                     }
-                } catch (e) {
-                    log.debug('verifySplitAsync: worktree cleanup failed', { error: e.message || String(e) });
+                } else {
+                    // Termination was never confirmed (rejected wait, failed
+                    // kill, or deadline expiry): removing the worktree now
+                    // could fail on Windows while the child still holds it as
+                    // CWD, and claiming success would be a lie. Retain the
+                    // worktree and report its path.
+                    cleanupNotes.push('worktree retained: child termination was not confirmed');
                 }
             }
+            if (outcome !== null && cleanupNotes.length > 0) {
+                outcome.cleanupFailed = true;
+                outcome.worktreeDir = worktreeDir;
+                if (!waitResolvedWithStatus && worktreeReady) {
+                    outcome.worktreeRetained = true;
+                }
+                var note = cleanupNotes.join('; ');
+                outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + note;
+            }
         }
+        return outcome;
     }
 
     // verifySplitsAsync is the non-blocking version of verifySplits.

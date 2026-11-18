@@ -272,14 +272,6 @@ func (p *Process) DrainOutput(sink io.Writer) {
 }
 
 // Resize changes the PTY window dimensions, sending SIGWINCH to the child.
-//
-// ResizeSupported reports whether a Resize call can succeed on this process.
-// On Unix the PTY master always backs resize, so it is true for any live
-// process. On Windows resize needs an open ConPTY pseudoconsole handle: a
-// session that never got one (headless runner where the console init failed
-// with STATUS_DLL_INIT_FAILED) cannot be resized, and platformResize reports
-// ErrNotSupported. Callers that must tolerate a resize-less host should check
-// this first instead of treating ErrNotSupported as a hard failure.
 func (p *Process) Resize(rows, cols uint16) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -287,18 +279,6 @@ func (p *Process) Resize(rows, cols uint16) error {
 		return ErrClosed
 	}
 	return p.platformResize(rows, cols)
-}
-
-// ResizeSupported reports whether Resize can succeed on this process: true
-// on Unix (the PTY master backs TIOCSWINSZ), and on Windows only while the
-// ConPTY pseudoconsole handle is still open.
-func (p *Process) ResizeSupported() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		return false
-	}
-	return p.conPTYHandleOpen()
 }
 
 // Signal sends a signal to the child process.

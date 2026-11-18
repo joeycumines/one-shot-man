@@ -340,6 +340,14 @@ func (rt *Runtime) Loop() *goeventloop.Loop {
 	return rt.loop
 }
 
+// Ctx returns the runtime's lifecycle context: it is cancelled when the
+// runtime stops (Close), so subsystems that need an engine-lifetime context
+// (e.g. the bubbletea manager registered against this provider) derive
+// theirs from it.
+func (rt *Runtime) Ctx() context.Context {
+	return rt.ctx
+}
+
 // Runtime returns the underlying goja.Runtime.
 func (rt *Runtime) Runtime() *goja.Runtime {
 	return rt.vm

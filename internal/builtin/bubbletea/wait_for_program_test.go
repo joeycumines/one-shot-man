@@ -146,3 +146,63 @@ func TestWaitForProgram_MultipleConsumersObserveCompletion(t *testing.T) {
 
 	require.ErrorIs(t, manager.WaitForProgram(), wantErr, "late callers should observe the same completed run")
 }
+
+// TestProgramCompletion_WaitCtxCompletedWinsOverCancelledCtx pins the V5
+// fix: when the completion has already fired, waitCtx must return the
+// recorded result even if ctx is already cancelled — select would otherwise
+// pick the cancelled case ~50% of the time and report context.Canceled for
+// a program that already finished.
+func TestProgramCompletion_WaitCtxCompletedWinsOverCancelledCtx(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("program exited with failure")
+	// Loop many times: the bug is a race in select, so a single iteration
+	// would pass even with the old code.
+	for i := 0; i < 1000; i++ {
+		c := newProgramCompletion()
+		c.complete(wantErr)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // already cancelled
+		if err := c.waitCtx(ctx); !errors.Is(err, wantErr) {
+			t.Fatalf("iteration %d: waitCtx = %v, want the recorded completion error %v", i, err, wantErr)
+		}
+	}
+
+	// Success case: recorded nil must also win.
+	for i := 0; i < 1000; i++ {
+		c := newProgramCompletion()
+		c.complete(nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := c.waitCtx(ctx); err != nil {
+			t.Fatalf("iteration %d: waitCtx = %v, want nil for a successful completion", i, err)
+		}
+	}
+}
+
+// TestProgramCompletion_WaitCtxPendingInterruptedByCancel pins the other
+// side of the contract: a completion that never fires must still be
+// interruptible by ctx cancellation.
+func TestProgramCompletion_WaitCtxPendingInterruptedByCancel(t *testing.T) {
+	t.Parallel()
+
+	c := newProgramCompletion()
+	ctx, cancel := context.WithCancel(context.Background())
+	res := make(chan error, 1)
+	go func() { res <- c.waitCtx(ctx) }()
+	cancel()
+	select {
+	case err := <-res:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waitCtx = %v, want context.Canceled for a pending completion", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pending waitCtx was not interrupted by cancellation")
+	}
+	// The completion must still be observable afterwards.
+	wantErr := errors.New("late result")
+	c.complete(wantErr)
+	if err := c.wait(); !errors.Is(err, wantErr) {
+		t.Fatalf("wait after cancel = %v, want %v", err, wantErr)
+	}
+}

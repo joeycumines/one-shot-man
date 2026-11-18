@@ -71,6 +71,11 @@ type TerminalOpsProvider interface {
 
 // EventLoopProvider exposes the shared Goja event loop and runtime.
 type EventLoopProvider interface {
+	// Ctx returns the base lifecycle context of the engine/loop. It is the
+	// context that owns the loop's lifetime (cancelled on shutdown), distinct
+	// from per-call contexts: bindings that must not outlive the engine
+	// derive their work context from it.
+	Ctx() context.Context
 	Loop() *goeventloop.Loop
 	Runtime() *goja.Runtime
 	Registry() *require.Registry
@@ -217,10 +222,10 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	btBridge := bt.NewBridge(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), registry, eventLoopProvider.Adapter())
 	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
-	bubbleteaMgr := bubbleteamod.NewManager(ctx, terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)
+	bubbleteaMgr := bubbleteamod.NewManager(eventLoopProvider.Ctx(), terminalReader(terminalProvider), terminalWriter(terminalProvider), btBridge, nil, nil)
 	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 	bubbleteaMgr.SetAdapter(eventLoopProvider.Adapter())
-	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
+	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(eventLoopProvider.Ctx(), bubbleteaMgr))
 
 	bubblezoneMgr := bubblezonemod.NewManager()
 	registry.RegisterNativeModule(prefix+"bubblezone", bubblezonemod.Require(bubblezoneMgr))

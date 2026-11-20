@@ -3,7 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
-	goruntime "runtime"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -31,29 +31,38 @@ func (q *pipeQueue) chunkCount() int {
 	return len(q.items)
 }
 
+// highVolumeWriterEnv marks the re-executed test binary as the helper.
+const highVolumeWriterEnv = "OSM_EXEC_HIGHVOLUME_HELPER"
+
 // highVolumeWriterCommand returns a command that writes to stdout as fast as
-// the pipe accepts, indefinitely (until killed).
+// the pipe accepts, indefinitely (until killed). The writer must be an
+// out-of-process program: on Windows, cmd.exe's `for /L` loop only ever runs
+// in-process (the parser substitutes 0 as the end bound, so the loop is
+// finite and the child exits before the pump can retain anything), which made
+// the bounded-queue assertion vacuous there. The re-executed test binary
+// (OSM_EXEC_HIGHVOLUME_HELPER=1) is a genuine infinite writer on every
+// platform and is what SpawnChild runs.
 func highVolumeWriterCommand() (string, []string) {
-	if goruntime.GOOS == "windows" {
-		// cmd.exe has no infinite-yield loop that is cheap; use findstr on nul?
-		// Simpler: powershell may be absent; use a repeated echo loop via cmd.
-		return "cmd.exe", []string{"/C", "for /L %i in (1,0,0) do @echo 01234567890123456789012345678901234567890123456789012345678901234567890123456789"}
-	}
-	return "sh", []string{"-c", `while true; do printf '01234567890123456789012345678901234567890123456789012345678901234567890123456789\n'; done`}
+	return os.Args[0], []string{"-test.run=TestZZHighVolumeWriterHelper"}
 }
 
 // TestSpawnChild_UnreadOutputIsBounded is the RED repro for the unbounded
 // pipe queue: spawn a high-volume writer, NEVER read, and assert the retained
-// queue bytes stay under the cap. Today the queue grows without bound (Hana's
-// probe measured ~1 GB / 125k chunks in ~2s), so this test FAILS before the
-// fix and passes after.
+// queue bytes stay under the cap. Before the fix the queue grows without
+// bound (Hana's probe measured ~1 GB / 125k chunks in ~2s), so this test
+// FAILS before the fix and passes after.
 func TestSpawnChild_UnreadOutputIsBounded(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
 	const capBytes = 64 * 1024 // DefaultQueueCapBytes once wired; assert against the live default below
 	command, args := highVolumeWriterCommand()
-	child, err := SpawnChild(context.Background(), SpawnConfig{Command: command, Args: args})
+	child, err := SpawnChild(context.Background(), SpawnConfig{
+		Command:    command,
+		Args:       args,
+		Env:        map[string]string{highVolumeWriterEnv: "1"},
+		EnvReplace: false,
+	})
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}

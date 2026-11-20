@@ -34,9 +34,7 @@ func TestWaitAndCloseProcessTree_ProbeErrorRetriesEPERM(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("process-group EPERM semantics are Unix-specific")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) {
+	probe := func(*osexec.Cmd) (bool, error) {
 		return false, errors.New("probe unavailable")
 	}
 
@@ -47,7 +45,7 @@ func TestWaitAndCloseProcessTree_ProbeErrorRetriesEPERM(t *testing.T) {
 	}
 	// The first post-wait close returns EPERM; the retry succeeds.
 	tree := &transientEPERMTree{}
-	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 	if waitErr != nil {
 		t.Fatalf("waitErr = %v, want nil for an exit-0 command", waitErr)
 	}
@@ -66,9 +64,7 @@ func TestWaitAndCloseProcessTree_NoSafeCloseRetriesEPERM(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("process-group EPERM semantics are Unix-specific")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return false, nil }
+	probe := func(*osexec.Cmd) (bool, error) { return false, nil }
 
 	command, args := immediateExitCommand()
 	cmd := osexec.Command(command, args...)
@@ -76,7 +72,7 @@ func TestWaitAndCloseProcessTree_NoSafeCloseRetriesEPERM(t *testing.T) {
 		t.Fatalf("start helper: %v", err)
 	}
 	tree := &transientEPERMTree{}
-	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 	if waitErr != nil || closeErr != nil {
 		t.Fatalf("(wait, close) = (%v, %v), want both nil after EPERM retry", waitErr, closeErr)
 	}

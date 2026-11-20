@@ -437,7 +437,18 @@ func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 						__testErr('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
 						return;
 					}
-					__testOK();
+					execmod.execv([]).then(function(errResult) {
+						var errKeys = Object.keys(errResult).sort();
+						if (JSON.stringify(errKeys) !== JSON.stringify(expectedKeys)) {
+							__testErr('Unexpected exec error result keys: ' + JSON.stringify(errKeys));
+							return;
+						}
+						if (errResult.truncated !== false) {
+							__testErr('Expected truncated:false on execv error result, got ' + errResult.truncated);
+							return;
+						}
+						__testOK();
+					}).catch(function(e) { __testErr(e.message); });
 				}).catch(function(e) { __testErr(e.message); });
 			}).catch(function(e) { __testErr(e.message); });
 		`)

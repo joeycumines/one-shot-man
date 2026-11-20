@@ -72,3 +72,32 @@ func TestSpawnChild_ReapedChildStreamIsNotTruncated(t *testing.T) {
 		}
 	}
 }
+
+// TestPumpPipe_NonEOFErrorAfterCleanReapIsEOF pins the Windows job-close
+// discriminator directly: once recordExit(nil, nil) has cleanly recorded an
+// exit status and neither abort nor settlePumps forced a drain cut, a non-EOF
+// pipe read error is treated as clean EOF rather than truncation.
+func TestPumpPipe_NonEOFErrorAfterCleanReapIsEOF(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{
+		stdout: newPipeQueue(),
+		stderr: newPipeQueue(),
+		done:   make(chan struct{}),
+		abort:  make(chan struct{}),
+	}
+	child.recordExit(nil, nil)
+	close(child.done)
+
+	child.pumpPipe(&prefixThenEIOReader{prefix: []byte("ok\n")}, &child.stdout)
+
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "ok\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want (%q, false, nil)", data, done, err, "ok\n")
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); err != nil || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want (true, nil) after clean reap without abort", done, err)
+	}
+	if child.stdout.cutShort() {
+		t.Fatal("stdout queue unexpectedly marked cut short after clean reap without abort")
+	}
+}

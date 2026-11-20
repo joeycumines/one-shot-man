@@ -154,25 +154,27 @@
         // A non-exit exec error (spawn/wait failure, code -1 with error) is
         // likewise an unknown verdict, tagged execFailed like the async path.
         var execLayerFailed = !captureCutShort && result.error === true && result.code === -1;
-        // An incomplete capture with ANY exit code (including a real nonzero
-        // code) is an unknown verdict: a prefix followed by a read error is
-        // not a complete capture, so it can never be a deterministic failure.
-        var captureIncomplete = captureCutShort || result.truncated === true;
+        var timedOut = timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs);
 
         // Unknown-verdict gates run BEFORE timeout classification: a run with
         // no observed exit status (or a cut capture) must not be relabelled as
         // a deterministic timeout just because the elapsed-time condition also
         // holds (elapsedMs includes worktree removal, so slow cleanup can
-        // otherwise push an exec-layer failure across this boundary).
-        if (captureIncomplete) {
+        // otherwise push an exec-layer failure across this boundary). When a
+        // real verify timeout coincided with a cut capture, keep BOTH
+        // truncated:true (unknown verdict) and timedOut:true (attribution).
+        if (captureCutShort) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
                 truncated: true,
+                timedOut: timedOut || undefined,
                 exitCode: result.code,
-                error: 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
-                    (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
+                error: timedOut
+                    ? 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms); output capture was cut short before EOF'
+                    : 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
+                        (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
             };
         }
 
@@ -188,11 +190,12 @@
         }
 
         // Timeout gate: reached only when the verdict is NOT unknown.
-        if (timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs)) {
+        if (timedOut) {
             return {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                timedOut: true,
                 exitCode: result.code,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
@@ -642,16 +645,12 @@
         }
 
         // Cleanup runs as an explicit phase that preserves the verification
-        // result: the body assigns `outcome` and the finally may amend it with
-        // cleanup status, so a removal failure is part of the returned result
-        // instead of only a debug log.
+        // result: the body (or catch on abnormal exit) assigns `outcome`, and
+        // finally may amend it with cleanup status, so a removal failure or
+        // retained worktree is always part of the returned result instead of
+        // only a debug log.
         var outcome = null;
-        // One absolute cleanup deadline shared by kill, exit-wait, and
-        // removal: at most 5s, shortened when the configured positive verify
-        // timeout is smaller. Each bounded wait clears its timer in finally,
-        // so successful termination leaves no referenced timers keeping the
-        // event loop alive.
-        var cleanupDeadlineMs = Date.now() + (timeoutMs > 0 ? Math.min(timeoutMs, 5000) : 5000);
+        var stdoutBuf = '';
         var cleanupNotes = [];
         // boundedAwait waits for promise with at most msLeft milliseconds,
         // always clearing its timer. Returns {settled: bool, value/reason}.
@@ -671,7 +670,6 @@
                 return { settled: true, rejected: true, reason: e };
             });
         }
-        var msLeft = function() { return cleanupDeadlineMs - Date.now(); };
 
         var worktreeReady = true;
         try {
@@ -689,7 +687,6 @@
             shellCmd = '( ' + shellCmd + ' ) & _pid=$!; ( sleep ' + timeoutSec + '; kill $_pid 2>/dev/null ) >/dev/null 2>&1 & _watch=$!; wait $_pid; _rc=$?; kill $_watch 2>/dev/null; wait $_watch 2>/dev/null; exit $_rc';
         }
 
-        var stdoutBuf = '';
         var stderrBuf = '';
         var prefix = '  [verify ' + branchName + '] ';
 
@@ -874,24 +871,49 @@
                 error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + failureDetail : null
             };
         }
+        } catch (e) {
+            // Capture abnormal-exit errors into `outcome` before `finally` runs
+            // so cleanup diagnostics (worktreeRetained, cleanupFailed,
+            // worktreeDir, cleanupNotes) are always attached rather than
+            // discarded when outcome is null.
+            outcome = {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: -1,
+                execFailed: true,
+                error: 'verify exec-layer failure: ' + String((e && e.message) || e)
+            };
         } finally {
             if (typeof stopCancelWatch === 'function') stopCancelWatch();
+            // Compute the cleanup budget here in finally — never before try —
+            // and decouple it from verifyTimeoutMs so a long verify run or tiny
+            // verifyTimeoutMs never leaves 0ms for killing and reaping the
+            // child. Each stage also gets a floor so reaper I/O cannot lose to
+            // a 0ms timer if the prior stage ran long.
+            var CLEANUP_BUDGET_MS = 5000;
+            var CLEANUP_STAGE_FLOOR_MS = 500;
+            var cleanupDeadlineMs = Date.now() + CLEANUP_BUDGET_MS;
+            var stageMsLeft = function() {
+                var left = cleanupDeadlineMs - Date.now();
+                return left > CLEANUP_STAGE_FLOOR_MS ? left : CLEANUP_STAGE_FLOOR_MS;
+            };
             // If the body left abnormally before the wait settled (a throwing
             // output callback, a stream error escaping readStream), the verify
             // child may still be running: kill it and confirm its exit (both
-            // bounded by ONE shared cleanup deadline, with every timer cleared)
+            // bounded by the cleanup deadline, with every timer cleared)
             // BEFORE removing the worktree, which fails on Windows while the
             // child holds it as CWD. Only a wait that RESOLVED with a status
             // establishes termination; a rejected wait, a failed kill, or a
             // deadline expiry does not — in those cases the worktree is
             // retained and reported rather than removed while the child may
             // still hold it.
-            if (!waitSettled || !waitResolvedWithStatus) {
+            if (child && (!waitSettled || !waitResolvedWithStatus)) {
                 var killOutcome = null;
                 try {
                     var killResult = child.kill();
                     if (killResult && typeof killResult.then === 'function') {
-                        killOutcome = await boundedAwait(killResult, msLeft());
+                        killOutcome = await boundedAwait(killResult, stageMsLeft());
                     } else {
                         killOutcome = { settled: true, value: killResult };
                     }
@@ -906,10 +928,10 @@
                 }
                 // Confirm the child actually terminated: the kill promise only
                 // confirms signal delivery, so also wait for the child's exit,
-                // bounded by the remaining shared deadline.
+                // bounded by the remaining deadline (with stage floor).
                 var waitOutcome = null;
                 try {
-                    waitOutcome = await boundedAwait(child.wait(), msLeft());
+                    waitOutcome = await boundedAwait(child.wait(), stageMsLeft());
                 } catch (e) {
                     waitOutcome = { settled: true, rejected: true, reason: e };
                 }
@@ -920,6 +942,11 @@
                 } else if (waitOutcome && !waitOutcome.settled) {
                     cleanupNotes.push('exit wait did not settle before the cleanup deadline');
                 }
+            }
+            if (!child) {
+                // Spawn itself failed before any child process existed, so no
+                // process holds the worktree CWD and removal is safe.
+                waitResolvedWithStatus = true;
             }
             if (worktreeReady) {
                 if (waitResolvedWithStatus) {

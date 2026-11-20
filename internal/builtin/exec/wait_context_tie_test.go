@@ -21,26 +21,26 @@ import (
 func TestWaitContext_ReapedChildPreemptsCancelledContext(t *testing.T) {
 	skipSlow(t)
 
-	const iters = 50
+	command, args := immediateExitCommand()
+	child, err := SpawnChild(context.Background(), SpawnConfig{
+		Command: command,
+		Args:    args,
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+
+	// Guarantee the child is reaped and its exit recorded.
+	code, waitErr := child.WaitContext(context.Background())
+	if code != 0 || waitErr != nil {
+		t.Fatalf("warm wait = (%d, %v), want (0, nil)", code, waitErr)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	const iters = 1000
 	for i := 0; i < iters; i++ {
-		command, args := immediateExitCommand()
-		child, err := SpawnChild(context.Background(), SpawnConfig{
-			Command: command,
-			Args:    args,
-		})
-		if err != nil {
-			t.Fatalf("iter %d: spawn: %v", i, err)
-		}
-
-		// Guarantee the child is reaped and its exit recorded.
-		code, waitErr := child.WaitContext(context.Background())
-		if code != 0 || waitErr != nil {
-			t.Fatalf("iter %d: warm wait = (%d, %v), want (0, nil)", i, code, waitErr)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-
 		code, waitErr = child.WaitContext(ctx)
 		if waitErr != nil {
 			t.Fatalf("iter %d: a completed exit lost the tie to a done context: (%d, %v)", i, code, waitErr)

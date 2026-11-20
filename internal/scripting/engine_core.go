@@ -317,6 +317,12 @@ func NewEngine(
 	// derive theirs from this one, so engine.Close() unblocks them even when
 	// the caller's ctx is never cancelled.
 	engineCtx, engineCancel := context.WithCancel(ctx)
+	engineReady := false
+	defer func() {
+		if !engineReady {
+			engineCancel()
+		}
+	}()
 
 	engine := &Engine{
 		runtime:        runtime,
@@ -429,6 +435,7 @@ func NewEngine(
 		}
 	})
 
+	engineReady = true
 	return engine, nil
 }
 

@@ -244,8 +244,11 @@ func contextErrorAfterCleanExit(t *testing.T, ctx context.Context) (*osexec.Cmd,
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
 	}
+	stdoutEOF := make(chan struct{})
 	go func() {
+		defer close(stdoutEOF)
 		_, _ = io.Copy(io.Discard, stdout)
 	}()
+	<-stdoutEOF
 	return cmd, cancelCalled
 }

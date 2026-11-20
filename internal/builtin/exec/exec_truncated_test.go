@@ -117,15 +117,69 @@ func TestRunExec_CloseErrorAfterEOFStaysComplete(t *testing.T) {
 	command, args := exitCodeCommand(0)
 	result := runExecCommand(ctx, command, args, pipeFactory, outputEOFCeiling)
 
-	// The writer side fails to close (closeErr is attached to the READER's
-	// Close, which runExecCommand also calls via closePipes), so the joined
-	// error is not an ExitError and code degrades to -1. The contract under
-	// test is only about the truncated flag: EOF on both readers means the
-	// capture is complete even though a close error exists.
+	if result["code"] != 0 {
+		t.Fatalf("code = %v, want 0: the child exited 0 and ProcessState holds the real status even though Close failed after EOF", result["code"])
+	}
 	if result["truncated"] != false {
 		t.Fatalf("truncated = %v, want false: EOF was reached on both readers, so the capture is complete even though Close failed", result["truncated"])
 	}
 	if msg, _ := result["message"].(string); msg != "" && !strings.Contains(msg, closeErr.Error()) {
 		t.Fatalf("message = %q, want the close error retained (or empty when nil)", msg)
+	}
+}
+
+// cancelOnEOFReader wraps a real pipe reader and triggers cancel strictly after
+// the child closes its write end (EOF), guaranteeing the child exited cleanly
+// before ctx.Err() becomes non-nil.
+type cancelOnEOFReader struct {
+	commandPipeEndpoint
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnEOFReader) Read(p []byte) (int, error) {
+	n, err := r.commandPipeEndpoint.Read(p)
+	if errors.Is(err, io.EOF) && r.cancel != nil {
+		r.cancel()
+	}
+	return n, err
+}
+
+// TestRunExec_CancelAfterCleanExitPreservesCode pins review-16 Blocker 1: a
+// child that exits 0 with a complete capture (EOF on both streams) must
+// preserve code 0 and error:false even if ctx cancels concurrently with or
+// after the reap. Unconditionally joining ctx.Err() into waitErr and
+// inferring code from error shape turned a passing command into {code:-1,
+// error:true}.
+func TestRunExec_CancelAfterCleanExitPreservesCode(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := 0
+	pipeFactory := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+		calls++
+		r, w, err := newCommandPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+		if calls == 1 {
+			return &cancelOnEOFReader{commandPipeEndpoint: r, cancel: cancel}, w, nil
+		}
+		return r, w, nil
+	}
+
+	command, args := exitCodeCommand(0)
+	result := runExecCommand(ctx, command, args, pipeFactory, outputEOFCeiling)
+
+	if result["code"] != 0 {
+		t.Fatalf("code = %v, want 0 (message=%q)", result["code"], result["message"])
+	}
+	if result["truncated"] != false {
+		t.Fatalf("truncated = %v, want false", result["truncated"])
+	}
+	if result["error"] != false {
+		t.Fatalf("error = %v, want false for a clean exit 0 with complete capture (message=%q)", result["error"], result["message"])
 	}
 }

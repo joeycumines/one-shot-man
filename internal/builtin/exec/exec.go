@@ -47,7 +47,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
 					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
-						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"}
+						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv", "truncated": false}
 						return m
 					}))
 					return promise
@@ -56,7 +56,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
 					promise, settler := adapter.NewPromise()
 					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
-						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"}
+						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings", "truncated": false}
 						return m
 					}))
 					return promise
@@ -548,19 +548,17 @@ func abortCause(abort <-chan struct{}, ctx context.Context) error {
 
 // collectCommandOutput returns the command's stdout and stderr.
 //
-// complete reports whether BOTH readers reached EOF (a prefix followed by a
-// non-EOF read error is incomplete even though its goroutine returned), and
-// truncated reports whether any reader's capture was cut short without EOF.
-func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (stdoutText, stderrText string, complete bool, truncated bool, err error) {
+// truncated reports whether either reader's capture was cut short without
+// reaching EOF (a prefix followed by a non-EOF read error is truncated even
+// though its goroutine returned). When truncated is false, both readers
+// reached EOF cleanly.
+func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (stdoutText, stderrText string, truncated bool, err error) {
 	var output [2]string
-	var eofSeen [2]bool
 	received := 0
 
 	store := func(result commandOutputResult) {
 		output[result.index] = string(result.data)
-		if result.eof {
-			eofSeen[result.index] = true
-		} else {
+		if !result.eof {
 			// The reader did not reach EOF: its goroutine returned only
 			// because of a read or close failure, so the capture is a
 			// prefix and must be classified as truncated.
@@ -570,7 +568,7 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 		received++
 	}
 
-	abortCapture := func(cause error) (string, string, bool, bool, error) {
+	abortCapture := func(cause error) (string, string, bool, error) {
 		induced := false
 		clearInduced := func(result commandOutputResult) commandOutputResult {
 			if induced && errors.Is(result.err, os.ErrClosed) {
@@ -595,14 +593,14 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 						store(clearInduced(result))
 					case <-timer.C:
 						timer.Stop()
-						return output[0], output[1], false, true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
+						return output[0], output[1], true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
 					}
 				}
 				timer.Stop()
-				return output[0], output[1], false, true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
+				return output[0], output[1], true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
 			}
 		}
-		return output[0], output[1], eofSeen[0] && eofSeen[1], truncated, err
+		return output[0], output[1], truncated, err
 	}
 
 	ceiling := time.NewTimer(eofCeiling)
@@ -625,8 +623,7 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 			return abortCapture(fmt.Errorf("no EOF within %s of process-tree teardown: a writer outside the command's process group may still hold the output pipe", eofCeiling))
 		}
 	}
-	complete = eofSeen[0] && eofSeen[1]
-	return output[0], output[1], complete, truncated, err
+	return output[0], output[1], truncated, err
 }
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
@@ -641,19 +638,31 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	if err != nil {
 		return map[string]any{
 			"stdout": "", "stderr": "", "code": -1,
-			"error": true, "message": err.Error(),
+			"error": true, "message": err.Error(), "truncated": false,
 		}
 	}
 
 	var stdoutData, stderrData []byte
 	var captureTruncated bool
+	var observedCode int
+	var codeKnown bool
 	result := func(runErr error) map[string]any {
 		code := 0
 		errStr := ""
+		if codeKnown {
+			code = observedCode
+		}
 		if runErr != nil {
-			if exitErr, ok := errors.AsType[*osexec.ExitError](runErr); ok {
-				code = exitErr.ExitCode()
-			} else {
+			if !codeKnown {
+				if exitErr, ok := errors.AsType[*osexec.ExitError](runErr); ok {
+					code = exitErr.ExitCode()
+				} else {
+					code = -1
+				}
+			} else if code == 0 && captureTruncated {
+				// An aborted/incomplete capture must never present as exit 0;
+				// preserve non-zero exit codes, but degrade 0 to -1 when
+				// output capture was truncated.
 				code = -1
 			}
 			errStr = runErr.Error()
@@ -718,14 +727,19 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
 	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
 
-	// A cancelled context can surface from cmd.Wait as a bare ctx.Err() when
-	// the child had already exited (os/exec's watchCtx path). The capture
-	// below is aborted by the same cancellation, so join the context cause
-	// into the wait error unconditionally: the joined message must always
-	// carry both the cancellation and the aborted-capture diagnostic, which
-	// is the exec-layer failure this path presents.
-	if ctx.Err() != nil {
-		waitErr = errors.Join(waitErr, ctx.Err())
+	// Read the authoritative exit status from ProcessState immediately after
+	// Wait (matching ChildProcess.recordExit), rather than inferring code from
+	// error shape: a post-EOF pipe-close error or a context cancellation after
+	// a clean exit must not degrade a real exit code to -1.
+	if c.ProcessState != nil {
+		observedCode = c.ProcessState.ExitCode()
+		codeKnown = true
+	} else if waitErr == nil {
+		observedCode = 0
+		codeKnown = true
+	} else if exitErr, ok := errors.AsType[*osexec.ExitError](waitErr); ok {
+		observedCode = exitErr.ExitCode()
+		codeKnown = true
 	}
 
 	var captureAbort chan struct{}
@@ -733,25 +747,34 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 		captureAbort = make(chan struct{})
 		close(captureAbort)
 	}
-	stdoutText, stderrText, captureComplete, captureTruncated, outputErr := collectCommandOutput(ctx, eofCeiling, captureAbort, outputResults, stdoutReader, stderrReader)
+	stdoutText, stderrText, captureTruncated, outputErr := collectCommandOutput(ctx, eofCeiling, captureAbort, outputResults, stdoutReader, stderrReader)
 	stdoutData = []byte(stdoutText)
 	stderrData = []byte(stderrText)
+
+	// Only attach ctx.Err() when the child had no observed status or the
+	// output capture was incomplete: a child that exited cleanly and drained
+	// both pipes to EOF before cancellation must keep its exit status and
+	// error:false rather than being fabricated into an exec-layer failure.
+	// Likewise, when ProcessState proves exit 0 and capture is complete, any
+	// waitErr from os/exec's watchCtx (ctx.Err() or Darwin's EPERM from
+	// canceling an exited leader) is discarded so the clean exit wins.
+	if ctx.Err() != nil && (!codeKnown || captureTruncated) {
+		waitErr = errors.Join(waitErr, ctx.Err())
+	} else if codeKnown && observedCode == 0 && !captureTruncated && ctx.Err() != nil {
+		waitErr = nil
+	}
 
 	// A capture abort is an exec-layer failure: an abandoned stream must never
 	// be presented as the command's output. Make sure the incomplete-capture
 	// diagnostic is present even when ctx was already done before collection
 	// started (the abort/ctx select can then report only the context cause).
 	// A capture that actually reached EOF on both readers is complete, so it
-	// must not gain the diagnostic. The truncated flag is structural: any
-	// reader that did not reach EOF (including a non-EOF read error on a
-	// child with a known exit code) marks the capture incomplete regardless
-	// of the exit status.
-	if ctx.Err() != nil && !captureComplete {
+	// must not gain the diagnostic.
+	if ctx.Err() != nil && captureTruncated {
 		var aborted *outputCaptureAbortedError
 		if !errors.As(outputErr, &aborted) {
 			outputErr = errors.Join(outputErr, &outputCaptureAbortedError{cause: ctx.Err()})
 		}
-		captureTruncated = true
 	}
 
 	return result(errors.Join(waitErr, closeErr, outputErr))

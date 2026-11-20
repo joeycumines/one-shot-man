@@ -18,26 +18,26 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Prevent Go from silently upgrading past the go.mod toolchain installed
+      # below (which breaks pinned staticcheck export-data compatibility).
+      GOTOOLCHAIN: local
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
     # Derive the toolchain from go.mod rather than tracking `stable`. CI also
     # runs staticcheck, which go.mod pins in its tool directives, and a `stable`
     # bump moves Go ahead of the version staticcheck can read: run 120798918805
     # failed lint with `internal error in importing "cmp" (export data version 5
     # is greater than maximum supported version 4)` for every stdlib package.
-    # Reading the module's own version keeps the compiler and the lint tools in
-    # step.
+    # Reading the module's own version with GOTOOLCHAIN=local keeps the
+    # compiler and the lint tools in step.
     #
     # go-version-file honours the exact patch in the `go` directive (this
     # go.mod names 1.27.3 and has no `toolchain` line, so that is what CI
-    # installs), instead of leaving the installed patch to whatever each
-    # runner image happens to cache. That is also why there is no hand-rolled
-    # go.mod parsing: awk would re-implement the action and pass a stray CR on
-    # Windows runners. Note actions/setup-go@v5 reads only the `go` directive
-    # — it does not prefer a `toolchain` directive if one is ever added, so a
-    # future `toolchain` line would still need an action that honours it.
+    # installs). Pinned actions/setup-go revision 40f1582b reads the `go`
+    # directive rather than a `toolchain` directive.
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
       with:
         go-version-file: go.mod
     - name: Detect CPU count and run tests (Unix)

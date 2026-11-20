@@ -785,6 +785,48 @@ func TestIntegration_SendToHandle_FirstSendError(t *testing.T) {
 	}
 }
 
+// assertObservedSendKnobsJS configures and verifies all send-to-handle numeric
+// test knobs via _setNumberKnob and asserts _resolveSendConfig() observes them.
+func assertObservedSendKnobsJS(maxNewlineAttempts int) string {
+	return fmt.Sprintf(`
+			var knobs = {
+				'SEND_TEXT_NEWLINE_DELAY_MS': 0,
+				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
+				'SEND_PROMPT_READY_POLL_MS': 1,
+				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
+				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
+				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
+				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1,
+				'SEND_SUBMIT_ACK_TIMEOUT_MS': 5,
+				'SEND_SUBMIT_ACK_POLL_MS': 1,
+				'SEND_SUBMIT_ACK_STABLE_SAMPLES': 1,
+				'SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS': %d
+			};
+			Object.keys(knobs).forEach(function(k) {
+				prSplit._setNumberKnob(k, knobs[k]);
+				prSplit._assertNumberKnob(k, prSplit[k]);
+				if (prSplit[k] !== knobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + knobs[k]);
+			});
+			var resolved = prSplit._resolveSendConfig();
+			var resolvedExpect = {
+				textNewlineDelayMs: 0,
+				promptReadyTimeoutMs: 2000,
+				promptReadyPollMs: 1,
+				promptReadyStableSamples: 1,
+				preSubmitStableTimeoutMs: 25,
+				preSubmitStablePollMs: 1,
+				preSubmitStableSamples: 1,
+				submitAckTimeoutMs: 5,
+				submitAckPollMs: 1,
+				submitAckStableSamples: 1,
+				submitMaxNewlineAttempts: %d
+			};
+			Object.keys(resolvedExpect).forEach(function(k) {
+				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
+			});
+`, maxNewlineAttempts, maxNewlineAttempts)
+}
+
 // TestIntegration_SendToHandle_ObservedSubmissionRetry verifies
 // sendToHandle retries Enter submission when terminal output does not change
 // after the first Enter, and succeeds once output change is observed.
@@ -822,45 +864,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
-			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
-			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS', 25);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_POLL_MS', 1);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_SAMPLES', 1);
-			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
-			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
-			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
-			// Assert the intended knobs took effect: a typo'd assignment would
-			// create a new property and leave the real knob at its default, so
-			// checking the read-back value catches it. The resolved send config
-			// is what sendToHandle actually consumes, so assert against it too.
-			var promptKnobs = {
-				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
-				'SEND_PROMPT_READY_POLL_MS': 1,
-				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
-				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
-				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
-				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1
-			};
-			Object.keys(promptKnobs).forEach(function(k) {
-				prSplit._assertNumberKnob(k, prSplit[k]);
-				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
-			});
-			var resolved = prSplit._resolveSendConfig();
-			var resolvedExpect = {
-				promptReadyTimeoutMs: 2000,
-				promptReadyPollMs: 1,
-				promptReadyStableSamples: 1,
-				preSubmitStableTimeoutMs: 25,
-				preSubmitStablePollMs: 1,
-				preSubmitStableSamples: 1
-			};
-			Object.keys(resolvedExpect).forEach(function(k) {
-				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
-			});
+			` + assertObservedSendKnobsJS(3) + `
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -936,45 +940,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
-			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
-			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS', 25);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_POLL_MS', 1);
-			prSplit._setNumberKnob('SEND_PRE_SUBMIT_STABLE_SAMPLES', 1);
-			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
-			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
-			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
-			// Assert the intended knobs took effect: a typo'd assignment would
-			// create a new property and leave the real knob at its default, so
-			// checking the read-back value catches it. The resolved send config
-			// is what sendToHandle actually consumes, so assert against it too.
-			var promptKnobs = {
-				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
-				'SEND_PROMPT_READY_POLL_MS': 1,
-				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
-				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
-				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
-				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1
-			};
-			Object.keys(promptKnobs).forEach(function(k) {
-				prSplit._assertNumberKnob(k, prSplit[k]);
-				if (prSplit[k] !== promptKnobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + promptKnobs[k]);
-			});
-			var resolved = prSplit._resolveSendConfig();
-			var resolvedExpect = {
-				promptReadyTimeoutMs: 2000,
-				promptReadyPollMs: 1,
-				promptReadyStableSamples: 1,
-				preSubmitStableTimeoutMs: 25,
-				preSubmitStablePollMs: 1,
-				preSubmitStableSamples: 1
-			};
-			Object.keys(resolvedExpect).forEach(function(k) {
-				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
-			});
+			` + assertObservedSendKnobsJS(2) + `
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 

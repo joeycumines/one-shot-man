@@ -244,6 +244,7 @@ type asyncVerifyResult struct {
 	Passed           bool    `json:"passed"`
 	ExecFailed       bool    `json:"execFailed"`
 	Truncated        bool    `json:"truncated"`
+	TimedOut         bool    `json:"timedOut"`
 	CleanupFailed    bool    `json:"cleanupFailed"`
 	WorktreeRetained bool    `json:"worktreeRetained"`
 	WorktreeDir      string  `json:"worktreeDir"`
@@ -303,10 +304,12 @@ func runAsyncVerifyWithFactory(t *testing.T, factoryJS string, extraConfig strin
 	return wrapped.Result, wrapped.Pending, wrapped.Removes
 }
 
-// TestVerifySplitAsync_AbnormalExitLeavesNoPendingTimers pins V2: after an
-// abnormal-exit cleanup (throwing output callback -> kill + bounded wait +
-// worktree removal), every cleanup timer must have fired or been cleared, so
-// no wrapped setTimeout record remains pending.
+// TestVerifySplitAsync_AbnormalExitLeavesNoPendingTimers pins V2 + review-16
+// B2/B3: after an abnormal-exit cleanup (throwing output callback -> kill +
+// bounded wait + worktree removal), every cleanup timer must have fired or
+// been cleared, AND the cleanup budget must be computed in finally decoupled
+// from verifyTimeoutMs so a macrotask-resolving post-kill wait (like a real
+// child reaper) does not lose to an already-expired 0ms timer.
 func TestVerifySplitAsync_AbnormalExitLeavesNoPendingTimers(t *testing.T) {
 	t.Parallel()
 	res, pending, removes := runAsyncVerifyWithFactory(t, `
@@ -324,7 +327,62 @@ func TestVerifySplitAsync_AbnormalExitLeavesNoPendingTimers(t *testing.T) {
 				stdout: stdoutStream(),
 				stderr: doneStream(),
 				wait: function() {
-					if (killed) return Promise.resolve({code: -1, signal: 'SIGKILL'});
+					if (killed) {
+						return new Promise(function(resolve) {
+							globalThis.__origSetTimeout.call(globalThis, function() {
+								resolve({code: -1, signal: 'SIGKILL'});
+							}, 20);
+						});
+					}
+					return new Promise(function() {});
+				},
+				kill: function() { killed = true; return Promise.resolve(); },
+				isAlive: function() { return !killed; },
+				close: function() {}
+			};
+		}
+	`, `verifyTimeoutMs: 1, outputFn: function() { throw new Error('output callback exploded'); }`)
+
+	if pending != 0 {
+		t.Errorf("pending cleanup timers = %d, want 0 (every boundedAwait timer must be cleared)", pending)
+	}
+	if removes != 1 {
+		t.Errorf("worktree remove calls = %d, want 1 (termination confirmed via post-kill wait)", removes)
+	}
+	if !res.ExecFailed {
+		t.Errorf("execFailed = false, want true when outputFn threw")
+	}
+	if res.CleanupFailed {
+		t.Errorf("cleanupFailed = true, want false for a clean abnormal-exit cleanup (error=%v)", res.Error)
+	}
+	if res.WorktreeRetained {
+		t.Errorf("worktreeRetained = true, want false when the post-kill wait resolved with a status")
+	}
+}
+
+// TestVerifySplitAsync_ThrowingOutputFnSurfacesCleanupDiagnostics pins
+// review-16 Blocker 3: when the body throws (outputFn explodes) AND cleanup
+// fails (post-kill wait rejects so termination is unconfirmed), verifySplitAsync
+// must construct an outcome in catch before finally so worktreeRetained,
+// cleanupFailed, worktreeDir, and the cleanup note are NOT discarded.
+func TestVerifySplitAsync_ThrowingOutputFnSurfacesCleanupDiagnostics(t *testing.T) {
+	t.Parallel()
+	res, pending, removes := runAsyncVerifyWithFactory(t, `
+		function() {
+			var chunkSent = false;
+			`+doneStreamJS+`
+			function stdoutStream() {
+				return { read: function() {
+					if (!chunkSent) { chunkSent = true; return Promise.resolve({value: 'boom\n', done: false}); }
+					return Promise.resolve({done: true});
+				} };
+			}
+			var killed = false;
+			return {
+				stdout: stdoutStream(),
+				stderr: doneStream(),
+				wait: function() {
+					if (killed) return Promise.reject(new Error('reaper unavailable'));
 					return new Promise(function() {});
 				},
 				kill: function() { killed = true; return Promise.resolve(); },
@@ -335,16 +393,71 @@ func TestVerifySplitAsync_AbnormalExitLeavesNoPendingTimers(t *testing.T) {
 	`, `outputFn: function() { throw new Error('output callback exploded'); }`)
 
 	if pending != 0 {
-		t.Errorf("pending cleanup timers = %d, want 0 (every boundedAwait timer must be cleared)", pending)
+		t.Errorf("pending cleanup timers = %d, want 0", pending)
 	}
-	if removes != 1 {
-		t.Errorf("worktree remove calls = %d, want 1 (termination confirmed via post-kill wait)", removes)
+	if removes != 0 {
+		t.Errorf("worktree remove calls = %d, want 0 (worktree must be retained when post-kill wait rejects)", removes)
 	}
-	if res.CleanupFailed {
-		t.Errorf("cleanupFailed = true, want false for a clean abnormal-exit cleanup (error=%v)", res.Error)
+	if !res.ExecFailed {
+		t.Errorf("execFailed = false, want true")
 	}
-	if res.WorktreeRetained {
-		t.Errorf("worktreeRetained = true, want false when the post-kill wait resolved with a status")
+	if !res.CleanupFailed {
+		t.Errorf("cleanupFailed = false, want true (error=%v)", res.Error)
+	}
+	if !res.WorktreeRetained {
+		t.Errorf("worktreeRetained = false, want true (error=%v)", res.Error)
+	}
+	if res.WorktreeDir == "" {
+		t.Errorf("worktreeDir = empty, want retained worktree path")
+	}
+	if res.Error == nil || !strings.Contains(*res.Error, "worktree retained") {
+		t.Errorf("error = %v, want 'worktree retained' cleanup diagnostic", res.Error)
+	}
+}
+
+// TestVerifySplit_SyncTimeoutPreservesTimedOutAlongsideTruncated pins review-16:
+// when a sync verifySplit hits its timeout AND the exec layer reports a
+// truncated capture, the result must preserve BOTH truncated:true (unknown
+// verdict) AND timedOut:true with a timeout diagnostic.
+func TestVerifySplit_SyncTimeoutPreservesTimedOutAlongsideTruncated(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
+		t.Fatalf("git mock: %v", err)
+	}
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(`
+		_gitResponses['!sh'] = function() {
+			return {stdout: 'partial', stderr: '', code: 124, error: true, truncated: true, message: 'command output capture aborted before EOF'};
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.verifySplit('split/01', {
+		dir: '/tmp/repo',
+		verifyCommand: 'make test',
+		verifyTimeoutMs: 500
+	}))`)
+	if err != nil {
+		t.Fatalf("verifySplit: %v", err)
+	}
+	var res asyncVerifyResult
+	if err := json.Unmarshal([]byte(raw.(string)), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Passed {
+		t.Errorf("passed = true, want false")
+	}
+	if !res.Truncated {
+		t.Errorf("truncated = false, want true")
+	}
+	if !res.TimedOut {
+		t.Errorf("timedOut = false, want true when verify timed out alongside truncation")
+	}
+	if res.Error == nil || !strings.Contains(*res.Error, "timeout") {
+		t.Errorf("error = %v, want timeout attribution preserved", res.Error)
 	}
 }
 

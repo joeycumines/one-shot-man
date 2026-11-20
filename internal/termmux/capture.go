@@ -66,9 +66,10 @@ type CaptureConfig struct {
 //
 // All methods are safe for concurrent use.
 type CaptureSession struct {
-	mu   sync.Mutex
-	cfg  CaptureConfig
-	proc *pty.Process
+	mu       sync.Mutex
+	resizeMu sync.Mutex // serializes Resize calls without holding mu across proc.Resize ioctls
+	cfg      CaptureConfig
+	proc     *pty.Process
 
 	// Lifecycle state.
 	started  bool
@@ -571,10 +572,11 @@ func (cs *CaptureSession) IsPaused() bool {
 }
 
 // Resize changes the PTY dimensions. Returns an error if the session has
-// not been started. The resize and the dimensions update are serialized
-// under the session mutex, and the stored dimensions are only updated when
-// the PTY resize itself succeeds — a failed resize leaves the old dims in
-// place and propagates the error instead of silently claiming success.
+// not been started or is closed. Concurrent resizes are serialized under
+// resizeMu without holding cs.mu across the PTY ioctl (so a blocked
+// ResizePseudoConsole cannot wedge Close/Write/Reader), and the stored
+// dimensions are only updated under cs.mu when the PTY resize succeeds on a
+// still-open session.
 func (cs *CaptureSession) Resize(rows, cols int) error {
 	if rows <= 0 || cols <= 0 {
 		return errors.New("capture: rows and cols must be positive")
@@ -582,20 +584,32 @@ func (cs *CaptureSession) Resize(rows, cols int) error {
 	if rows > 65535 || cols > 65535 {
 		return errors.New("capture: rows and cols must be <= 65535")
 	}
+	cs.resizeMu.Lock()
+	defer cs.resizeMu.Unlock()
+
 	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if cs.proc == nil {
+	proc := cs.proc
+	closed := cs.closed
+	cs.mu.Unlock()
+	if proc == nil {
 		return errors.New("capture: not started")
+	}
+	if closed {
+		return pty.ErrClosed
 	}
 	// Resize PTY (delivers SIGWINCH to the child). On Windows a headless
 	// runner can leave the session without an open ConPTY pseudoconsole, in
-	// which case platformResize reports ErrNotSupported — that error now
+	// which case platformResize reports ErrNotSupported — that error
 	// propagates to the caller instead of being swallowed as success.
-	if err := cs.proc.Resize(uint16(rows), uint16(cols)); err != nil {
+	if err := proc.Resize(uint16(rows), uint16(cols)); err != nil {
 		return err
 	}
-	cs.rows = rows
-	cs.cols = cols
+	cs.mu.Lock()
+	if cs.proc == proc && !cs.closed {
+		cs.rows = rows
+		cs.cols = cols
+	}
+	cs.mu.Unlock()
 	return nil
 }
 

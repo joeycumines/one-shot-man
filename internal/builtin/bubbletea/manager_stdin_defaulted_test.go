@@ -15,51 +15,72 @@ import (
 )
 
 // stdinBackedReaderStub is a TerminalChecker + UnwrapFile wrapper that reports
-// a non-terminal stdin. It mimics scripting.TUIReader as the engine constructs
-// it (NewTUIReader) when the process runs without a TTY (CI, redirected stdin).
-type stdinBackedReaderStub struct{ r io.Reader }
+// a non-terminal stdin and records whether its own Read was ever called. It
+// mimics scripting.TUIReader as the engine constructs it (NewTUIReader) when
+// the process runs without a TTY: runProgram must unwrap it via UnwrapFile()
+// so BubbleTea reads the *os.File directly instead of invoking TUIReader.Read
+// (which on Windows delegates to go-prompt/go-tty and panics on a non-TTY).
+type stdinBackedReaderStub struct {
+	file       *os.File
+	readCalled bool
+}
 
-func (s *stdinBackedReaderStub) Read(p []byte) (int, error) { return s.r.Read(p) }
-func (s *stdinBackedReaderStub) Fd() uintptr                 { return os.Stdin.Fd() }
-func (s *stdinBackedReaderStub) IsTerminal() bool            { return false }
-func (s *stdinBackedReaderStub) UnwrapFile() *os.File        { return os.Stdin }
+func (s *stdinBackedReaderStub) Read(p []byte) (int, error) {
+	s.readCalled = true
+	return 0, io.EOF
+}
+func (s *stdinBackedReaderStub) Fd() uintptr          { return s.file.Fd() }
+func (s *stdinBackedReaderStub) IsTerminal() bool     { return false }
+func (s *stdinBackedReaderStub) UnwrapFile() *os.File { return s.file }
 
-// quitNowModel is a tea.Model that quits immediately from Init.
-type quitNowModel struct{}
+// quitOnQModel quits when it receives a 'q' key message.
+type quitOnQModel struct{}
 
-func (quitNowModel) Init() tea.Cmd                       { return tea.Quit }
-func (quitNowModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return quitNowModel{}, nil }
-func (quitNowModel) View() tea.View                      { return tea.NewView("") }
+func (quitOnQModel) Init() tea.Cmd { return nil }
+func (quitOnQModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if km, ok := msg.(tea.KeyPressMsg); ok && km.String() == "q" {
+		return quitOnQModel{}, tea.Quit
+	}
+	return quitOnQModel{}, nil
+}
+func (quitOnQModel) View() tea.View { return tea.NewView("") }
 
-// TestNewManager_StdinBackedNonTTYInputIsDefaulted pins the Windows-CI fix
-// (go-tty nil-deref via TUIReader.Read during bubbletea teardown): when input
-// unwraps to os.Stdin but stdin is not a terminal, the manager must mark
-// inputDefaulted so runProgram's headless branch drops the reader
-// (tea.WithInput(nil) => disableInput) instead of handing bubbletea a live
-// stdin-backed reader whose cancelreader/go-tty path nil-derefs at teardown.
-func TestNewManager_StdinBackedNonTTYInputIsDefaulted(t *testing.T) {
+// TestRunProgram_HeadlessUnwrapsFileBackedInputAndConsumesPipedInput pins the
+// headless stdin contract: an explicit file-backed wrapper (like TUIReader
+// wrapping piped stdin) is NOT silently dropped (so `printf 'q' | osm` works)
+// AND is unwrapped via UnwrapFile() so BubbleTea reads the *os.File directly
+// without invoking the wrapper's Read() (bypassing go-prompt/go-tty on Windows).
+func TestRunProgram_HeadlessUnwrapsFileBackedInputAndConsumesPipedInput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping program run in short mode")
 	}
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer r.Close()
+	_, err = w.WriteString("q")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
 	vm := goja.New()
 	var out bytes.Buffer
-	in := &stdinBackedReaderStub{r: bytes.NewReader(nil)}
+	in := &stdinBackedReaderStub{file: r}
 	m := NewManagerWithStderr(context.Background(), in, &out, &out, &SyncJSRunner{Runtime: vm}, nil, nil)
 	require.False(t, m.IsTTY())
-	require.True(t, m.inputDefaulted, "stdin-backed non-TTY input must be treated as defaulted so the headless branch drops it")
+	require.False(t, m.inputDefaulted, "explicit file-backed non-TTY input must not be dropped")
 
 	errCh := make(chan error, 1)
-	go func() { errCh <- m.runProgram(quitNowModel{}) }()
+	go func() { errCh <- m.runProgram(quitOnQModel{}) }()
 	select {
 	case err := <-errCh:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("headless program with stdin-backed non-TTY input did not exit")
+		t.Fatal("headless program did not consume 'q' from unwrapped pipe input")
 	}
+	require.False(t, in.readCalled, "wrapper Read() must not be called; runProgram must unwrap *os.File directly")
 }
 
-// TestNewManager_ExplicitNonStdinInputIsNotDefaulted ensures the broadened
-// rule does not swallow a deliberately wired reader that is not stdin-backed.
+// TestNewManager_ExplicitNonStdinInputIsNotDefaulted ensures a deliberately
+// wired non-stdin reader is preserved (not defaulted).
 func TestNewManager_ExplicitNonStdinInputIsNotDefaulted(t *testing.T) {
 	vm := goja.New()
 	var out bytes.Buffer

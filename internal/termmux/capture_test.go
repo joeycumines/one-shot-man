@@ -1374,11 +1374,9 @@ func TestCaptureSession_SkipDrain_DefaultIsFalse(t *testing.T) {
 	}
 }
 
-// TestCaptureSession_ResizeAfterCloseFailsAndKeepsDims pins the V8 contract:
-// a Resize on a closed session must return an error (ErrClosed from the
-// process layer) and must NOT update the stored dimensions — the old
-// ResizeSupported() pre-check swallowed this into a fake success that
-// rewrote rows/cols on a dead process.
+// TestCaptureSession_ResizeAfterCloseFailsAndKeepsDims pins the post-close
+// Resize contract: a Resize on a closed session must return an error
+// (ErrClosed) and must NOT update the stored dimensions.
 func TestCaptureSession_ResizeAfterCloseFailsAndKeepsDims(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)

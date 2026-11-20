@@ -45,23 +45,24 @@ func skipIfWindows(t *testing.T) {
 	}
 }
 
-// conPTYProbeResult caches the ready/unavailable outcome of probing the host
-// for a working ConPTY. Ten tests call requireConPTYRuntime and several of
-// them t.Parallel with each other, so probing per call meant up to thirty
-// spawns per package run, each up to 10s, competing for the same loaded runner.
-// A FAILURE is deliberately NOT cached: one unlucky three-attempt window would
-// otherwise fail every ConPTY test for the rest of the package run, hiding a
-// transient runner problem as a permanent contract failure.
+// conPTYProbeResult caches the outcome (ready, unavailable, or failure) of
+// probing the host for a working ConPTY. Ten tests call requireConPTYRuntime
+// and several of them t.Parallel with each other, so probing per call meant up
+// to thirty spawns per package run, each up to 10s, competing for the same
+// loaded runner. Caching failures too fails subsequent callers immediately
+// with the same signal instead of burning ~31s per test re-probing a broken
+// contract.
 var conPTYProbeResult struct {
 	mu     sync.Mutex
-	probed bool // true once a ready/unavailable verdict has been cached
+	probed bool // true once a verdict (ready, unavailable, or failure) has been cached
 	// unavailable is a human-readable reason, or empty when ConPTY works.
 	unavailable string
+	// failure is a human-readable contract failure reason, or empty on success/unavailable.
+	failure string
 	// probeMu serializes probeConPTY calls: the check-then-probe sequence must
 	// be single-flight, or parallel t.Parallel callers all probe at once — the
 	// spawn storm the cache exists to prevent. Held across the probe so later
-	// callers reuse the cached verdict; a failure is still not cached, so the
-	// next caller re-probes sequentially instead of inheriting a bad verdict.
+	// callers reuse the cached verdict.
 	probeMu sync.Mutex
 }
 
@@ -176,7 +177,14 @@ func classifyConPTYAttempt(attempt conPTYProbeAttempt) (conPTYProbeVerdict, stri
 		return conPTYProbeUnavailable, fmt.Sprintf("child console init failed with %#x (STATUS_DLL_INIT_FAILED): this host cannot run ConPTY", uint32(attempt.code))
 	}
 	if attempt.closeErr != nil {
-		return conPTYProbeFailure, fmt.Sprintf("pty.Close failed: %v", attempt.closeErr)
+		reason := fmt.Sprintf("pty.Close failed: %v", attempt.closeErr)
+		if attempt.code != 0 {
+			reason += fmt.Sprintf(" (exit code %d)", attempt.code)
+		}
+		if tail := strings.TrimSpace(attempt.outputTail); tail != "" {
+			reason += "; output tail: " + truncateForProbeReason(tail)
+		}
+		return conPTYProbeFailure, reason
 	}
 	if attempt.code != 0 {
 		reason := fmt.Sprintf("probe command exited with code %d", attempt.code)
@@ -208,8 +216,12 @@ func requireConPTYRuntime(t *testing.T) {
 	conPTYProbeResult.mu.Lock()
 	probed := conPTYProbeResult.probed
 	cachedUnavailable := conPTYProbeResult.unavailable
+	cachedFailure := conPTYProbeResult.failure
 	conPTYProbeResult.mu.Unlock()
 	if probed {
+		if cachedFailure != "" {
+			t.Fatalf("ConPTY runtime probe failed (cached): %s", cachedFailure)
+		}
 		if cachedUnavailable != "" {
 			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
 		}
@@ -225,8 +237,12 @@ func requireConPTYRuntime(t *testing.T) {
 	conPTYProbeResult.mu.Lock()
 	probed = conPTYProbeResult.probed
 	cachedUnavailable = conPTYProbeResult.unavailable
+	cachedFailure = conPTYProbeResult.failure
 	conPTYProbeResult.mu.Unlock()
 	if probed {
+		if cachedFailure != "" {
+			t.Fatalf("ConPTY runtime probe failed (cached): %s", cachedFailure)
+		}
 		if cachedUnavailable != "" {
 			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
 		}
@@ -234,13 +250,9 @@ func requireConPTYRuntime(t *testing.T) {
 	}
 	unavailable, failure := probeConPTY()
 	conPTYProbeResult.mu.Lock()
-	// Only a definitive readiness or host-capability verdict is cached. A
-	// failure may be transient (handle exhaustion, runner load); the next
-	// caller re-probes instead of inheriting a permanent t.Fatalf.
-	if failure == "" {
-		conPTYProbeResult.probed = true
-		conPTYProbeResult.unavailable = unavailable
-	}
+	conPTYProbeResult.probed = true
+	conPTYProbeResult.unavailable = unavailable
+	conPTYProbeResult.failure = failure
 	conPTYProbeResult.mu.Unlock()
 	if failure != "" {
 		t.Fatalf("ConPTY runtime probe failed: %s", failure)

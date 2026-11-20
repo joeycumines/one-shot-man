@@ -162,23 +162,6 @@ func NewManager(
 	return NewManagerWithStderr(ctx, input, output, nil, jsRunner, signalNotify, signalStop)
 }
 
-// stdinBackedReader reports whether input is backed by the process's real
-// stdin: either the stdin *os.File itself or a wrapper (e.g. TUIReader with
-// isStdin) that unwraps to it. Such a reader must be treated like the defaulted
-// case when stdin is not a terminal — see NewManagerWithStderr.
-func stdinBackedReader(input io.Reader) bool {
-	if input == nil {
-		return false
-	}
-	if f, ok := input.(*os.File); ok {
-		return f == os.Stdin
-	}
-	if u, ok := input.(interface{ UnwrapFile() *os.File }); ok {
-		return u.UnwrapFile() == os.Stdin
-	}
-	return false
-}
-
 // NewManagerWithStderr creates a new bubbletea manager with explicit stderr for error logging.
 // Input, output, and stderr can be nil to use os.Stdin, os.Stdout, and os.Stderr.
 // Automatically detects TTY and sets up proper terminal handling.
@@ -263,18 +246,6 @@ func NewManagerWithStderr(
 				}
 			}
 		}
-	}
-
-	// A stdin-backed input that is NOT a terminal carries no usable interactive
-	// input: in a non-TTY environment (CI, pipes, redirected stdin) handing it
-	// to bubbletea makes its read loop wrap the reader in a cancelreader, and
-	// the platform terminal reader (go-tty on Windows) can dereference a nil
-	// console handle at teardown. Treat it exactly like the defaulted case so
-	// the headless branch drops it (tea.WithInput(nil) => disableInput). An
-	// explicitly provided NON-stdin reader (e.g. a scripted strings.Reader)
-	// stays preserved — the caller wired it deliberately.
-	if !isTTY && stdinBackedReader(input) {
-		inputDefaulted = true
 	}
 
 	m := &Manager{

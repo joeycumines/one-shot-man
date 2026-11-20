@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -46,9 +47,6 @@ type processTree interface {
 	close(*osexec.Cmd) error
 }
 
-// waitProcessBeforeReapFn is the platform probe (variable for test override).
-var waitProcessBeforeReapFn = waitProcessBeforeReap
-
 // retryProcessGroupClose retries one transient EPERM from a post-wait close.
 // BSD/Darwin kernels can reject a process-group signal while its only member is
 // the exited, unreaped leader; reaping first makes the group addressable again
@@ -67,7 +65,11 @@ func retryProcessGroupClose(tree processTree, cmd *osexec.Cmd, closeErr error) e
 }
 
 func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeErr error) {
-	preClose, probeErr := waitProcessBeforeReapFn(cmd)
+	return waitAndCloseProcessTreeWithProbe(cmd, tree, waitProcessBeforeReap)
+}
+
+func waitAndCloseProcessTreeWithProbe(cmd *osexec.Cmd, tree processTree, probe func(*osexec.Cmd) (bool, error)) (waitErr, closeErr error) {
+	preClose, probeErr := probe(cmd)
 	if probeErr != nil {
 		waitErr = cmd.Wait()
 		closeErr = tree.close(cmd)
@@ -88,13 +90,14 @@ func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeE
 
 // ChildProcess represents a running child process with piped I/O.
 type ChildProcess struct {
-	mu       sync.Mutex
-	cmd      *osexec.Cmd
-	tree     processTree
-	closed   bool
-	// reaped is set by recordExit, i.e. only when the background reaper has
-	// stored the child's outcome. Unlike closed (which Kill sets early), it
-	// means a status was actually observed and published under mu.
+	mu     sync.Mutex
+	cmd    *osexec.Cmd
+	tree   processTree
+	closed bool
+	// reaped records that recordExit has run and published the reaper's
+	// outcome under mu (which may or may not include an observed exitStatus).
+	// Unlike closed (which Kill sets early), it distinguishes a completed
+	// reap from a pre-reap kill or caller abort.
 	reaped   bool
 	done     chan struct{} // closed when process exits
 	settled  chan struct{} // closed when drain settles
@@ -106,12 +109,20 @@ type ChildProcess struct {
 	// context error returned alongside it by cmd.Wait. See recordExit and
 	// waitRejection.
 	exitStatus bool
+	// closeFailed records whether tearing down the process tree returned an
+	// error; a failed close cannot vouch for pipe writers, so a non-EOF pipe
+	// read error stays truncated.
+	closeFailed bool
 	// recordedSignal is the signal name read from cmd.ProcessState at reap
 	// time, before an error chain can hide it. Empty means no signal.
 	recordedSignal string
 	// abort cuts the output pump drain promptly.
 	abort     chan struct{}
 	abortOnce sync.Once
+	// drainForced is set by settlePumps immediately before force-closing
+	// the pipes on abort or ceiling expiry, so pumpPipe never misclassifies
+	// an induced pipe close as a clean EOF.
+	drainForced atomic.Bool
 
 	// Pipe management (nil when not piped).
 	stdinPipe io.WriteCloser
@@ -490,6 +501,7 @@ func (c *ChildProcess) recordExit(waitErr, closeErr error) {
 		}
 	}
 	if closeErr != nil {
+		c.closeFailed = true
 		c.exitErr = errors.Join(c.exitErr, &processTreeCloseError{err: closeErr})
 		c.AbortDrain()
 	}
@@ -539,6 +551,7 @@ func (c *ChildProcess) settlePumps(ceiling time.Duration, abort <-chan struct{},
 	// Close the pipes first so a racing pump delivers its last chunk and
 	// reports its own outcome; only queues still open after the pumps settle
 	// are marked truncated.
+	c.drainForced.Store(true)
 	_ = stdoutPipe.Close()
 	_ = stderrPipe.Close()
 	grace := time.NewTimer(outputAbortGrace)
@@ -549,6 +562,29 @@ func (c *ChildProcess) settlePumps(ceiling time.Duration, abort <-chan struct{},
 	}
 	c.stdout.closeTruncated()
 	c.stderr.closeTruncated()
+}
+
+// isCleanReapedWithoutAbort reports whether the child has already been cleanly
+// reaped with a recorded exit status and no tree-close failure or drain abort.
+// On Windows, closing the Job Object before Wait drains pipes can surface as a
+// non-EOF read error on an otherwise complete pipe; treating that as EOF only
+// under this strict predicate keeps escaped-writer aborts, ceiling timeouts,
+// and un-reaped read failures truncated.
+func (c *ChildProcess) isCleanReapedWithoutAbort() bool {
+	if c.drainForced.Load() {
+		return false
+	}
+	if c.abort != nil {
+		select {
+		case <-c.abort:
+			return false
+		default:
+		}
+	}
+	c.mu.Lock()
+	ok := c.reaped && c.exitStatus && !c.closeFailed
+	c.mu.Unlock()
+	return ok
 }
 
 // pumpPipe pumps r into q.
@@ -568,7 +604,7 @@ func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 			q.push(readChunk{data: data})
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || c.isCleanReapedWithoutAbort() {
 				q.close()
 				return
 			}
@@ -701,12 +737,7 @@ func (c *ChildProcess) WaitContext(ctx context.Context) (int, error) {
 		if !c.reaped {
 			return -1, &waitAbortedError{err: ctx.Err()}
 		}
-		select {
-		case <-c.done:
-			return c.exitCode, c.exitErr
-		default:
-			return c.exitCode, c.exitErr
-		}
+		return c.exitCode, c.exitErr
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

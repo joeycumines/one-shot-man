@@ -103,6 +103,61 @@ func TestViews_TextOnColor_Exists(t *testing.T) {
 	}
 }
 
+// TestViews_PaletteWCAGAAContrast verifies the WCAG AA (>= 4.5:1) contrast
+// invariant documented in pr_split_15a_tui_styles.js for every active
+// text-on-background pair in both light and dark palettes.
+func TestViews_PaletteWCAGAAContrast(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var c = globalThis.prSplit._wizardColors;
+		function hexToRgb(hex) {
+			var h = hex.replace(/^#/, '');
+			return [
+				parseInt(h.slice(0, 2), 16) / 255,
+				parseInt(h.slice(2, 4), 16) / 255,
+				parseInt(h.slice(4, 6), 16) / 255
+			];
+		}
+		function relLum(hex) {
+			var rgb = hexToRgb(hex).map(function(v) {
+				return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+			});
+			return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+		}
+		function contrast(a, b) {
+			var la = relLum(a), lb = relLum(b);
+			var hi = Math.max(la, lb), lo = Math.min(la, lb);
+			return (hi + 0.05) / (lo + 0.05);
+		}
+		var pairs = [
+			['textOnColor/primary', c.textOnColor, c.primary],
+			['textOnColor/success', c.textOnColor, c.success],
+			['textOnColor/warning', c.textOnColor, c.warning],
+			['textOnColor/error', c.textOnColor, c.error],
+			['text/surface', c.text, c.surface],
+			['textDim/surface', c.textDim, c.surface]
+		];
+		var failures = [];
+		['light', 'dark'].forEach(function(mode) {
+			pairs.forEach(function(p) {
+				var ratio = contrast(p[1][mode], p[2][mode]);
+				if (ratio < 4.5) {
+					failures.push(mode + ' ' + p[0] + ' (' + p[1][mode] + ' on ' + p[2][mode] + '): ' + ratio.toFixed(2) + ':1');
+				}
+			});
+		});
+		return JSON.stringify(failures);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "[]" {
+		t.Errorf("WCAG AA (>= 4.5:1) contrast violations: %v", raw)
+	}
+}
+
 func TestViews_AllStylesRenderNonEmpty(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)

@@ -212,14 +212,15 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		// input removes the blocking read entirely; the renderer is also
 		// disabled so no terminal escape sequences are written.
 		//
-		// An EXPLICITLY provided non-stdin input is preserved, though: a
-		// caller that wired up a reader (e.g. a scripted `strings.Reader`)
-		// intends the program to consume it. Only the defaulted stdin — or
-		// a stdin-backed wrapper on a non-TTY stdin, which bubbletea would
-		// otherwise wrap in a cancelreader whose platform reader (go-tty on
-		// Windows) can nil-deref at teardown — is dropped.
+		// An EXPLICITLY provided input (including piped os.Stdin or a scripted
+		// strings.Reader) is preserved so `printf 'q' | osm script.js` works.
+		// Unwrap *os.File wrappers (e.g. TUIReader) to the underlying *os.File
+		// just like the TTY branch so BubbleTea reads os.Stdin directly instead
+		// of invoking go-prompt/go-tty's Windows console reader on a non-TTY.
 		if inputDefaulted {
 			opts = append(opts, tea.WithInput(nil))
+		} else if f := unwrapOSFile(input); f != nil {
+			opts = append(opts, tea.WithInput(f))
 		} else if input != nil {
 			opts = append(opts, tea.WithInput(input))
 		}

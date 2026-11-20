@@ -164,7 +164,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)
 	registry.RegisterNativeModule(prefix+"tokenizer", tokenizermod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 
-	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(eventLoopProvider.Ctx(), eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 	// Node-standard modules under bare Node names AND their node:-prefixed
 	// aliases (Node accepts both spellings for its builtins): async-only
 	// necessary subsets with Node-26 behavior. The osm: prefix stays reserved

@@ -1529,19 +1529,16 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 
 	// Send output to transition to Running, then close the channel for EOF.
 	// The reader goroutine forwards chunks over the merged channel to the
-	// worker, which applies them in order; poll until the worker has observed
-	// the EOF sentinel instead of sleeping a fixed interval — on a loaded
-	// runner the 50ms/100ms sleeps fired before the worker drained the
-	// channel (CI run 43785914039: state still running after both sleeps).
+	// worker, which applies them in order; wait on the event channel until
+	// the worker emits EventSessionExited instead of sleeping a fixed interval
+	// — on a loaded runner the 50ms/100ms sleeps fired before the worker
+	// drained the channel (CI run 43785914039: state still running after both
+	// sleeps).
 	session.readerCh <- []byte("data")
 	session.closeReader()
 
 	// Verify the state transition by waiting for the authoritative exit event,
-	// with a deadline. Polling Sessions() for `len == 0` or "session 1 absent"
-	// produced false passes (a session can disappear for another reason) and a
-	// false "session 1 still present" message when it was absent while another
-	// session remained. A non-remain-on-exit session may still be removed, so
-	// the snapshot is diagnostic context only, never the verdict.
+	// with a deadline.
 	deadline := 10 * time.Second
 	timer := time.NewTimer(deadline)
 	defer timer.Stop()
@@ -1556,8 +1553,6 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 				foundExited = true
 			}
 		case <-timer.C:
-			// Diagnostic context only, never the verdict: report the last
-			// observed state of session 1 (absent if it is no longer listed).
 			lastState := "absent"
 			for _, info := range m.Sessions() {
 				if info.ID == 1 {
@@ -1565,6 +1560,13 @@ func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
 				}
 			}
 			t.Fatalf("session 1 exit event not received after %s (last state: %s)", deadline, lastState)
+		}
+	}
+	// Assert session 1 is no longer Created or Running after EventSessionExited
+	// (either still transitioning in SessionExited or already closed & removed).
+	for _, info := range m.Sessions() {
+		if info.ID == 1 && info.State != SessionExited && info.State != SessionClosed {
+			t.Fatalf("session 1 state after EventSessionExited = %s, want Exited or Closed/removed", info.State)
 		}
 	}
 }

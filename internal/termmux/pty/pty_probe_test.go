@@ -101,6 +101,12 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 			wantVerdict: conPTYProbeFailure,
 			wantReason:  true,
 		},
+		{
+			name:        "nonzero exit with close failure includes code and tail",
+			attempt:     conPTYProbeAttempt{code: 5, closeErr: errors.New("close conpty"), outputTail: "fatal conpty error\r\n"},
+			wantVerdict: conPTYProbeFailure,
+			wantReason:  true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -118,7 +124,20 @@ func TestClassifyConPTYAttempt(t *testing.T) {
 			if tc.attempt.outputTail != "" && !strings.Contains(reason, strings.TrimSpace(tc.attempt.outputTail)) {
 				t.Fatalf("reason %q must carry the probe output tail, got tail %q", reason, tc.attempt.outputTail)
 			}
+			if tc.wantVerdict == conPTYProbeFailure && tc.attempt.closeErr != nil && tc.attempt.code != 0 && !strings.Contains(reason, fmt.Sprintf("exit code %d", tc.attempt.code)) {
+				t.Fatalf("reason %q must carry the exit code %d alongside close error", reason, tc.attempt.code)
+			}
 		})
+	}
+}
+
+// TestProcess_ResizeAfterCloseReturnsErrClosed runs on all platforms (including
+// Windows) to verify that Process.Resize rejects calls once closed.
+func TestProcess_ResizeAfterCloseReturnsErrClosed(t *testing.T) {
+	t.Parallel()
+	p := &Process{closed: true}
+	if err := p.Resize(40, 120); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Resize on closed Process = %v, want ErrClosed", err)
 	}
 }
 

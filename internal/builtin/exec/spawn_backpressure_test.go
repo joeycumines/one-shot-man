@@ -1,13 +1,17 @@
 package exec
 
 import (
-	"strings"
 	"context"
 	"errors"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	goeventloop "github.com/joeycumines/go-eventloop"
+	"github.com/joeycumines/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 // retainedBytes reports the queue's currently retained payload bytes.
@@ -352,7 +356,7 @@ func TestSpawnChild_CapBelowChunkSizeStillDrains(t *testing.T) {
 		}
 	}
 	if total != 500*65 {
-		t.Fatalf("drained %d bytes, want exactly %d", total, 500*65)
+		t.Fatalf("drained %d bytes, want exactly %d (500 lines x 65 bytes: 64 digits + newline) — backpressure must not drop bytes", total, 500*65)
 	}
 	if code, err := child.WaitContext(context.Background()); err != nil || code != 0 {
 		t.Fatalf("wait = (%d, %v), want (0, nil)", code, err)
@@ -614,5 +618,74 @@ func TestSpawnOptsMaxBufferedOutputBytesIsHonored(t *testing.T) {
 	case <-settled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("settle did not complete within 5s of kill")
+	}
+}
+
+// TestSpawnChild_EngineBaseCtxShutdownUnblocksStuckPumpGo is the
+// engine-shutdown proof: it drives trackChildProcessLifetime with a base
+// context, lets a real capped queue fill (pump blocked in push with zero
+// reads), then cancels the base context and asserts the child settles and
+// wait() resolves within deadlines.
+func TestSpawnChild_EngineBaseCtxShutdownUnblocksStuckPumpGo(t *testing.T) {
+	skipSlow(t)
+	skipIfWindows(t)
+	t.Parallel()
+
+	child, err := SpawnChild(context.Background(), SpawnConfig{
+		Command:                "sh",
+		Args:                   []string{"-c", `while true; do printf 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\n'; done`},
+		MaxBufferedOutputBytes: 8 * 1024,
+	})
+	if err != nil {
+		t.Fatalf("SpawnChild: %v", err)
+	}
+
+	runtime := goja.New()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := gojaeventloop.New(loop, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
+	baseCtx, baseCancel := context.WithCancel(context.Background())
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	if err := loop.Submit(func() { trackChildProcessLifetime(baseCtx, runtime, adapter, child) }); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		baseCancel()
+		loopCancel()
+		_ = loop.Shutdown(context.Background())
+	})
+
+	// Let the queue fill and the pump block in push.
+	time.Sleep(400 * time.Millisecond)
+	if got := child.stdout.retainedBytes(); got > 8*1024+DefaultBufSize {
+		t.Fatalf("retained %d exceeds cap before shutdown", got)
+	}
+
+	// Engine base-context shutdown: the lifetime tracker kills the child, and
+	// Kill -> AbortDrain wakes the blocked push; the pump discards and
+	// settlePumps force-closes.
+	baseCancel()
+	settled := make(chan struct{})
+	go func() { <-child.settled; close(settled) }()
+	select {
+	case <-settled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("base-ctx shutdown did not settle a child whose pump was blocked on a full queue within 5s")
+	}
+	waitDone := make(chan struct{})
+	go func() { _, _ = child.WaitContext(context.Background()); close(waitDone) }()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait() did not resolve after base-ctx shutdown with a full unread queue")
 	}
 }

@@ -682,10 +682,19 @@ func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 			if !discard {
 				data := make([]byte, n)
 				copy(data, buf[:n])
-				if !q.push(readChunk{data: data}, abort, done) {
-					// The queue was closed or the child aborted/finished
-					// while we were blocked: retain nothing further.
-					discard = true
+				for !q.push(readChunk{data: data}, abort, done) {
+					// push returned false: the queue was closed, or
+					// abort/done fired while blocked. done fires on EVERY
+					// reap, so it must NOT alone trigger discard — a normal
+					// exit with queue room left must keep delivering bytes
+					// (retry: push re-checks and appends when room exists).
+					// A real drain abort or a closed queue (settlePumps
+					// force-close) switches to read-and-discard so an
+					// escaped writer cannot wedge settlement.
+					if q.isClosed() || drainAborted(abort) {
+						discard = true
+						break
+					}
 				}
 			}
 		}

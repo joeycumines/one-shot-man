@@ -622,12 +622,32 @@ func (c *ChildProcess) settlePumps(ceiling time.Duration, abort <-chan struct{},
 	c.stderr.closeTruncated()
 }
 
+// childExitedLocked reports whether the direct child process has already
+// exited, even if recordExit has not run yet. On Windows the Job Object is
+// closed before cmd.Wait drains the pipes (see waitAndCloseProcessTree), and
+// closing the job can surface as a non-EOF read error on an otherwise
+// complete pipe; that error can land before recordExit publishes reaped. The
+// child's own ProcessState is set by cmd.Wait the moment the process is
+// reaped, so a non-nil ProcessState proves the direct child exited. It is nil
+// while the child is still running, so an escaped descendant holding the pipe
+// cannot satisfy this check: the direct child must have exited first.
+func (c *ChildProcess) childExitedLocked() bool {
+	return c.cmd != nil && c.cmd.ProcessState != nil
+}
+
 // isCleanReapedWithoutAbort reports whether the child has already been cleanly
 // reaped with a recorded exit status and no tree-close failure or drain abort.
 // On Windows, closing the Job Object before Wait drains pipes can surface as a
 // non-EOF read error on an otherwise complete pipe; treating that as EOF only
 // under this strict predicate keeps escaped-writer aborts, ceiling timeouts,
 // and un-reaped read failures truncated.
+//
+// The reaped half of the predicate also accepts a direct child that has
+// exited (ProcessState set) but whose recordExit has not landed yet: on
+// Windows the job close races recordExit, and the read error can arrive in
+// between. The discriminator is still the DIRECT child — an escaped
+// descendant keeps the pipe open while the direct child is alive, so
+// ProcessState is nil and the stream stays truncated.
 func (c *ChildProcess) isCleanReapedWithoutAbort() bool {
 	if c.drainForced.Load() {
 		return false
@@ -636,7 +656,7 @@ func (c *ChildProcess) isCleanReapedWithoutAbort() bool {
 		return false
 	}
 	c.mu.Lock()
-	ok := c.reaped && c.exitStatus && !c.closeFailed
+	ok := (c.reaped && c.exitStatus && !c.closeFailed) || c.childExitedLocked()
 	c.mu.Unlock()
 	return ok
 }

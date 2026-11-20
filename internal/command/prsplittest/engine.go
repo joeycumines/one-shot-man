@@ -111,12 +111,13 @@ func (e *Engine) EvalJS(t testing.TB) func(string) (any, error) {
 	return makeEvalJS(t, e.engine, EvalTimeout)
 }
 
-// EvalTimeout is the shared 2-minute default bound for JS evaluations. It is
-// wide enough for loaded parallel Windows runners (including TUI/mouse tests)
-// without turning a single wedged mock eval into a 40-minute package panic.
-// Extra-heavy workloads (such as the 10k-file grouping tests) opt into a
-// longer bound via [Engine.EvalJSTimeout].
-const EvalTimeout = 2 * time.Minute
+// EvalTimeout is the shared default bound for JS evaluations. It mirrors the
+// 10-minute prSplitEvalTimeout used by the pipeline tests: heavy evaluations
+// (real git worktree/chunk flows, 10k-file grouping, loaded parallel
+// windows-latest runners) can legitimately exceed 2m wall-clock, and the
+// package-level go test timeout (40m in CI) still bounds genuine hangs. Tests
+// that need an even longer bound opt in via [Engine.EvalJSTimeout].
+const EvalTimeout = 10 * time.Minute
 
 // EvalJSTimeout is like [Engine.EvalJS] but with a custom timeout.
 func (e *Engine) EvalJSTimeout(t testing.TB, timeout time.Duration) func(string) (any, error) {

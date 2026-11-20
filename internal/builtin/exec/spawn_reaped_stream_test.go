@@ -3,6 +3,8 @@ package exec
 import (
 	"context"
 	"errors"
+	"os"
+	osexec "os/exec"
 	goruntime "runtime"
 	"testing"
 )
@@ -99,5 +101,71 @@ func TestPumpPipe_NonEOFErrorAfterCleanReapIsEOF(t *testing.T) {
 	}
 	if child.stdout.cutShort() {
 		t.Fatal("stdout queue unexpectedly marked cut short after clean reap without abort")
+	}
+}
+
+// TestPumpPipe_NonEOFErrorBeforeRecordExitIsEOF pins the Windows race from CI
+// runs 44753769213 (TestChunk05_ExecuteSplit_* on windows-latest): the Job
+// Object is closed before cmd.Wait drains the pipes, and the resulting non-EOF
+// pipe read error can land BEFORE recordExit publishes reaped. The direct
+// child's ProcessState is already set at that point (cmd.Wait reaps the
+// process before the read error is delivered to the pump), so the discriminator
+// is the direct child having exited — not the reaped flag. A stream cut by the
+// job close after the direct child exited is a clean EOF, not a truncation.
+//
+// The escaped-descendant case stays truncated: while the direct child is
+// alive, ProcessState is nil, so a non-EOF read error (see
+// TestPumpPipe_ReadFailureAfterRecordedExitStaysTruncated) is still a cut.
+func TestPumpPipe_NonEOFErrorBeforeRecordExitIsEOF(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{
+		stdout: newPipeQueue(0),
+		stderr: newPipeQueue(0),
+		done:   make(chan struct{}),
+		abort:  make(chan struct{}),
+	}
+	// Simulate the Windows ordering: the direct child exited (ProcessState
+	// set by cmd.Wait) but recordExit has not run yet (reaped == false).
+	child.cmd = &osexec.Cmd{ProcessState: &os.ProcessState{}}
+
+	child.pumpPipe(&prefixThenEIOReader{prefix: []byte("ok\n")}, &child.stdout)
+
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "ok\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want (%q, false, nil)", data, done, err, "ok\n")
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); err != nil || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want (nil, true) — direct child exited before the read error, so it is a clean EOF", done, err)
+	}
+	if child.stdout.cutShort() {
+		t.Fatal("stdout queue marked cut short even though the direct child exited before the read error")
+	}
+}
+
+// TestPumpPipe_NonEOFErrorWhileChildAliveStaysTruncated pins the discriminator
+// from the other side: a non-EOF read error while the direct child is still
+// running (ProcessState nil, reaped false) is a genuinely cut capture — an
+// escaped descendant holding the pipe — and must stay truncated.
+func TestPumpPipe_NonEOFErrorWhileChildAliveStaysTruncated(t *testing.T) {
+	t.Parallel()
+
+	child := &ChildProcess{
+		stdout: newPipeQueue(0),
+		stderr: newPipeQueue(0),
+		done:   make(chan struct{}),
+		abort:  make(chan struct{}),
+	}
+	// No cmd / ProcessState: the direct child is still alive.
+
+	child.pumpPipe(&prefixThenEIOReader{prefix: []byte("partial\n")}, &child.stdout)
+
+	if data, done, err := child.ReadStdoutContext(context.Background()); err != nil || done || data != "partial\n" {
+		t.Fatalf("first stdout read = (%q, %v, %v), want the prefix chunk", data, done, err)
+	}
+	if _, done, err := child.ReadStdoutContext(context.Background()); !errors.Is(err, errOutputStreamCutShort) || !done {
+		t.Fatalf("terminal stdout read = (%v, %v), want (errOutputStreamCutShort, true) — child alive, so a non-EOF read error is a real cut", done, err)
+	}
+	if !child.stdout.cutShort() {
+		t.Fatal("stdout queue not marked cut short while the child was still alive")
 	}
 }

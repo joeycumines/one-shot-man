@@ -128,6 +128,11 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			if v := optsObj.Get("timeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				timeout = timeoutFromMilliseconds(v.ToInteger())
 			}
+			if v := optsObj.Get("maxBufferedOutputBytes"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				if n := v.ToInteger(); n > 0 {
+					cfg.MaxBufferedOutputBytes = n
+				}
+			}
 		}
 
 		return adapter.TrackPromise(baseCtx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {

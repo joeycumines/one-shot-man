@@ -81,8 +81,8 @@ func TestPumpPipe_NonEOFErrorAfterCleanReapIsEOF(t *testing.T) {
 	t.Parallel()
 
 	child := &ChildProcess{
-		stdout: newPipeQueue(),
-		stderr: newPipeQueue(),
+		stdout: newPipeQueue(0),
+		stderr: newPipeQueue(0),
 		done:   make(chan struct{}),
 		abort:  make(chan struct{}),
 	}

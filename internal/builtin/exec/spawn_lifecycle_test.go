@@ -203,7 +203,7 @@ func TestChildProcessPumpClosesPipe(t *testing.T) {
 	t.Parallel()
 
 	pipe := &trackingReadCloser{closed: make(chan struct{})}
-	queue := newPipeQueue()
+	queue := newPipeQueue(0)
 	child := &ChildProcess{}
 	done := make(chan struct{})
 	go func() {

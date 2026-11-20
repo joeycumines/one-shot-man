@@ -21,8 +21,17 @@ import (
 // DefaultBufSize is the read buffer size for pipe pump goroutines.
 const DefaultBufSize = 8192
 
-// DefaultChanSize is retained for compatibility; pipe queues are unbounded.
+// DefaultChanSize is the default number of DefaultBufSize chunks a pipe queue
+// retains before the pump blocks (backpressure). It bounds retained memory at
+// DefaultChanSize*DefaultBufSize bytes per stream.
 const DefaultChanSize = 8
+
+// DefaultQueueCapBytes is the default retained-bytes cap for one spawn output
+// queue: DefaultChanSize chunks of DefaultBufSize bytes. The pump stops
+// reading the child's pipe while the queue is full, so backpressure
+// propagates kernel-pipe -> pump -> JS consumer and a child writing past the
+// cap blocks in write().
+const DefaultQueueCapBytes = DefaultChanSize * DefaultBufSize
 
 // readChunk is the result of one read from a pipe.
 type readChunk struct {
@@ -38,6 +47,10 @@ type SpawnConfig struct {
 	Env     map[string]string // merged with os.Environ()
 	// EnvReplace, when true, makes cmd.Env exactly Env (no os.Environ merge).
 	EnvReplace bool
+	// MaxBufferedOutputBytes caps the bytes a single output queue (stdout or
+	// stderr) retains before the pump blocks on it, propagating backpressure
+	// to the child. Zero or negative means DefaultQueueCapBytes.
+	MaxBufferedOutputBytes int64
 }
 
 // processTree owns the platform-specific lifetime of a spawned process tree.
@@ -159,16 +172,26 @@ func (e *processTreeCloseError) Unwrap() error {
 // errOutputStreamCutShort marks a stream cut short by the exec layer.
 var errOutputStreamCutShort = errors.New("command output stream was cut short before EOF: output is incomplete")
 
+// pipeQueue is a bounded chunk queue fed by a pipe pump goroutine. push blocks
+// while retained bytes would exceed cap, WITHOUT holding q.mu, and selects on
+// queue room, queue close, and the child's abort/done channels so Kill,
+// timeout, engine shutdown and settlePumps always wake it.
 type pipeQueue struct {
 	mu        sync.Mutex
 	items     []readChunk
-	notify    chan struct{}
+	notify    chan struct{} // reader wakeup (signal semantics, see signal())
+	room      chan struct{} // pusher wakeup: closed+replaced whenever space frees or the queue closes
 	closed    bool
 	truncated bool
+	capBytes  int
+	bytes     int
 }
 
-func newPipeQueue() pipeQueue {
-	return pipeQueue{notify: make(chan struct{})}
+func newPipeQueue(capBytes int) pipeQueue {
+	if capBytes <= 0 {
+		capBytes = DefaultQueueCapBytes
+	}
+	return pipeQueue{notify: make(chan struct{}), room: make(chan struct{}), capBytes: capBytes}
 }
 
 // signal wakes every reader currently waiting for a queue state change. A new
@@ -179,16 +202,44 @@ func (q *pipeQueue) signal() {
 	q.notify = make(chan struct{})
 }
 
-func (q *pipeQueue) push(chunk readChunk) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.closed {
-		return
-	}
-	q.items = append(q.items, chunk)
-	q.signal()
+// signalRoom wakes every pusher blocked on a full queue.
+func (q *pipeQueue) signalRoom() {
+	close(q.room)
+	q.room = make(chan struct{})
 }
 
+// push appends chunk, blocking while retained bytes would exceed the cap. It
+// reports false when the chunk was not retained: the queue is closed, or abort
+// / done fired while waiting (the pump then switches to read-and-discard so
+// settlement is not held hostage). The wait never holds q.mu: readers must
+// keep popping, and each pop frees room and wakes the pusher.
+func (q *pipeQueue) push(chunk readChunk, abort, done <-chan struct{}) bool {
+	q.mu.Lock()
+	for {
+		if q.closed {
+			q.mu.Unlock()
+			return false
+		}
+		if q.bytes+len(chunk.data) <= q.capBytes || len(q.items) == 0 {
+			q.items = append(q.items, chunk)
+			q.bytes += len(chunk.data)
+			q.signal()
+			q.mu.Unlock()
+			return true
+		}
+		room := q.room
+		abortCh, doneCh := abort, done
+		q.mu.Unlock()
+		select {
+		case <-room:
+		case <-abortCh:
+			return false
+		case <-doneCh:
+			return false
+		}
+		q.mu.Lock()
+	}
+}
 func (q *pipeQueue) close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -197,6 +248,7 @@ func (q *pipeQueue) close() {
 	}
 	q.closed = true
 	q.signal()
+	q.signalRoom()
 }
 
 // closeTruncated closes the queue as truncated. Reports whether it was open.
@@ -209,6 +261,7 @@ func (q *pipeQueue) closeTruncated() bool {
 	q.closed = true
 	q.truncated = true
 	q.signal()
+	q.signalRoom()
 	return true
 }
 
@@ -233,6 +286,11 @@ func (q *pipeQueue) pop() (readChunk, bool, bool, <-chan struct{}) {
 		chunk := q.items[0]
 		q.items[0] = readChunk{}
 		q.items = q.items[1:]
+		q.bytes -= len(chunk.data)
+		if q.bytes < 0 {
+			q.bytes = 0
+		}
+		q.signalRoom()
 		return chunk, true, false, nil
 	}
 	return readChunk{}, false, q.closed, q.notify
@@ -405,8 +463,8 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 		settled:   make(chan struct{}),
 		abort:     make(chan struct{}),
 		stdinPipe: stdinPipe,
-		stdout:    newPipeQueue(),
-		stderr:    newPipeQueue(),
+		stdout:    newPipeQueue(int(cfg.MaxBufferedOutputBytes)),
+		stderr:    newPipeQueue(int(cfg.MaxBufferedOutputBytes)),
 	}
 
 	var pumpWg sync.WaitGroup
@@ -574,12 +632,8 @@ func (c *ChildProcess) isCleanReapedWithoutAbort() bool {
 	if c.drainForced.Load() {
 		return false
 	}
-	if c.abort != nil {
-		select {
-		case <-c.abort:
-			return false
-		default:
-		}
+	if drainAborted(c.abort) {
+		return false
 	}
 	c.mu.Lock()
 	ok := c.reaped && c.exitStatus && !c.closeFailed
@@ -587,9 +641,35 @@ func (c *ChildProcess) isCleanReapedWithoutAbort() bool {
 	return ok
 }
 
-// pumpPipe pumps r into q.
+// drainAborted reports whether the drain abort channel has fired.
+func drainAborted(abort <-chan struct{}) bool {
+	if abort == nil {
+		return false
+	}
+	select {
+	case <-abort:
+		return true
+	default:
+		return false
+	}
+}
+
+// pumpPipe pumps r into q. While q is full, push blocks (without holding the
+// queue lock) so the pump stops reading r: the kernel pipe fills and the
+// child's write() blocks — real backpressure. If the queue closes or the
+// child aborts/done fires while push is blocked, the pump switches to
+// read-and-discard: it keeps draining r so an escaped descendant holding the
+// pipe cannot wedge settlePumps, but retains nothing.
 func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 	defer r.Close()
+	abort, done := c.abort, c.done
+	if abort == nil {
+		abort = make(chan struct{})
+	}
+	if done == nil {
+		done = make(chan struct{})
+	}
+	discard := false
 	defer func() {
 		if !q.isClosed() {
 			q.closeTruncated()
@@ -599,12 +679,20 @@ func (c *ChildProcess) pumpPipe(r io.ReadCloser, q *pipeQueue) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			q.push(readChunk{data: data})
+			if !discard {
+				data := make([]byte, n)
+				copy(data, buf[:n])
+				if !q.push(readChunk{data: data}, abort, done) {
+					// The queue was closed or the child aborted/finished
+					// while we were blocked: retain nothing further.
+					discard = true
+				}
+			}
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) || c.isCleanReapedWithoutAbort() {
+			// A read that ends without io.EOF after the drain was aborted is
+			// the abort cutting the stream: truncated, not clean EOF.
+			if errors.Is(err, io.EOF) || (c.isCleanReapedWithoutAbort() && !drainAborted(abort)) {
 				q.close()
 				return
 			}

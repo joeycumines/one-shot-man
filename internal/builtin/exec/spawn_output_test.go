@@ -20,8 +20,8 @@ import (
 func TestPipeQueueReportsCutShortStream(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
-	child.stdout.push(readChunk{data: []byte("parent-done\n")})
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
+	child.stdout.push(readChunk{data: []byte("parent-done\n")}, nil, nil)
 	if !child.stdout.closeTruncated() {
 		t.Fatal("closeTruncated on an open queue reported it was already closed")
 	}
@@ -40,8 +40,8 @@ func TestPipeQueueReportsCutShortStream(t *testing.T) {
 func TestPipeQueueCleanCloseStaysClean(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
-	child.stdout.push(readChunk{data: []byte("complete\n")})
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
+	child.stdout.push(readChunk{data: []byte("complete\n")}, nil, nil)
 	child.stdout.close()
 	if child.stdout.closeTruncated() {
 		t.Fatal("closeTruncated re-marked a stream that had already ended")
@@ -59,8 +59,8 @@ func TestPipeQueueCleanCloseStaysClean(t *testing.T) {
 func TestSettlePumpsMarksStreamsItCut(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
-	child.stdout.push(readChunk{data: []byte("parent-done\n")})
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
+	child.stdout.push(readChunk{data: []byte("parent-done\n")}, nil, nil)
 	pumpDone := make(chan struct{}) // never closes: the pumps are blocked
 	stdoutPipe := &trackingReadCloser{closed: make(chan struct{})}
 	stderrPipe := &trackingReadCloser{closed: make(chan struct{})}
@@ -106,7 +106,7 @@ func TestSettlePumpsMarksStreamsItCut(t *testing.T) {
 func TestSettlePumpsKeepsInFlightPumpChunk(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
 	// stdout: one real chunk, then the pipe stays open (an escaped writer holds
 	// the write end) until settlePumps closes it; the pump's read then fails
 	// with os.ErrClosed, which is not io.EOF, so the pump marks the queue
@@ -153,7 +153,7 @@ func TestSettlePumpsKeepsInFlightPumpChunk(t *testing.T) {
 func TestSettlePumpsAbortsPromptly(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
 	pumpDone := make(chan struct{}) // never closes: the pumps are blocked
 	stdoutPipe := &trackingReadCloser{closed: make(chan struct{})}
 	stderrPipe := &trackingReadCloser{closed: make(chan struct{})}
@@ -188,7 +188,7 @@ func TestSettlePumpsAbortsPromptly(t *testing.T) {
 func TestSettlePumpsLeavesFinishedPumpsAlone(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
 	child.stdout.close()
 	child.stderr.close()
 	pumpDone := make(chan struct{})
@@ -216,7 +216,7 @@ func TestSettlePumpsPrefersFinishedPumpsOverAbort(t *testing.T) {
 	t.Parallel()
 
 	for i := range 50 {
-		child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+		child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
 		child.stdout.close()
 		child.stderr.close()
 		pumpDone := make(chan struct{})
@@ -246,7 +246,7 @@ func TestSettlePumpsPrefersFinishedPumpsOverAbort(t *testing.T) {
 func TestSettlePumpsAbortGraceLetsPumpsReachEOF(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
 	// stdout pump serves one chunk, then reaches a clean EOF shortly after
 	// abort fires (simulating a dead in-group writer whose buffered output the
 	// pump has not read yet).
@@ -287,8 +287,8 @@ func TestSettlePumpsAbortGraceLetsPumpsReachEOF(t *testing.T) {
 func TestSettlePumpsAbortStillCutsEscapedWriter(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue(), stderr: newPipeQueue()}
-	child.stdout.push(readChunk{data: []byte("parent-done\n")})
+	child := &ChildProcess{stdout: newPipeQueue(0), stderr: newPipeQueue(0)}
+	child.stdout.push(readChunk{data: []byte("parent-done\n")}, nil, nil)
 	pumpDone := make(chan struct{}) // never closes: the escaped writer holds the pipe
 	stdoutPipe := &trackingReadCloser{closed: make(chan struct{})}
 	stderrPipe := &trackingReadCloser{closed: make(chan struct{})}
@@ -385,8 +385,8 @@ func (p *delayedEOFPipe) Close() error {
 func TestReadPipeNilContextDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue()}
-	child.stdout.push(readChunk{data: []byte("data")})
+	child := &ChildProcess{stdout: newPipeQueue(0)}
+	child.stdout.push(readChunk{data: []byte("data")}, nil, nil)
 	child.stdout.close()
 
 	data, done, err := child.ReadStdoutContext(nil) //lint:ignore SA1012 nil ctx is the contract under test
@@ -490,7 +490,7 @@ func (*eofReadCloser) Close() error             { return nil }
 func TestReadPipeUnblocksOnContext(t *testing.T) {
 	t.Parallel()
 
-	child := &ChildProcess{stdout: newPipeQueue()}
+	child := &ChildProcess{stdout: newPipeQueue(0)}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
@@ -511,7 +511,7 @@ func TestReadPipeUnblocksOnContext(t *testing.T) {
 	}
 
 	// A terminal state arriving with the cancellation is still delivered.
-	child2 := &ChildProcess{stdout: newPipeQueue()}
+	child2 := &ChildProcess{stdout: newPipeQueue(0)}
 	child2.stdout.closeTruncated()
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	cancel2()
@@ -651,8 +651,8 @@ func TestPumpPipe_ReadFailureAfterRecordedExitStaysTruncated(t *testing.T) {
 	t.Parallel()
 
 	child := &ChildProcess{
-		stdout: newPipeQueue(),
-		stderr: newPipeQueue(),
+		stdout: newPipeQueue(0),
+		stderr: newPipeQueue(0),
 		done:   make(chan struct{}),
 	}
 	// Simulate a recorded exit: done closed, exit code 0.

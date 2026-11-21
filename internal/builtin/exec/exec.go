@@ -85,13 +85,13 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 			})
 
 			// spawn(command, args, opts?): Promise<ChildHandle>.
-			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, loop))
+			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, loop, SpawnChild))
 		}
 	}
 }
 
 // jsSpawn creates the spawn() JS binding.
-func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
+func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, spawn func(context.Context, SpawnConfig) (*ChildProcess, error)) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			panic(rt.NewTypeError("spawn: missing command"))
@@ -136,42 +136,31 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 		}
 
 		return adapter.TrackPromise(baseCtx, func(workerCtx context.Context, settle gojaeventloop.TrackedSettlement) {
-			childCtx := workerCtx
+			// TrackPromise passes its caller context through unchanged; settling
+			// the spawn promise does not cancel it. This derived context bounds
+			// both process execution and output draining, and is released only
+			// after both pumps settle. Normal reap must not abort late readers.
+			var childCtx context.Context
 			var cancel context.CancelFunc
-			// abortCtx carries timeout/base cancellation but is not cancelled on reap.
-			abortCtx := workerCtx
-			var abortCancel context.CancelFunc
 			if timeout > 0 {
 				childCtx, cancel = context.WithTimeout(workerCtx, timeout)
-				abortCtx, abortCancel = context.WithTimeout(workerCtx, timeout)
 			} else {
 				childCtx, cancel = context.WithCancel(workerCtx)
-				abortCtx, abortCancel = context.WithCancel(workerCtx)
 			}
 
-			child, err := SpawnChild(childCtx, cfg)
+			child, err := spawn(childCtx, cfg)
 			if err != nil {
 				cancel()
-				abortCancel()
 				handleSettleErr(settle.Settle(true, func(owner *goja.Runtime) any {
-					return owner.NewGoError(fmt.Errorf("spawn failed: %w", err))
+					return newExecGoError(owner, fmt.Errorf("spawn failed: %w", err))
 				}))
 				return
 			}
 
-			// Abort the drain on timeout/base cancellation; a normal reap does not.
+			// SpawnChild observes cancellation through the complete drain.
+			// Release its timer/context when no process or pump work remains.
 			go func() {
-				select {
-				case <-abortCtx.Done():
-					child.AbortDrain()
-				case <-child.settled:
-				}
-				abortCancel()
-			}()
-
-			// Release the timeout timer once the child is reaped.
-			go func() {
-				<-child.done
+				<-child.settled
 				cancel()
 			}()
 
@@ -181,11 +170,28 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}); err != nil {
 				handleSettleErr(err)
 				cancel()
-				abortCancel()
 				child.AbortDrain()
 			}
 		})
 	}
+}
+
+// treeCleanupErrorMessage exposes an observed process-tree teardown failure
+// independently of the direct child's status and output capture. Its absence
+// is not proof that no descendant escaped the platform's process owner.
+func treeCleanupErrorMessage(err error) string {
+	if closeErr, ok := errors.AsType[*processTreeCloseError](err); ok {
+		return closeErr.Error()
+	}
+	return ""
+}
+
+func newExecGoError(rt *goja.Runtime, err error) *goja.Object {
+	value := rt.NewGoError(err)
+	if message := treeCleanupErrorMessage(err); message != "" {
+		_ = value.Set("treeCleanupError", message)
+	}
+	return value
 }
 
 func trackChildProcessLifetime(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *ChildProcess) {
@@ -262,17 +268,20 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 	// child.stderr — {read(): Promise<{value: string, done: boolean, truncated?}>}
 	_ = obj.Set("stderr", wrapReadableStream(baseCtx, rt, adapter, loop, child.ReadStderrContext))
 
-	// child.wait(): Promise<{code, signal}>.
+	// child.wait(): Promise<{code, signal, treeCleanupError?}>.
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
 			code, waitErr := child.WaitContext(ctx)
 			if rejectErr := child.waitRejection(code, waitErr); rejectErr != nil {
 				handleSettleErr(settle.Settle(true, func(rt *goja.Runtime) any {
-					return rt.NewGoError(rejectErr)
+					return newExecGoError(rt, rejectErr)
 				}))
 				return
 			}
 			m := map[string]any{"code": code}
+			if message := treeCleanupErrorMessage(waitErr); message != "" {
+				m["treeCleanupError"] = message
+			}
 			signal := child.recordedSignalAtSettlement()
 			if signal == "" && waitErr != nil {
 				signal = processExitSignal(waitErr)
@@ -318,10 +327,27 @@ func wrapChildProcess(baseCtx context.Context, rt *goja.Runtime, adapter *gojaev
 
 // wrapReadableStream creates a JS readable stream wrapper.
 func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, readFn func(ctx context.Context) (string, bool, error)) goja.Value {
+	reader := streamTextReader{read: readFn}
+	previous := make(chan struct{})
+	close(previous)
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
+		// Calls arrive on the runtime owner. Give workers their turn in that
+		// order, rather than depending on goroutine or mutex scheduling. The
+		// gate also serializes the decoder's incomplete UTF-8 suffix.
+		before := previous
+		finished := make(chan struct{})
+		previous = finished
 		return adapter.TrackPromise(baseCtx, func(ctx context.Context, settle gojaeventloop.TrackedSettlement) {
-			data, done, err := readFn(ctx)
+			defer close(finished)
+			// Hard loop closure may skip an admitted predecessor's worker.
+			// Terminal completion releases its successors without touching the
+			// decoder. Cancellation alone must not bypass a predecessor: raw
+			// reads still prefer queued output or EOF over the context error.
+			if !waitStreamReadTurn(before, adapter.Done()) {
+				return
+			}
+			data, done, err := reader.readText(ctx)
 			if errors.Is(err, errOutputStreamCutShort) {
 				handleSettleErr(settle.Settle(false, func(rt *goja.Runtime) any {
 					return map[string]any{"value": nil, "done": true, "truncated": true}
@@ -346,6 +372,22 @@ func wrapReadableStream(baseCtx context.Context, rt *goja.Runtime, adapter *goja
 	return streamObj
 }
 
+func waitStreamReadTurn(previous, terminated <-chan struct{}) bool {
+	select {
+	case <-previous:
+	case <-terminated:
+		return false
+	}
+	// A terminal predecessor can release its successor without ever owning
+	// the decoder. Do not let that successor enter after terminal completion.
+	select {
+	case <-terminated:
+		return false
+	default:
+		return true
+	}
+}
+
 const outputAbortGrace = 100 * time.Millisecond
 
 // waitRejection reports the error that must reject the JS wait() promise, or
@@ -367,7 +409,8 @@ const outputAbortGrace = 100 * time.Millisecond
 // short before the child was reaped), when the caller's wait was aborted
 // before the reaper recorded (a waitAbortedError from WaitContext), or when the
 // code is unclassified on this platform (exitStatusUnclassified). The cleanup
-// failure is still carried in ChildProcess.exitErr for Go callers.
+// failure is still carried in ChildProcess.exitErr for Go callers and in the
+// resolved JS result's optional treeCleanupError field.
 //
 // A caller whose context cancelled AFTER recordExit published a status does not
 // get a waitAbortedError — WaitContext returns the recorded (code, exitErr)
@@ -385,8 +428,7 @@ func (c *ChildProcess) waitRejection(code int, waitErr error) error {
 	// observed a status, even if recordExit lands a moment later: reject it
 	// unconditionally instead of resolving {code: -1} from a status this wait
 	// never waited for.
-	var aborted *waitAbortedError
-	if errors.As(waitErr, &aborted) {
+	if _, ok := errors.AsType[*waitAbortedError](waitErr); ok {
 		return waitErr
 	}
 	// A real exit status outranks a process-tree cleanup failure AND a context
@@ -456,10 +498,15 @@ func cleanupFailedRunExec(primaryErr error, kill, closeTree, wait, closePipes fu
 	closeTreeErr := closeTree()
 	waitErr := wait()
 	closePipesErr := closePipes()
+	// Filter before wrapping: the generic cleanup filter unwraps errors, so
+	// wrapping first would erase the structural tree-failure discriminator.
+	if closeTreeErr = nonBenignRunExecCleanupError(closeTreeErr); closeTreeErr != nil {
+		closeTreeErr = &processTreeCloseError{err: closeTreeErr}
+	}
 	return errors.Join(
 		primaryErr,
 		nonBenignRunExecCleanupError(killErr),
-		nonBenignRunExecCleanupError(closeTreeErr),
+		closeTreeErr,
 		nonBenignRunExecCleanupError(waitErr),
 		nonBenignRunExecCleanupError(closePipesErr),
 	)
@@ -632,14 +679,14 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 }
 
 func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
-	return runExecCommand(ctx, cmd, args, newCommandPipe, outputEOFCeiling)
+	return runExecCommand(ctx, cmd, args, newCommandPipe, newProcessTree, outputEOFCeiling)
 }
 
-func runExecCommand(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory, eofCeiling time.Duration) map[string]any {
+func runExecCommand(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory, newTree processTreeFactory, eofCeiling time.Duration) map[string]any {
 	if ctx == nil {
 		panic("exec: nil context requires baseCtx threading")
 	}
-	tree, err := newProcessTree()
+	tree, err := newTree()
 	if err != nil {
 		return map[string]any{
 			"stdout": "", "stderr": "", "code": -1,
@@ -651,6 +698,7 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	var captureTruncated bool
 	var observedCode int
 	var codeKnown bool
+	var started bool
 	result := func(runErr error) map[string]any {
 		code := 0
 		errStr := ""
@@ -672,7 +720,7 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 			}
 			errStr = runErr.Error()
 		}
-		return map[string]any{
+		value := map[string]any{
 			"stdout":    string(stdoutData),
 			"stderr":    string(stderrData),
 			"code":      code,
@@ -680,6 +728,10 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 			"message":   errStr,
 			"truncated": captureTruncated,
 		}
+		if message := treeCleanupErrorMessage(runErr); started && message != "" {
+			value["treeCleanupError"] = message
+		}
+		return value
 	}
 
 	var stdoutReader, stdoutWriter, stderrReader, stderrWriter commandPipeEndpoint
@@ -708,6 +760,7 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	if err := c.Start(); err != nil {
 		return result(errors.Join(err, tree.close(c), closePipes()))
 	}
+	started = true
 	writerErr := errors.Join(closeCommandPipe(&stdoutWriter), closeCommandPipe(&stderrWriter))
 	if writerErr != nil {
 		return result(cleanupFailedRunExec(
@@ -776,11 +829,13 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	// A capture that actually reached EOF on both readers is complete, so it
 	// must not gain the diagnostic.
 	if ctx.Err() != nil && captureTruncated {
-		var aborted *outputCaptureAbortedError
-		if !errors.As(outputErr, &aborted) {
+		if _, ok := errors.AsType[*outputCaptureAbortedError](outputErr); !ok {
 			outputErr = errors.Join(outputErr, &outputCaptureAbortedError{cause: ctx.Err()})
 		}
 	}
 
+	if closeErr != nil {
+		closeErr = &processTreeCloseError{err: closeErr}
+	}
 	return result(errors.Join(waitErr, closeErr, outputErr))
 }

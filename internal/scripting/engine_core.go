@@ -310,13 +310,10 @@ func NewEngine(
 
 	vm := runtime.Runtime()
 
-	// Derive the engine's own lifecycle context from the caller's ctx. The
-	// engine ctx is cancelled by Close() (via runtime.Close -> rt.cancel),
-	// independently of the caller's ctx: subsystems that must shut down with
-	// the engine (e.g. the bubbletea manager, via EventLoopProvider.Ctx())
-	// derive theirs from this one, so engine.Close() unblocks them even when
-	// the caller's ctx is never cancelled.
-	engineCtx, engineCancel := context.WithCancel(ctx)
+	// Engine.Close can cancel its own dependents first. Runtime termination
+	// must also reach them: derive from the runtime lifecycle, not a sibling
+	// context that would survive process.exit and block its worker join.
+	engineCtx, engineCancel := context.WithCancel(runtime.Ctx())
 	engineReady := false
 	defer func() {
 		if !engineReady {
@@ -347,7 +344,7 @@ func NewEngine(
 	if eopts.hasUserK8s {
 		registerOpts = append(registerOpts, builtin.WithUserK8sOptions(eopts.userK8s))
 	}
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, registerOpts...)
+	registerResult := builtin.Register(engineCtx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, registerOpts...)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
@@ -425,15 +422,10 @@ func NewEngine(
 		return nil, fmt.Errorf("failed to set up globals: %w", err)
 	}
 
-	// Interrupt JS execution when context is canceled.
-	// Capture vm locally for the context.AfterFunc callback. goja.Runtime.Interrupt
-	// is documented as safe to call from any goroutine.
-	vmForInterrupt := engine.vm
-	context.AfterFunc(ctx, func() {
-		if vmForInterrupt != nil {
-			vmForInterrupt.Interrupt(ctx.Err())
-		}
-	})
+	// Engine.Close cancels this context before joining managers that can be
+	// waiting for a VM callback. Interrupt that callback immediately, sharing
+	// the runtime's one host interrupt with Runtime.Close and parent teardown.
+	context.AfterFunc(engineCtx, func() { runtime.interrupt(engineCtx.Err()) })
 
 	engineReady = true
 	return engine, nil
@@ -615,6 +607,11 @@ func (e *Engine) LoadScriptString(name, content string) *Script {
 // happens on the CALLING goroutine (not the event loop), so the event loop
 // remains free for BubbleTea's RunJSSync callbacks.
 func (e *Engine) ExecuteScript(script *Script) error {
+	if e.ctx != nil {
+		if err := e.ctx.Err(); err != nil {
+			return err
+		}
+	}
 	// Create execution context for this script
 	ctx := &ExecutionContext{
 		engine: e,
@@ -686,7 +683,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		}
 		return nil
 	}); err != nil {
-		return err
+		return e.scriptExecutionError(err)
 	}
 
 	// If the script started a BubbleTea program (via non-blocking tea.run()),
@@ -696,7 +693,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	// and the BubbleTea TUI runs orphaned in the background.
 	if mgr := e.bubbleteaManager; mgr != nil {
 		if waitErr := mgr.WaitForProgram(); waitErr != nil {
-			return waitErr
+			return e.scriptExecutionError(waitErr)
 		}
 
 		// After BubbleTea exits, execute any registered post-exit callback
@@ -718,22 +715,44 @@ func (e *Engine) ExecuteScript(script *Script) error {
 			}
 			return nil
 		}); cbErr != nil {
-			// The script requested process.exit (typically from a signal
-			// listener), which terminates the event loop and races this
-			// post-exit callback — whether the submit is rejected outright
-			// (ErrLoopTerminated) or the loop drains/drops the queued callback
-			// and the wait observes runtime shutdown. Any resulting failure here
-			// is an artifact of that exit, not an execution failure: the
-			// script's exit decision wins, and the exit code is recovered via
-			// ExitCode after Wait returns.
-			if e.runtime != nil && e.runtime.processExitRequested.Load() {
+			// A process.exit called by this callback interrupts its own JS
+			// execution. Other callback failures must remain errors even if
+			// another callback concurrently requests exit.
+			if e.IsProcessExitSignal(cbErr) {
 				return nil
 			}
-			return cbErr
+			return e.scriptExecutionError(cbErr)
 		}
 	}
 
 	return nil
+}
+
+// scriptExecutionError preserves script failures while recognizing the
+// cancellation used to release dependents after terminal script completion.
+func (e *Engine) scriptExecutionError(err error) error {
+	// executeOnLoop and WaitForProgram return these host cancellation values
+	// directly. Do not unwrap arbitrary script errors: a callback failure
+	// wrapping cancellation must not be erased by a concurrent process.exit.
+	if err != context.Canceled && err != goeventloop.ErrLoopTerminated {
+		return err
+	}
+	if e.ctx == nil || e.runtime == nil {
+		return err
+	}
+	if err == goeventloop.ErrLoopTerminated && !e.Loop().IsCallbackOwner() {
+		// Submit may observe terminal admission just before Run publishes the
+		// lifecycle cause. Join only the owner exit, never adapter completion
+		// (which can still be joining the BubbleTea worker).
+		select {
+		case <-e.runtime.done:
+		case <-e.ctx.Done():
+		}
+	}
+	if context.Cause(e.ctx) == errRuntimeExit {
+		return nil
+	}
+	return err
 }
 
 // Wait blocks until the event loop naturally exits.
@@ -773,7 +792,7 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 			if err := ctx.Err(); err != nil {
 				errCh <- err
 			} else {
-				errCh <- errors.New("engine stopped before script started")
+				errCh <- goeventloop.ErrLoopTerminated
 			}
 			return
 		}
@@ -799,11 +818,17 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 		return err
 	case <-e.runtime.Done():
 		if state.CompareAndSwap(0, 2) {
-			return errors.New("runtime stopped before script completion")
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return goeventloop.ErrLoopTerminated
 		}
 		err := <-errCh
 		if err == nil {
-			return errors.New("runtime stopped before script completion")
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return goeventloop.ErrLoopTerminated
 		}
 		return err
 	}
@@ -854,6 +879,8 @@ func (e *Engine) GetTerminalWriter() io.Writer {
 
 // Loop returns the shared event loop.
 // This implements builtin.EventLoopProvider.
+// Use Engine.Close for host cancellation; raw loop termination can complete
+// with an assigned script status without recording a host cancellation cause.
 func (e *Engine) Loop() *goeventloop.Loop {
 	if e.runtime == nil {
 		return nil

@@ -3,10 +3,12 @@ package exec
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	goeventloop "github.com/joeycumines/go-eventloop"
@@ -46,16 +48,12 @@ func highVolumeWriterCommand() (string, []string) {
 	return os.Args[0], []string{"-test.run=TestZZHighVolumeWriterHelper"}
 }
 
-// TestSpawnChild_UnreadOutputIsBounded is the RED repro for the unbounded
-// pipe queue: spawn a high-volume writer, NEVER read, and assert the retained
-// queue bytes stay under the cap. Before the fix the queue grows without
-// bound (Hana's probe measured ~1 GB / 125k chunks in ~2s), so this test
-// FAILS before the fix and passes after.
+// A sustained writer must not grow the retained output queue past its cap.
 func TestSpawnChild_UnreadOutputIsBounded(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
-	const capBytes = 64 * 1024 // DefaultQueueCapBytes once wired; assert against the live default below
+	const capBytes = DefaultQueueCapBytes
 	command, args := highVolumeWriterCommand()
 	child, err := SpawnChild(context.Background(), SpawnConfig{
 		Command:    command,
@@ -66,6 +64,16 @@ func TestSpawnChild_UnreadOutputIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SpawnChild: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := child.Kill(); err != nil {
+			t.Errorf("cleanup kill: %v", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := child.WaitContext(ctx); errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("cleanup wait: %v", err)
+		}
+	})
 
 	// Let the pump run with zero reads for a fixed window.
 	time.Sleep(500 * time.Millisecond)
@@ -89,21 +97,20 @@ func TestSpawnChild_UnreadOutputIsBounded(t *testing.T) {
 	}
 	select {
 	case code := <-waitDone:
-		if code == 0 {
-			t.Fatalf("killed high-volume writer reported code 0")
-		}
+		// On Windows the helper can observe the closed stdout reader and
+		// take its explicit exit-0 path before the process-tree signal. Its
+		// recorded status is valid either way; this test checks bounded
+		// output and completion, not which exit mechanism won that race.
+		t.Logf("writer exit code after abort: %d", code)
 	case <-time.After(5 * time.Second):
 		t.Fatal("wait() did not resolve after kill with a full unread queue")
 	}
-	// The stream must terminate after kill, promptly. The child was SIGKILLed
-	// mid-stream, so the drain was aborted: the terminal read is either
-	// errOutputStreamCutShort ({done:true, truncated:true}) or — when the
-	// kill reaped the child and the in-group writers died before the abort
-	// landed — a clean done. What must NOT happen is hanging past the
-	// deadline, and retained memory must stay bounded while draining.
-	deadline := time.Now().Add(5 * time.Second)
+	// Kill must settle the stream. EOF can be clean if every produced byte
+	// was retained; otherwise it must report the incomplete capture.
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelRead()
 	for {
-		_, done, err := child.ReadStdoutContext(context.Background())
+		_, done, err := child.ReadStdoutContext(readCtx)
 		if err != nil {
 			if !errors.Is(err, errOutputStreamCutShort) {
 				t.Fatalf("terminal read err = %v, want errOutputStreamCutShort after kill", err)
@@ -113,129 +120,81 @@ func TestSpawnChild_UnreadOutputIsBounded(t *testing.T) {
 		if done {
 			break
 		}
-		if retained := child.stdout.retainedBytes(); retained > capBytes+DefaultBufSize {
-			t.Fatalf("retained %d grew past cap+chunk while draining a killed child", retained)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("stream did not terminate within 5s of kill (retained=%d chunks=%d)", child.stdout.retainedBytes(), child.stdout.chunkCount())
+		if retained := child.stdout.retainedBytes(); retained > capBytes {
+			t.Fatalf("retained %d grew past cap while draining a killed child", retained)
 		}
 	}
 }
 
-// TestPipeQueuePushBlocksWhenFull is the white-box unit RED test: push on a
-// capped queue must block once retained bytes exceed the cap, and pop must
-// unblock it. Before the fix push never blocks, so the "pusher is blocked"
-// assertion fails.
+// A full queue must durably block without holding its mutex, then resume
+// when a reader frees room. synctest.Wait requires actual blocking, not a
+// scheduler-dependent observation after a sleep.
 func TestPipeQueuePushBlocksWhenFull(t *testing.T) {
-	t.Parallel()
-
-	q := newPipeQueue(16) // cap 16 bytes
-	done := make(chan struct{})
-	abort := make(chan struct{})
-	pushResult := make(chan bool, 1)
-
-	// Fill the queue to the cap.
-	if !q.push(readChunk{data: []byte("0123456789abcdef")}, abort, done) {
-		t.Fatal("first push reported not retained")
-	}
-	// The next push exceeds the cap: it must block.
-	go func() {
-		pushResult <- q.push(readChunk{data: []byte("XXXXXXXXXXXXXXXX")}, abort, done) // 16 bytes: blocks until a pop frees >= 16 bytes... use 1 byte
-	}()
-	select {
-	case <-pushResult:
-		t.Fatal("DEFECT: push did not block when retained bytes would exceed the cap")
-	case <-time.After(100 * time.Millisecond):
-	}
-	// Pop one chunk (16 bytes freed): the blocked push (16 bytes) must complete.
-	if _, ok, _, _ := q.pop(); !ok {
-		t.Fatal("pop of a full queue returned not-ok")
-	}
-	select {
-	case ok := <-pushResult:
-		if !ok {
-			t.Fatal("push after pop reported not retained")
+	synctest.Test(t, func(t *testing.T) {
+		q := newPipeQueue(16)
+		if !q.push(readChunk{data: []byte("0123456789abcdef")}, nil) {
+			t.Fatal("initial push failed")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("push stayed blocked after pop freed room")
-	}
-	if got := q.retainedBytes(); got != 16 {
-		t.Fatalf("retained = %d, want 16 (popped 16-byte chunk, pushed 16-byte chunk)", got)
-	}
+		result := make(chan bool, 1)
+		go func() { result <- q.push(readChunk{data: []byte("next")}, nil) }()
+		synctest.Wait()
+		select {
+		case <-result:
+			t.Fatal("push did not block at the capacity limit")
+		default:
+		}
+		if _, ok, _, _ := q.pop(); !ok {
+			t.Fatal("full queue was empty")
+		}
+		synctest.Wait()
+		if !<-result {
+			t.Fatal("push did not retain the chunk after room was freed")
+		}
+		if got := q.retainedBytes(); got != 4 {
+			t.Fatalf("retained=%d, want 4", got)
+		}
+	})
 }
 
-// TestPipeQueuePushUnblocksOnClose: closing the queue must wake a blocked
-// pusher and report not-retained.
 func TestPipeQueuePushUnblocksOnClose(t *testing.T) {
-	t.Parallel()
-
-	q := newPipeQueue(4)
-	done := make(chan struct{})
-	abort := make(chan struct{})
-	if !q.push(readChunk{data: []byte("abcd")}, abort, done) {
-		t.Fatal("first push not retained")
-	}
-	res := make(chan bool, 1)
-	go func() { res <- q.push(readChunk{data: []byte("efgh")}, abort, done) }()
-	select {
-	case <-res:
-		t.Fatal("DEFECT: push did not block at cap")
-	case <-time.After(100 * time.Millisecond):
-	}
-	q.close()
-	select {
-	case ok := <-res:
-		if ok {
-			t.Fatal("push after close reported retained")
+	synctest.Test(t, func(t *testing.T) {
+		q := newPipeQueue(4)
+		q.push(readChunk{data: []byte("abcd")}, nil)
+		result := make(chan bool, 1)
+		go func() { result <- q.push(readChunk{data: []byte("efgh")}, nil) }()
+		synctest.Wait()
+		q.closeTruncated()
+		synctest.Wait()
+		if <-result {
+			t.Fatal("push admitted output after queue closure")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("close did not wake the blocked push")
-	}
+		if got := q.retainedBytes(); got != 4 {
+			t.Fatalf("retained=%d, want the original 4-byte prefix", got)
+		}
+	})
 }
 
-// TestPipeQueuePushUnblocksOnAbortAndDone: abort and done channels must both
-// wake a blocked pusher (kill/timeout/shutdown paths).
-func TestPipeQueuePushUnblocksOnAbortAndDone(t *testing.T) {
-	t.Parallel()
-
-	for _, name := range []string{"abort", "done"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			q := newPipeQueue(4)
-			done := make(chan struct{})
-			abort := make(chan struct{})
-			if !q.push(readChunk{data: []byte("abcd")}, abort, done) {
-				t.Fatal("first push not retained")
-			}
-			res := make(chan bool, 1)
-			go func() { res <- q.push(readChunk{data: []byte("efgh")}, abort, done) }()
-			select {
-			case <-res:
-				t.Fatal("DEFECT: push did not block at cap")
-			case <-time.After(100 * time.Millisecond):
-			}
-			if name == "abort" {
-				close(abort)
-			} else {
-				close(done)
-			}
-			select {
-			case ok := <-res:
-				if ok {
-					t.Fatalf("push woke by %s reported retained", name)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatalf("%s did not wake the blocked push", name)
-			}
-		})
-	}
+func TestPipeQueuePushUnblocksOnAbort(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		q := newPipeQueue(4)
+		abort := make(chan struct{})
+		q.push(readChunk{data: []byte("abcd")}, abort)
+		result := make(chan bool, 1)
+		go func() { result <- q.push(readChunk{data: []byte("efgh")}, abort) }()
+		synctest.Wait()
+		close(abort)
+		synctest.Wait()
+		if <-result {
+			t.Fatal("aborted capacity wait admitted output")
+		}
+		if got := q.retainedBytes(); got != 4 {
+			t.Fatalf("retained=%d, want the original 4-byte prefix", got)
+		}
+	})
 }
 
-// TestPumpPipeBlocksInReadWhenQueueFull proves backpressure reaches the child:
-// with a capped queue and no consumer, the pump must stop reading (its Read is
-// blocked behind the full queue), so a child writing past cap+8KiB is blocked
-// in write(). We observe this at the queue level: retained stays <= cap and
-// the pump goroutine is parked in push, not spinning.
+// A full queue parks the pump in push, stopping further pipe reads. The child
+// then blocks once the kernel pipe also fills.
 func TestPumpPipeBlocksInReadWhenQueueFull(t *testing.T) {
 	t.Parallel()
 
@@ -258,16 +217,16 @@ func TestPumpPipeBlocksInReadWhenQueueFull(t *testing.T) {
 	for q.retainedBytes() < cap && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if got := q.retainedBytes(); got > cap+DefaultBufSize {
-		t.Fatalf("DEFECT: retained %d exceeds cap %d + one in-flight chunk %d", got, cap, DefaultBufSize)
+	if got := q.retainedBytes(); got > cap {
+		t.Fatalf("retained %d exceeds cap %d", got, cap)
 	}
 	// With the queue full and no pop, retained must stay bounded: sample twice.
 	time.Sleep(100 * time.Millisecond)
-	if got := q.retainedBytes(); got > cap+DefaultBufSize {
-		t.Fatalf("DEFECT: retained grew past cap+chunk while pump should be blocked: %d > %d", got, cap+DefaultBufSize)
+	if got := q.retainedBytes(); got > cap {
+		t.Fatalf("retained grew past cap while pump should be blocked: %d > %d", got, cap)
 	}
 
-	// Unblock the pump via abort; it must finish promptly (discard drain).
+	// Unblock the pump via abort; it must close the stream as incomplete.
 	close(abort)
 	_ = r.Close()
 	select {
@@ -308,33 +267,40 @@ func (r *infiniteReader) Close() error {
 	return nil
 }
 
-// TestPipeQueuePushOversizedChunkNeverDeadlocks pins the empty-queue bypass:
-// a chunk larger than the cap must still be accepted when the queue is empty
-// (otherwise a cap below DefaultBufSize would deadlock the pump on the first
-// full read).
-func TestPipeQueuePushOversizedChunkNeverDeadlocks(t *testing.T) {
-	t.Parallel()
-
-	q := newPipeQueue(4) // cap smaller than one chunk
-	done := make(chan struct{})
-	abort := make(chan struct{})
-	res := make(chan bool, 1)
-	go func() { res <- q.push(readChunk{data: make([]byte, DefaultBufSize)}, abort, done) }()
-	select {
-	case ok := <-res:
-		if !ok {
-			t.Fatal("oversized chunk on an empty queue was not retained")
+// The pump limits each read to the configured cap, so a cap smaller than
+// DefaultBufSize neither overfills an empty queue nor deadlocks the first push.
+func TestPumpPipe_SmallCapRespectsLimit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const capacity = 4
+		const payload = "a small cap still preserves every output byte"
+		q := newPipeQueue(capacity)
+		child := &ChildProcess{}
+		done := make(chan struct{})
+		go func() { child.pumpPipe(io.NopCloser(strings.NewReader(payload)), &q); close(done) }()
+		var got strings.Builder
+		for {
+			synctest.Wait()
+			if n := q.retainedBytes(); n > capacity {
+				t.Fatalf("retained=%d exceeds capacity=%d", n, capacity)
+			}
+			chunk, ok, closed, _ := q.pop()
+			if ok {
+				got.Write(chunk.data)
+				continue
+			}
+			if closed {
+				break
+			}
+			t.Fatal("pump stopped without queuing output or closing")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("BLOCKING: push of a chunk larger than the cap deadlocked on an empty queue")
-	}
-	if got := q.retainedBytes(); got != DefaultBufSize {
-		t.Fatalf("retained = %d, want %d (one oversized chunk)", got, DefaultBufSize)
-	}
+		<-done
+		if got.String() != payload || q.cutShort() {
+			t.Fatalf("capture=(%q,truncated=%v), want (%q,false)", got.String(), q.cutShort(), payload)
+		}
+	})
 }
 
-// TestSpawnChild_CapBelowChunkSizeStillDrains is the end-to-end form of the
-// oversized-chunk rule: maxBufferedOutputBytes below DefaultBufSize must not
+// TestSpawnChild_CapBelowChunkSizeStillDrains checks that maxBufferedOutputBytes below DefaultBufSize must not
 // wedge the pump; the full output must still drain.
 func TestSpawnChild_CapBelowChunkSizeStillDrains(t *testing.T) {
 	skipSlow(t)
@@ -374,13 +340,8 @@ func TestSpawnChild_CapBelowChunkSizeStillDrains(t *testing.T) {
 
 var errFakeClosed = errors.New("fake pipe closed")
 
-// TestSpawnChild_ChildBlockedPastCap proves backpressure reaches the child:
-// with a small cap and no reads, the writer child must be blocked in write()
-// (its progress stalls), which we observe by reading exactly cap bytes and
-// then seeing no more data arrive until we drain. We use a writer that emits
-// numbered chunks and stops; if the child were never blocked, the whole
-// output would already be in the kernel pipe and the pump would have read it
-// all into the queue — but the queue is capped, so the child stalls.
+// Delaying consumption must keep the queue bounded while allowing the entire
+// finite output to be delivered once the consumer starts reading.
 func TestSpawnChild_ChildBlockedPastCap(t *testing.T) {
 	skipSlow(t)
 	skipIfWindows(t)
@@ -397,16 +358,13 @@ func TestSpawnChild_ChildBlockedPastCap(t *testing.T) {
 		t.Fatalf("SpawnChild: %v", err)
 	}
 
-	// With zero reads for 300ms, retained must stay <= cap + one in-flight chunk.
+	// With zero reads, the queued payload must stay within its cap.
 	time.Sleep(300 * time.Millisecond)
-	if got := child.stdout.retainedBytes(); got > capBytes+DefaultBufSize {
-		t.Fatalf("retained %d exceeds cap %d + in-flight %d — pump did not block", got, capBytes, DefaultBufSize)
+	if got := child.stdout.retainedBytes(); got > capBytes {
+		t.Fatalf("retained %d exceeds cap %d", got, capBytes)
 	}
-	// The child cannot have finished: total output ~128 KiB >> cap, so it must
-	// still be alive (blocked in write) or just finishing; wait must NOT have
-	// resolved with a completed stream before we drained. Either way retained
-	// stays bounded, which is the memory assertion. Now drain and verify the
-	// FULL output arrives (completeness preserved — no load-shedding).
+	// Drain the full numbered output and verify that bounding the queue did
+	// not lose any payload.
 	var total int
 	deadline := time.Now().Add(10 * time.Second)
 	for {
@@ -418,15 +376,12 @@ func TestSpawnChild_ChildBlockedPastCap(t *testing.T) {
 			break
 		}
 		total += len(data)
-		if child.stdout.retainedBytes() > capBytes+DefaultBufSize {
+		if child.stdout.retainedBytes() > capBytes {
 			t.Fatalf("retained grew past cap while draining: %d", child.stdout.retainedBytes())
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("drain did not finish in 10s")
 		}
-	}
-	if total < 125*1024 {
-		t.Fatalf("drained only %d bytes, want the complete 2000*65=130000 bytes — backpressure must not drop bytes", total)
 	}
 	if total != 2000*65 {
 		t.Fatalf("drained %d bytes, want exactly 130000 (2000 lines x 65 bytes)", total)
@@ -440,7 +395,7 @@ func TestSpawnChild_ChildBlockedPastCap(t *testing.T) {
 // TestSpawnChild_WaitResolvesWithFullUnreadQueue pins decoupling: wait() must
 // resolve when the child is reaped even with zero reads and a full queue. The
 // writer here blocks once the kernel pipe + capped queue fill, so it runs
-// until killed; wait() resolving before the kill proves reaping is independent
+// until killed; wait() resolving after the kill proves reaping is independent
 // of stream consumption.
 func TestSpawnChild_WaitResolvesWithFullUnreadQueue(t *testing.T) {
 	skipSlow(t)
@@ -458,7 +413,7 @@ func TestSpawnChild_WaitResolvesWithFullUnreadQueue(t *testing.T) {
 	}
 	// Let the queue fill.
 	time.Sleep(300 * time.Millisecond)
-	if got := child.stdout.retainedBytes(); got > 8*1024+DefaultBufSize {
+	if got := child.stdout.retainedBytes(); got > 8*1024 {
 		t.Fatalf("retained %d exceeds cap before wait", got)
 	}
 	// Kill the child: the reaper must record the exit and wait() must resolve
@@ -487,13 +442,11 @@ func TestSpawnChild_WaitResolvesWithFullUnreadQueue(t *testing.T) {
 		t.Fatal("wait() did not resolve with a full unread queue — reaping re-coupled to consumption")
 	}
 	// Queue is still bounded after reap.
-	if got := child.stdout.retainedBytes(); got > 8*1024+DefaultBufSize {
-		t.Fatalf("retained %d after reap exceeds cap+chunk", got)
+	if got := child.stdout.retainedBytes(); got > 8*1024 {
+		t.Fatalf("retained %d after reap exceeds cap", got)
 	}
-	// Stream terminates promptly after reap+kill: abort wakes the blocked
-	// pump, which discards, and settlePumps force-closes + marks truncated.
-	// A clean done is also acceptable if the in-group writers died with the
-	// kill before the abort landed; either way the read loop must end.
+	// Aborted admission ends the pump with a truncated prefix. A pump that
+	// retained every byte and reached EOF during grace may finish cleanly.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		_, done, err := child.ReadStdoutContext(context.Background())
@@ -507,8 +460,8 @@ func TestSpawnChild_WaitResolvesWithFullUnreadQueue(t *testing.T) {
 }
 
 // TestSpawnChild_KillUnblocksStuckPump: a child writing past the cap with zero
-// reads leaves the pump blocked in push; kill() must promptly unblock it
-// (abort wakes push -> discard drain -> force-close -> settle) with a deadline.
+// reads leaves the pump blocked in push; kill() must promptly unblock it and
+// end the incomplete capture.
 func TestSpawnChild_KillUnblocksStuckPump(t *testing.T) {
 	skipSlow(t)
 	skipIfWindows(t)
@@ -524,7 +477,7 @@ func TestSpawnChild_KillUnblocksStuckPump(t *testing.T) {
 	}
 	// Let the queue fill; pump is now blocked in push.
 	time.Sleep(300 * time.Millisecond)
-	if got := child.stdout.retainedBytes(); got > 8*1024+DefaultBufSize {
+	if got := child.stdout.retainedBytes(); got > 8*1024 {
 		t.Fatalf("retained %d exceeds cap before kill", got)
 	}
 	start := time.Now()
@@ -552,7 +505,7 @@ func TestSpawnChild_KillUnblocksStuckPump(t *testing.T) {
 }
 
 // TestSpawnChild_TimeoutUnblocksStuckPump: timeoutMs must abort the drain and
-// unblock a pump stuck on a full queue (the abortCtx path in jsSpawn).
+// unblock a pump stuck on a full queue through the spawn context.
 func TestSpawnChild_TimeoutUnblocksStuckPump(t *testing.T) {
 	skipSlow(t)
 	_, runJS := asyncTestEnv(t)
@@ -577,56 +530,41 @@ func TestSpawnChild_TimeoutUnblocksStuckPump(t *testing.T) {
 	}
 }
 
-// TestSpawnOptsMaxBufferedOutputBytesIsHonored checks the JS opts key reaches
-// the queue cap end to end: spawn via the JS binding with a tiny
-// maxBufferedOutputBytes, never read, and assert via a Go-side probe that the
-// retained bytes stay under the cap. Then kill and confirm prompt settle.
+// The requested cap must reach the actual native child launched by JavaScript.
+// ASCII keeps JS string length equal to payload bytes, so every returned chunk
+// can be checked against the requested bound while completeness is verified.
 func TestSpawnOptsMaxBufferedOutputBytesIsHonored(t *testing.T) {
 	skipSlow(t)
-	skipIfWindows(t)
-	t.Parallel()
-
-	const capBytes = int64(4096)
-	// Drive the JS binding so the opts parsing is exercised, but observe the
-	// queue from Go via the child handle captured by the script.
-	_, runJS := asyncTestEnv(t)
-	value, err := runJS(`
-		const child = await exec.spawn("sh", ["-c", "while true; do printf 'zzzzzzzzzzzzzzzz\\n'; done"], {maxBufferedOutputBytes: 4096});
-		globalThis.__child = child;
-		await new Promise(r => setTimeout(r, 400));
-		await child.kill();
-		const w = await child.wait();
-		__collect(JSON.stringify({code: w.code}));
-	`)
-	if err != nil {
-		t.Fatalf("runJS: %v", err)
-	}
-	if !strings.Contains(value.String(), `"code":-1`) {
-		t.Fatalf("wait code = %s, want -1 (killed)", value.String())
-	}
-
-	// Direct Go-level check of the same SpawnConfig path the opts key feeds.
-	child, err := SpawnChild(context.Background(), SpawnConfig{
-		Command:                "sh",
-		Args:                   []string{"-c", `while true; do printf 'zzzzzzzzzzzzzzzz\n'; done`},
-		MaxBufferedOutputBytes: capBytes,
+	vm, adapter, loop := newJSTestRuntime(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	execTestOwner(t, loop, func() error {
+		if err := vm.Set("spawn", jsSpawn(ctx, vm, adapter, loop, SpawnChild)); err != nil {
+			return err
+		}
+		if err := vm.Set("command", os.Args[0]); err != nil {
+			return err
+		}
+		return vm.Set("helperEnv", map[string]string{outputLifecycleHelperEnv: "ascii", "GORACE": "atexit_sleep_ms=0"})
 	})
-	if err != nil {
-		t.Fatalf("SpawnChild: %v", err)
-	}
-	time.Sleep(300 * time.Millisecond)
-	if got := child.stdout.retainedBytes(); got > int(capBytes)+DefaultBufSize {
-		t.Fatalf("retained %d exceeds configured cap %d + in-flight chunk", got, capBytes)
-	}
-	if err := child.Kill(); err != nil {
-		t.Fatalf("Kill: %v", err)
-	}
-	settled := make(chan struct{})
-	go func() { <-child.settled; close(settled) }()
-	select {
-	case <-settled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("settle did not complete within 5s of kill")
+	got := evalOnLoop(t, vm, loop, `(async function () {
+		var child = await spawn(command, [], {env: helperEnv, maxBufferedOutputBytes: 4});
+		var status = await child.wait();
+		async function drain(stream) {
+			var text = "", maxChunk = 0;
+			for (;;) {
+				var chunk = await stream.read();
+				if (chunk.done) return {text: text, maxChunk: maxChunk, truncated: !!chunk.truncated};
+				text += chunk.value;
+				maxChunk = Math.max(maxChunk, chunk.value.length);
+			}
+		}
+		var streams = await Promise.all([drain(child.stdout), drain(child.stderr)]);
+		__got({code: status.code, stdout: streams[0].text, stderr: streams[1].text,
+			bounded: streams.every(function (s) { return s.maxChunk <= 4 && !s.truncated; })});
+	})().catch(function (e) { __got({error: String(e)}); });`)
+	if got["code"] != int64(0) || got["stdout"] != "0123456789abcdef" || got["stderr"] != "ready" || got["bounded"] != true {
+		t.Fatalf("native JS option result=%v", got)
 	}
 }
 
@@ -675,13 +613,13 @@ func TestSpawnChild_EngineBaseCtxShutdownUnblocksStuckPumpGo(t *testing.T) {
 
 	// Let the queue fill and the pump block in push.
 	time.Sleep(400 * time.Millisecond)
-	if got := child.stdout.retainedBytes(); got > 8*1024+DefaultBufSize {
+	if got := child.stdout.retainedBytes(); got > 8*1024 {
 		t.Fatalf("retained %d exceeds cap before shutdown", got)
 	}
 
 	// Engine base-context shutdown: the lifetime tracker kills the child, and
-	// Kill -> AbortDrain wakes the blocked push; the pump discards and
-	// settlePumps force-closes.
+	// Kill -> AbortDrain wakes the blocked push, preserving its queued prefix
+	// and ending the stream as truncated when admission fails.
 	baseCancel()
 	settled := make(chan struct{})
 	go func() { <-child.settled; close(settled) }()

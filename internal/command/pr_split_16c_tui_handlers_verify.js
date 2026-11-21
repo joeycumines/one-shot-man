@@ -257,7 +257,7 @@
     // NOT a verification result: it must never forgive a failing split as
     // pre-existing, matching the batch verifiers in pr_split_06.
     function _isUnknownVerdict(result) {
-        return !!(result && (result.execFailed || result.truncated || result.cancelled));
+        return !!(result && (result.execFailed || result.truncated || result.cancelled || verifyCleanupFailed(result)));
     }
 
     function isThenable(value) {
@@ -278,41 +278,90 @@
         return s._verifySetupEpoch;
     }
 
-    function disposeVerifySetupResult(result) {
-        if (!result) return;
-        var cleaned = false;
-        var cleanupWorktree = function() {
-            if (cleaned) return null;
-            cleaned = true;
-            if (!result.worktreeDir || !result.dir ||
-                typeof prSplit.cleanupVerifyWorktree !== 'function') {
-                return null;
+    function verifySetupFailure(error, details) {
+        var failure = Object.assign({}, details || {}, error && typeof error === 'object' ? error : {});
+        failure.error = error && typeof error.error === 'string' ? error.error
+            : (error && error.message ? error.message : String(error));
+        return failure;
+    }
+
+    function verifyCleanupFailed(result) {
+        return !!(result && (result.treeCleanupError || result.worktreeRetained || result.cleanupFailed));
+    }
+
+    // Own the complete close/remove operation, including when a cancelled
+    // setup resolves after its replacement started. Its outcome belongs to
+    // that setup; disposal must never append or advance replacement rows.
+    function disposeVerifySetupResult(s, result) {
+        if (!result) return result;
+        var disposed = Object.assign({}, result);
+        var report = function(outcome) {
+            if (verifyCleanupFailed(outcome)) {
+                if (!outcome.error) outcome.error = outcome.treeCleanupError || 'verify cleanup failed';
+                if (outcome.worktreeDir && outcome.error.indexOf(outcome.worktreeDir) < 0) {
+                    outcome.error += '; worktree ' + (outcome.worktreeRetained ? 'retained at ' : 'at ') + outcome.worktreeDir;
+                }
+                log.warn('verify setup cleanup failed', {
+                    error: outcome.error || outcome.treeCleanupError,
+                    worktreeDir: outcome.worktreeDir,
+                    worktreeRetained: !!outcome.worktreeRetained
+                });
             }
+            return outcome;
+        };
+        var failed = function(error, retained) {
+            var failure = verifySetupFailure(error, disposed);
+            if (disposed.error && disposed.error !== failure.error) {
+                failure.error = disposed.error + '; cleanup: ' + failure.error;
+            }
+            failure.session = null;
+            failure.passed = false;
+            failure.execFailed = true;
+            failure.cleanupFailed = true;
+            if (retained && failure.worktreeDir) failure.worktreeRetained = true;
+            if (failure.worktreeDir && failure.error.indexOf(failure.worktreeDir) < 0) {
+                failure.error += '; worktree ' + (failure.worktreeRetained ? 'retained at ' : 'cleanup attempted at ') + failure.worktreeDir;
+            }
+            return report(failure);
+        };
+        var cleanupWorktree = function(closeOutcome) {
+            disposed.session = null;
+            if (closeOutcome === false) return failed('verify session did not close', true);
+            if (verifyCleanupFailed(closeOutcome)) return failed(closeOutcome, true);
+            // A known failure is evidence to retain, not permission to retry
+            // removal after the process owner may have become unreachable.
+            if (verifyCleanupFailed(disposed)) return report(disposed);
+            if (!disposed.worktreeDir || !disposed.dir) return disposed;
+            var finish = function(outcome) {
+                if (verifyCleanupFailed(outcome)) return failed(outcome, false);
+                disposed.worktreeDir = null;
+                return disposed;
+            };
             try {
-                return prSplit.cleanupVerifyWorktree(result.dir, result.worktreeDir);
-            } catch (e) {
-                log.debug('verifySetup: stale worktree cleanup failed', { error: e.message || String(e) });
-                return null;
+                var removal = prSplit.cleanupVerifyWorktree(disposed.dir, disposed.worktreeDir);
+                return isThenable(removal) ? Promise.resolve(removal).then(finish, function(error) {
+                    return failed(error, false);
+                }) : finish(removal);
+            } catch (error) {
+                return failed(error, false);
             }
         };
 
-        var closeResult = null;
-        if (result.session && typeof result.session.close === 'function') {
-            try {
-                closeResult = result.session.close();
-            } catch (e) {
-                log.debug('verifySetup: stale session close failed', { error: e.message || String(e) });
+        var operation;
+        try {
+            if (result.session && typeof result.session.close !== 'function') {
+                operation = failed('verify session cannot be closed', true);
+            } else {
+                var closeResult = result.session ? result.session.close() : null;
+                operation = isThenable(closeResult) ? Promise.resolve(closeResult).then(cleanupWorktree, function(error) {
+                    return failed(error, true);
+                }) : cleanupWorktree(closeResult);
             }
+        } catch (error) {
+            operation = failed(error, true);
         }
-        var disposeResult = null;
-        if (isThenable(closeResult)) {
-            disposeResult = Promise.resolve(closeResult).then(cleanupWorktree, cleanupWorktree);
-        } else {
-            disposeResult = cleanupWorktree();
-        }
-        if (isThenable(disposeResult) && typeof prSplit._trackPaneOperation === 'function') {
-            prSplit._trackPaneOperation(s, disposeResult);
-        }
+        return isThenable(operation) && typeof prSplit._trackPaneOperation === 'function'
+            ? prSplit._trackPaneOperation(s, operation) : operation;
     }
 
 
@@ -325,7 +374,7 @@
         if (!state || state.cancelled) return;
         state.cancelled = true;
         if (!state.pending) {
-            disposeVerifySetupResult(state.result);
+            disposeVerifySetupResult(s, state.result);
         }
     }
 
@@ -347,17 +396,13 @@
                 state.pending = false;
                 return;
             }
-            disposeVerifySetupResult(result);
+            return disposeVerifySetupResult(s, result);
         };
-        try {
-            promise.then(settle, function(err) {
-                settle({ error: (err && err.message) ? err.message : String(err) });
-            });
-            if (typeof prSplit._trackPaneOperation === 'function') {
-                prSplit._trackPaneOperation(s, promise);
-            }
-        } catch (err) {
-            settle({ error: (err && err.message) ? err.message : String(err) });
+        var outcome = Promise.resolve(promise).then(settle, function(err) {
+            return settle(verifySetupFailure(err));
+        });
+        if (typeof prSplit._trackPaneOperation === 'function') {
+            prSplit._trackPaneOperation(s, outcome);
         }
     }
 
@@ -373,56 +418,95 @@
         return { pending: false, result: state.result };
     }
 
-    function startInteractiveSession(session, worktreeDir, dir) {
-        if (!session) {
-            return { pending: false, result: { error: 'interactive shell unavailable' } };
+    function failInteractiveSetup(s, error, details) {
+        var failure = verifySetupFailure(error, details);
+        if (verifyCleanupFailed(failure)) {
+            failure.passed = false;
+            failure.execFailed = true;
+            failure.cleanupFailed = true;
+            // This newly prepared worktree has not reached removal: a
+            // startup failure already carrying cleanup evidence retains it.
+            if (details.worktreeDir) failure.worktreeRetained = true;
         }
-        if (typeof session.start !== 'function') {
-            return { pending: false, result: { session: session } };
-        }
+        return disposeVerifySetupResult(s, failure);
+    }
 
-        var started;
-        try {
-            started = session.start();
-        } catch (e) {
-            return {
-                pending: false,
-                result: {
-                    error: (e && e.message) ? e.message : String(e),
-                    worktreeDir: worktreeDir,
-                    dir: dir
-                }
-            };
-        }
-        if (!isThenable(started)) {
-            return { pending: false, result: { session: session } };
-        }
-        return {
-            pending: true,
-            promise: started.then(function() {
-                return { session: session, worktreeDir: worktreeDir, dir: dir };
-            }, function(e) {
-                var failure = {
-                    error: (e && e.message) ? e.message : String(e),
-                    worktreeDir: worktreeDir,
-                    dir: dir
-                };
-                var closeResult = null;
-                if (session && typeof session.close === 'function') {
-                    try {
-                        closeResult = session.close();
-                    } catch (closeErr) {
-                        log.debug('startInteractiveSession: failed to close failed session', {
-                            error: closeErr.message || String(closeErr)
-                        });
-                    }
-                }
-                if (isThenable(closeResult)) {
-                    return closeResult.then(function() { return failure; }, function() { return failure; });
-                }
-                return failure;
-            })
+    function startInteractiveSession(s, session, worktree) {
+        var result = Object.assign({}, worktree, { session: session });
+        var failed = function(error) {
+            return failInteractiveSetup(s, error, result);
         };
+        if (!session) return failed('interactive shell unavailable');
+        if (typeof session.start !== 'function') return result;
+        try {
+            var started = session.start();
+            return isThenable(started) ? Promise.resolve(started).then(function() {
+                return result;
+            }, failed) : result;
+        } catch (error) {
+            return failed(error);
+        }
+    }
+
+    function recordVerifySetupFailure(s, branchName, result, fallbackError) {
+        s.verificationResults.push(Object.assign({}, result || {}, {
+            name: branchName,
+            status: prSplit._branchStatuses.FAILED,
+            passed: false,
+            skipped: false,
+            error: result && (result.error || result.treeCleanupError) || fallbackError,
+            output: result && result.output || '',
+            duration: 0,
+            preExisting: false
+        }));
+        s.verifyingIdx++;
+        return [s, tea.tick(1, 'verify-branch')];
+    }
+
+    // Verification owns the first session close, including after natural EOF.
+    // A registration that settles after cleanup started still owns its native
+    // ID, but has no authority to change a replacement run or remove worktrees.
+    function registerVerifySession(s, session, branchName, worktreeDir) {
+        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.register !== 'function') return;
+        var mux = tuiMux;
+        var epoch = currentVerifyRunEpoch(s);
+        var failed = function(action, error) {
+            log.warn('verify session registration failed', {
+                action: action, branch: branchName, worktreeDir: worktreeDir,
+                error: (error && error.message) || String(error)
+            });
+        };
+        var registered = function(id) {
+            if (id == null) {
+                failed('register', new Error('session registration returned no ID'));
+                return;
+            }
+            if (s._verifyRunEpoch === epoch &&
+                (!s.wizard || s.wizard.current !== 'CANCELLED') &&
+                !s._verifyPaneCleanupPending && s.activeVerifySession === session) {
+                s.activeVerifySession = id;
+                return;
+            }
+            try {
+                if (typeof mux.unregister !== 'function') throw new Error('session unregister is unavailable');
+                return Promise.resolve(mux.unregister(id)).then(function(value) {
+                    if (value === false) failed('late unregister', new Error('session unregister did not confirm cleanup'));
+                }, function(error) { failed('late unregister', error); });
+            } catch (error) {
+                failed('late unregister', error);
+            }
+        };
+        try {
+            var registration = mux.register(session, { kind: 'verify', name: branchName }, { remainOnExit: true });
+            var operation = isThenable(registration)
+                ? Promise.resolve(registration).then(registered, function(error) { failed('register', error); })
+                : registered(registration);
+            if (isThenable(operation) && typeof prSplit._trackPaneOperation === 'function') {
+                prSplit._trackPaneOperation(s, operation);
+            }
+        } catch (error) {
+            failed('register', error);
+        }
     }
 
     // --- Per-branch verification (persistent shell, Task 7) ---
@@ -506,8 +590,20 @@
             }
         }
 
+        if (verifyCleanupFailed(s._baselineVerifyResult)) {
+            // Keep branch results aligned with the plan: the execution view
+            // indexes that array by split. Report a baseline cleanup failure
+            // through the existing error state, including its retained path.
+            return prSplit._enterErrorState(s, s._baselineVerifyResult.error);
+        }
+
         var splits = st.planCache.splits;
         if (!splits || s.verifyingIdx >= splits.length) {
+            // The independently started baseline still owns a temporary
+            // worktree. Observe its cleanup outcome before leaving verify.
+            if (s._baselineVerifyStarted && s._baselineVerifyResult === null) {
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-branch')];
+            }
             // All branches verified — transition to equiv check phase.
             prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
             return startEquivCheck(s);
@@ -551,14 +647,17 @@
                     // capture, cancellation) is NOT a baseline failure: it
                     // disables pre-existing detection instead of forgiving
                     // failing splits, matching the batch verifiers.
-                    s._baselineVerifyResult = {
+                    s._baselineVerifyResult = Object.assign({}, result, {
                         failed: !result.passed && !_isUnknownVerdict(result),
                         sourceBranch: sourceBranch
-                    };
-                }, function() {
+                    });
+                }, function(error) {
                     if (!baselineStillCurrent()) return;
                     // Baseline check errored — conservatively treat as no info.
-                    s._baselineVerifyResult = { failed: false, sourceBranch: sourceBranch };
+                    // A cleanup failure still owns its diagnostic and path.
+                    s._baselineVerifyResult = Object.assign({},
+                        verifyCleanupFailed(error) ? verifySetupFailure(error) : {},
+                        { failed: false, sourceBranch: sourceBranch });
                 });
             }
         }
@@ -621,20 +720,36 @@
             ? prSplit.canSpawnInteractiveShell()
             : false;
         var wantInteractive = spawnShellFn && canSpawnShell;
+        var setupState = s._verifySetup;
+        var resumingOneShot = setupState && !setupState.cancelled &&
+            setupState.branchName === branchName && setupState.kind === 'oneshot';
 
         // --- Interactive path (canonical): prepare worktree, spawn shell ---
-        if (wantInteractive) {
-            var setup = pendingVerifySetup(s, 'interactive', branchName);
-            if (setup && setup.pending) {
+        if (wantInteractive && !resumingOneShot) {
+            // A startup promise owns the worktree it received. Resume it
+            // before preparing another worktree, including during rollback.
+            var startSetup = pendingVerifySetup(s, 'interactive-start', branchName);
+            if (startSetup && startSetup.pending) {
                 return [s, tea.tick(10, 'verify-branch')];
             }
-            var wt = setup ? setup.result : prSplit.prepareVerifyWorktree(branchName, {
-                dir: dir,
-                verifyCommand: scopedCmd
-            });
-            if (isThenable(wt)) {
-                deferVerifySetup(s, 'interactive', branchName, wt);
-                return [s, tea.tick(10, 'verify-branch')];
+            var wt = startSetup && startSetup.result;
+            if (!startSetup) {
+                var setup = pendingVerifySetup(s, 'interactive', branchName);
+                if (setup && setup.pending) {
+                    return [s, tea.tick(10, 'verify-branch')];
+                }
+                wt = setup ? setup.result : prSplit.prepareVerifyWorktree(branchName, {
+                    dir: dir,
+                    verifyCommand: scopedCmd
+                });
+                if (isThenable(wt)) {
+                    deferVerifySetup(s, 'interactive', branchName, wt);
+                    return [s, tea.tick(10, 'verify-branch')];
+                }
+            }
+
+            if (verifyCleanupFailed(wt)) {
+                return recordVerifySetupFailure(s, branchName, wt, 'verify worktree cleanup failed');
             }
 
             if (wt && wt.skipped) {
@@ -652,19 +767,8 @@
                 return [s, tea.tick(1, 'verify-branch')];
             }
 
-            if (!wt || wt.error) {
-                s.verificationResults.push({
-                    name: branchName,
-                    status: prSplit._branchStatuses.FAILED,
-                    passed: false,
-                    skipped: false,
-                    error: wt && wt.error ? wt.error : 'prepare verify worktree returned no result',
-                    output: '',
-                    duration: 0,
-                    preExisting: false
-                });
-                s.verifyingIdx++;
-                return [s, tea.tick(1, 'verify-branch')];
+            if (!startSetup && (!wt || wt.error)) {
+                return recordVerifySetupFailure(s, branchName, wt, 'prepare verify worktree returned no result');
             }
 
             // T325+T380: Auto-open split-view with Verify tab.
@@ -682,19 +786,8 @@
             var paneRows = C.DEFAULT_ROWS;
             var paneCols = Math.max(80, (s.width || 80) - 8);
             var persistentShell = null;
-            var startSetup = pendingVerifySetup(s, 'interactive-start', branchName);
-            if (startSetup && startSetup.pending) {
-                return [s, tea.tick(10, 'verify-branch')];
-            }
-            if (startSetup) {
-                if (startSetup.result && !startSetup.result.error) {
-                    persistentShell = startSetup.result.session;
-                } else {
-                    log.debug('runVerifyBranch: interactive shell startup failed', {
-                        error: startSetup.result && startSetup.result.error
-                    });
-                }
-            } else {
+            var startResult = startSetup && startSetup.result;
+            if (!startSetup) {
                 try {
                     var spawnedShell = spawnShellFn(wt.worktreeDir, {
                         rows: paneRows,
@@ -702,72 +795,39 @@
                         deferStart: true
                     });
                     if (isThenable(spawnedShell)) {
-                        var creation = Promise.resolve(spawnedShell).then(function(session) {
-                            return startInteractiveSession(session, wt.worktreeDir, wt.dir);
+                        startResult = Promise.resolve(spawnedShell).then(function(session) {
+                            return startInteractiveSession(s, session, wt);
                         }, function(e) {
-                            return {
-                                pending: false,
-                                result: {
-                                    error: (e && e.message) ? e.message : String(e),
-                                    worktreeDir: wt.worktreeDir,
-                                    dir: wt.dir
-                                }
-                            };
+                            return failInteractiveSetup(s, e, wt);
                         });
-                        deferVerifySetup(s, 'interactive-start', branchName, creation.then(function(startState) {
-                            return startState.pending ? startState.promise : startState.result;
-                        }));
-                        return [s, tea.tick(10, 'verify-branch')];
-                    }
-                    var startState = startInteractiveSession(spawnedShell, wt.worktreeDir, wt.dir);
-                    if (startState.pending) {
-                        deferVerifySetup(s, 'interactive-start', branchName, startState.promise);
-                        return [s, tea.tick(10, 'verify-branch')];
-                    }
-                    if (startState.result && !startState.result.error) {
-                        persistentShell = startState.result.session;
                     } else {
-                        log.debug('runVerifyBranch: interactive shell startup failed', {
-                            error: startState.result && startState.result.error
-                        });
+                        startResult = startInteractiveSession(s, spawnedShell, wt);
                     }
                 } catch (e) {
-                    log.debug('runVerifyBranch: spawnShellSession failed', { error: e.message || String(e) });
-                    persistentShell = null;
+                    startResult = failInteractiveSetup(s, e, wt);
                 }
+            }
+            if (isThenable(startResult)) {
+                deferVerifySetup(s, 'interactive-start', branchName, startResult);
+                return [s, tea.tick(10, 'verify-branch')];
+            }
+            if (verifyCleanupFailed(startResult)) {
+                return recordVerifySetupFailure(s, branchName, startResult, 'interactive shell cleanup failed');
+            }
+            if (startResult && !startResult.error) {
+                persistentShell = startResult.session;
             }
 
             if (persistentShell) {
-                var registrationEpoch = currentVerifyRunEpoch(s);
                 s.verifyMode = 'interactive';
                 s.activeVerifySession = persistentShell;
                 s._verifySessionRef = persistentShell;
 
-                // Register persistent shell with SessionManager off the JS loop.
-                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
-                    try {
-                        var registration = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
-                        if (registration && typeof registration.then === 'function') {
-                            registration.then(function(id) {
-                                if (s._verifyRunEpoch === registrationEpoch &&
-                                    (!s.wizard || s.wizard.current !== 'CANCELLED') &&
-                                    s.activeVerifySession === persistentShell) {
-                                    s.activeVerifySession = id;
-                                }
-                            }).catch(function(e) {
-                                log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
-                            });
-                        } else if (registration != null && s.activeVerifySession === persistentShell) {
-                            s.activeVerifySession = registration;
-                        }
-                    } catch (e) {
-                        log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
-                    }
-                }
+                registerVerifySession(s, persistentShell, branchName, startResult.worktreeDir);
 
-                s.activeVerifyWorktree = wt.worktreeDir;
+                s.activeVerifyWorktree = startResult.worktreeDir;
                 s.activeVerifyBranch = branchName;
-                s.activeVerifyDir = wt.dir;
+                s.activeVerifyDir = startResult.dir;
                 s.activeVerifyStartTime = Date.now();
                 s.verifyElapsedMs = 0;
                 s.verifyScreen = '';
@@ -784,15 +844,8 @@
                 return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
             }
 
-            // Shell spawn failed — clean up worktree and fall through to
-            // one-shot path below.
-            try {
-                var gitExecFn = prSplit._gitExec;
-                if (gitExecFn) gitExecFn(wt.dir, ['worktree', 'remove', '--force', wt.worktreeDir]);
-            } catch (e) {
-                log.debug('runVerifyBranch: worktree cleanup failed', { error: e.message || String(e) });
-            }
-            // Fall through to one-shot path.
+            // Startup and rollback have both settled. A clean rollback may
+            // use the one-shot fallback; a failed cleanup returned above.
         }
 
         // --- One-shot path (degraded fallback): worktree + CaptureSession ---
@@ -812,6 +865,10 @@
         if (isThenable(sessionResult)) {
             deferVerifySetup(s, 'oneshot', branchName, sessionResult);
             return [s, tea.tick(10, 'verify-branch')];
+        }
+
+        if (verifyCleanupFailed(sessionResult)) {
+            return recordVerifySetupFailure(s, branchName, sessionResult, 'verify session cleanup failed');
         }
 
         if (sessionResult && sessionResult.skipped) {
@@ -875,33 +932,12 @@
         }
 
         // One-shot CaptureSession started successfully.
-        // Register with SessionManager async (fire-and-forget state update
-        // so the verify poll picks up the numeric SessionID on the next tick).
+        // Retain the registered capture until verification observes Close.
         s.verifyMode = 'oneshot';
         s.activeVerifySession = sessionResult.session;
         s._verifySessionRef = sessionResult.session;
 
-        var oneShotRegistrationEpoch = currentVerifyRunEpoch(s);
-        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
-            try {
-                var registration = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
-                if (registration && typeof registration.then === 'function') {
-                    registration.then(function(id) {
-                        if (s._verifyRunEpoch === oneShotRegistrationEpoch &&
-                            (!s.wizard || s.wizard.current !== 'CANCELLED') &&
-                            s.activeVerifySession === sessionResult.session) {
-                            s.activeVerifySession = id;
-                        }
-                    }).catch(function(e) {
-                        log.debug('runVerifyBranch: tuiMux.register oneshot failed', { error: e.message || String(e) });
-                    });
-                } else if (registration != null) {
-                    s.activeVerifySession = registration;
-                }
-            } catch (e) {
-                log.debug('runVerifyBranch: tuiMux.register oneshot failed', { error: e.message || String(e) });
-            }
-        }
+        registerVerifySession(s, sessionResult.session, branchName, sessionResult.worktreeDir);
         s.activeVerifyWorktree = sessionResult.worktreeDir;
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;
@@ -1170,19 +1206,27 @@
         var outputLines = s.verifyOutput[branchName] || [];
         if (!s.verifyOutput[branchName]) s.verifyOutput[branchName] = outputLines;
         var branchStart = Date.now();
-        var verifyResult = await prSplit.verifySplitAsync(branchName, {
-            dir: dir,
-            verifyCommand: scopedCmd,
-            verifyTimeoutMs: timeoutMs,
-            outputFn: function(line) {
-                if (!fallbackCurrent()) return;
-                outputLines.push(line);
-                // T352: Populate verifyScreen with latest fallback output so
-                // the inline terminal and Verify tab show live output.
-                var rows = Math.min(C.DEFAULT_ROWS, outputLines.length);
-                s.verifyScreen = outputLines.slice(-rows).join('\n');
-            }
-        });
+        var verifyResult;
+        try {
+            verifyResult = await prSplit.verifySplitAsync(branchName, {
+                dir: dir,
+                verifyCommand: scopedCmd,
+                verifyTimeoutMs: timeoutMs,
+                outputFn: function(line) {
+                    if (!fallbackCurrent()) return;
+                    outputLines.push(line);
+                    // T352: Populate verifyScreen with latest fallback output so
+                    // the inline terminal and Verify tab show live output.
+                    var rows = Math.min(C.DEFAULT_ROWS, outputLines.length);
+                    s.verifyScreen = outputLines.slice(-rows).join('\n');
+                }
+            });
+        } catch (error) {
+            if (!verifyCleanupFailed(error)) throw error;
+            verifyResult = Object.assign(verifySetupFailure(error), {
+                passed: false, execFailed: true, cleanupFailed: true
+            });
+        }
         var duration = Date.now() - branchStart;
 
         if (!fallbackCurrent()) return;
@@ -1196,6 +1240,7 @@
         // acquire preExisting either: an unknown result is never forgiven.
         var preExisting = false;
         var errorMsg = verifyResult.error || null;
+        var passed = !!verifyResult.passed && !verifyCleanupFailed(verifyResult);
         if (!verifyResult.passed && !verifyResult.skipped && !_isUnknownVerdict(verifyResult) && _isPreExistingFailure(s)) {
             preExisting = true;
             if (errorMsg) {
@@ -1203,17 +1248,17 @@
             }
         }
 
-        s.verificationResults.push({
+        s.verificationResults.push(Object.assign({}, verifyResult, {
             name: branchName,
             status: verifyResult.skipped ? prSplit._branchStatuses.SKIPPED
-                : (verifyResult.passed ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED),
-            passed: verifyResult.passed,
+                : (passed ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED),
+            passed: passed,
             skipped: verifyResult.skipped || false,
             error: errorMsg,
             output: verifyResult.output || '',
             duration: duration,
             preExisting: preExisting
-        });
+        }));
 
         s.verifyingIdx++;
     }

@@ -343,12 +343,14 @@
 
     // collectSpawnOutput drains a spawned child's stdout/stderr.
     //
-    // Neither the drain nor the wait may reject: an unhandled rejection is
-    // fatal to the event loop, and callers await this without a catch. A stream
-    // that cannot be drained is reported as truncated — the verdict is unknown,
-    // which is exactly what it is — so the failure stays inside the result.
+    // Native stream/wait failures stay inside the result. An output callback
+    // failure is rethrown only after both streams and the wait settle, so a
+    // failed observer cannot abandon command ownership or hide its cleanup
+    // outcome. No further output callbacks run after the first failure.
     async function collectSpawnOutput(child, outputFn) {
         var truncated = false;
+        var outputFailed = false;
+        var outputError;
 
         async function readAll(stream, streamOutputFn) {
             var buf = '';
@@ -371,13 +373,19 @@
                     var chunkStr = String(chunk.value);
                     buf += chunkStr;
                     // T44: Stream each chunk line-by-line to the output callback.
-                    if (streamOutputFn) {
+                    if (streamOutputFn && !outputFailed) {
                         var chunkLines = chunkStr.split('\n');
                         for (var cl = 0; cl < chunkLines.length; cl++) {
                             var line = chunkLines[cl];
                             // Skip trailing empty line from split (last \n produces empty string).
                             if (cl === chunkLines.length - 1 && line === '') continue;
-                            streamOutputFn(line);
+                            try {
+                                streamOutputFn(line);
+                            } catch (e) {
+                                outputFailed = true;
+                                outputError = e;
+                                break;
+                            }
                         }
                     }
                 }
@@ -389,7 +397,8 @@
         // (the command may fill stderr while we drain stdout). wait() is
         // guarded: an unrecorded exit rejects it, and that rejection is an
         // exec-layer failure of the command, not an unhandled rejection of the
-        // whole collection. A recorded status outranks cleanup failures.
+        // whole collection. A recorded status survives cleanup failures, which
+        // remain independent evidence that process-tree teardown failed.
         var waitResult = {};
         var waitError = null;
         var results = await Promise.all([
@@ -407,19 +416,44 @@
         // non-zero exit code alongside error true — both shapes are failures;
         // no consumer may treat either as success.)
         var waitMessage = waitError ? String((waitError && waitError.message) || waitError) : '';
-        return {
+        var treeCleanupError = String(waitResult.treeCleanupError ||
+            (waitError && waitError.treeCleanupError) || '');
+        var message = truncated
+            ? 'command output capture was cut short before EOF: the output is incomplete'
+            : (waitError ? waitMessage : (code !== 0 ? 'exit status ' + code : ''));
+        if (treeCleanupError && message.indexOf(treeCleanupError) < 0) {
+            message = (message ? message + '; ' : '') + treeCleanupError;
+        }
+        var result = {
             stdout: results[0],
             stderr: results[1],
             code: truncated || waitError ? -1 : code,
             signal: waitResult.signal || null,
             truncated: truncated,
-            error: truncated || waitError || code !== 0 ? true : false,
-            message: truncated
-                ? 'command output capture was cut short before EOF: the output is incomplete'
-                : (waitError
-                    ? waitMessage
-                    : (code !== 0 ? 'exit status ' + code : ''))
+            error: truncated || waitError || treeCleanupError || code !== 0 ? true : false,
+            message: message
         };
+        if (treeCleanupError) result.treeCleanupError = treeCleanupError;
+        if (outputFailed) {
+            if (!treeCleanupError) throw outputError;
+            // The thrown value may be primitive or frozen. Preserve it as
+            // the cause instead of mutating it to attach lifecycle evidence.
+            var callbackMessage = 'output callback failed';
+            try {
+                callbackMessage = String((outputError && outputError.message) || outputError);
+            } catch (_) {
+                // Even a throwing message getter or toString cannot erase
+                // cleanup evidence; the original value remains the cause.
+            }
+            var callbackFailure = new Error(callbackMessage);
+            callbackFailure.cause = outputError;
+            callbackFailure.treeCleanupError = treeCleanupError;
+            callbackFailure.code = result.code;
+            callbackFailure.signal = result.signal;
+            callbackFailure.truncated = result.truncated;
+            throw callbackFailure;
+        }
+        return result;
     }
 
     // gitExecAsync runs git asynchronously.
@@ -449,13 +483,15 @@
 
         var child = await exec.spawn('git', gitArgs);
         var collected = await collectSpawnOutput(child, outputFn);
-        return {
+        var result = {
             stdout: collected.stdout,
             stderr: collected.stderr,
             code: collected.code,
             error: collected.error,
             message: collected.message
         };
+        if (collected.treeCleanupError) result.treeCleanupError = collected.treeCleanupError;
+        return result;
     }
 
     // shellExecAsync runs a shell command asynchronously.
@@ -493,14 +529,19 @@
         } else if (!collected.truncated && collected.signal) {
             message = String(collected.signal);
         }
+        if (collected.treeCleanupError && message.indexOf(collected.treeCleanupError) < 0) {
+            message = (message ? message + '; ' : '') + collected.treeCleanupError;
+        }
 
-        return {
+        var result = {
             stdout: collected.stdout,
             stderr: collected.stderr,
             code: collected.code,
             error: collected.error || timedOut,
             message: message
         };
+        if (collected.treeCleanupError) result.treeCleanupError = collected.treeCleanupError;
+        return result;
     }
 
     // resolveDir resolves a directory to an absolute path.
@@ -629,7 +670,7 @@
         var collected = await collectSpawnOutput(child, null);
         var path = (collected.stdout || '').split('\n')[0].trim();
         return {
-            found: !collected.truncated && collected.code === 0 && path !== '',
+            found: !collected.error && !collected.truncated && collected.code === 0 && path !== '',
             path: path
         };
     }

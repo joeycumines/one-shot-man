@@ -10,6 +10,9 @@ import (
 const escaperHelperEnv = "OSM_EXEC_ESCAPER_HELPER"
 
 func TestMain(m *testing.M) {
+	if mode := os.Getenv(outputLifecycleHelperEnv); mode != "" {
+		runOutputLifecycleHelper(mode)
+	}
 	if os.Getenv(escaperHelperEnv) == "1" {
 		runEscaperHelper()
 	}

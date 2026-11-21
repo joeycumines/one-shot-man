@@ -22,6 +22,8 @@ jobs:
       # Prevent Go from silently upgrading past the go.mod toolchain installed
       # below (which breaks pinned staticcheck export-data compatibility).
       GOTOOLCHAIN: local
+      # Exercise native process and pipe concurrency on every supported OS.
+      GO_TEST_FLAGS: -race -count=1 -timeout=40m
     steps:
     - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
     # Derive the toolchain from go.mod rather than tracking `stable`. CI also

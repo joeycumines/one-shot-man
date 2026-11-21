@@ -183,7 +183,7 @@ func TestTruncateForProbeReason(t *testing.T) {
 	// inside the rune; rune slicing keeps it whole.
 	var sb strings.Builder
 	sb.WriteString("😀")
-	for i := 0; i < 600; i++ {
+	for range 600 {
 		sb.WriteByte('a')
 	}
 	long := sb.String()

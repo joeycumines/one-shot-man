@@ -158,7 +158,7 @@ func TestProgramCompletion_WaitCtxCompletedWinsOverCancelledCtx(t *testing.T) {
 	wantErr := errors.New("program exited with failure")
 	// Loop many times: the bug is a race in select, so a single iteration
 	// would pass even with the old code.
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		c := newProgramCompletion()
 		c.complete(wantErr)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -169,7 +169,7 @@ func TestProgramCompletion_WaitCtxCompletedWinsOverCancelledCtx(t *testing.T) {
 	}
 
 	// Success case: recorded nil must also win.
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		c := newProgramCompletion()
 		c.complete(nil)
 		ctx, cancel := context.WithCancel(context.Background())

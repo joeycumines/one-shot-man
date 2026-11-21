@@ -8,125 +8,164 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
-// TestChunk16_BaselineExecFailureIsNotBaselineFailure is the TUI-side
-// regression for the review-11/12 P1: the baseline verifySplitAsync now
-// resolves (never rejects) with {passed:false, execFailed:true} when the
-// exec layer breaks during baseline worktree setup. The TUI baseline
-// callback must classify that as "no information" (failed:false), NOT as a
-// baseline verification failure — otherwise a genuinely failing split is
-// labelled pre-existing and its dependents bypass the dependency guard.
-//
-// Scenario: baseline spawn rejects; split/1 exits 1; split/2 depends on
-// split/1. Assert: cached baseline failed===false; split/1 result
-// preExisting===false; split/2 is skipped with the dependency-failed reason.
+// These scenarios distinguish an unknown verification result from an
+// unconfirmed child termination. The latter also owns a retained worktree and
+// must stop the workflow; ordinary execution failure still permits subsequent
+// verification without forgiving its result as pre-existing.
+var baselineExecFailureScenarios = []string{
+	"spawn_rejection",
+	"initial_wait_rejection_confirmed_cleanup",
+	"persistent_wait_rejection",
+}
+
+// baselineExecFailureMockJS replaces only native exec and git boundaries. Both
+// the batch and TUI tests retain the real verifySplitAsync implementation. The
+// command's worktree identifies its branch, so baseline classification does not
+// depend on the order in which concurrently launched children are scheduled.
+const baselineExecFailureMockJS = `
+function installBaselineExecFailureMock(sourceBranch, scenario) {
+	var execMod = require('osm:exec');
+	var originalSpawn = execMod.spawn;
+	var originalGitAsync = prSplit._gitExecAsync;
+	var fixture = {spawned:[], worktrees:Object.create(null), removed:[], baselineWaits:0, baselineKills:0};
+	function gitOK() { return {stdout:'', stderr:'', code:0, error:false, message:''}; }
+	prSplit._gitExecAsync = function(dir, args) {
+		if (args[0] === 'worktree' && args[1] === 'add') {
+			fixture.worktrees[args[args.length - 1]] = args[args.length - 2];
+			return gitOK();
+		}
+		if (args[0] === 'worktree' && args[1] === 'remove') {
+			fixture.removed.push(args[args.length - 1]);
+			return gitOK();
+		}
+		return originalGitAsync.apply(this, arguments);
+	};
+	execMod.spawn = function(cmd, args, opts) {
+		if (cmd === 'git') return originalSpawn.apply(this, arguments);
+		var shellText = (args || []).join(' ');
+		var branch = null;
+		for (var name of Object.keys(fixture.worktrees)) {
+			if (shellText.indexOf(prSplit._shellQuote(fixture.worktrees[name])) >= 0) branch = name;
+		}
+		if (branch === null) throw new Error('unexpected verify command: ' + shellText);
+		fixture.spawned.push(branch);
+		var baseline = branch === sourceBranch;
+		if (baseline && scenario === 'spawn_rejection') {
+			return Promise.reject(new Error('spawn failed: resource temporarily unavailable'));
+		}
+		function doneStream() {
+			return {read:function() { return Promise.resolve({done:true}); }};
+		}
+		return {
+			stdout:doneStream(), stderr:doneStream(),
+			wait:function() {
+				if (!baseline) return Promise.resolve({code:1, signal:null});
+				fixture.baselineWaits++;
+				if (fixture.baselineWaits === 1 || scenario === 'persistent_wait_rejection') {
+					return Promise.reject(new Error('wait failed: no exit status'));
+				}
+				return Promise.resolve({code:0, signal:null});
+			},
+			kill:function() {
+				if (baseline) fixture.baselineKills++;
+				return Promise.resolve();
+			},
+			isAlive:function() { return false; },
+			close:function() {}
+		};
+	};
+	fixture.restore = function() {
+		execMod.spawn = originalSpawn;
+		prSplit._gitExecAsync = originalGitAsync;
+	};
+	return fixture;
+}
+`
+
+// TestChunk16_BaselineExecFailureIsNotBaselineFailure exercises the complete
+// verifier-to-TUI boundary. An unknown baseline with successful cleanup must
+// not forgive split/1's exit 1 or unblock dependent split/2. If both exit waits
+// reject, the same unknown verdict additionally retains its worktree and must
+// enter ERROR before any dependent branch starts.
 func TestChunk16_BaselineExecFailureIsNotBaselineFailure(t *testing.T) {
 	t.Parallel()
-	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
-
-	raw, err := evalJS(`(async function() {
-		setupPlanCache();
-		// Replace the 3-split plan with two splits where split/2 depends on split/1.
-		globalThis.prSplit._state.planCache.splits = [
-			{name: 'split/1', files: ['a.go']},
-			{name: 'split/2', files: ['b.go'], dependencies: ['split/1']}
-		];
-		globalThis.prSplit.runtime.verifyCommand = 'make test';
-		globalThis.prSplit.runtime.dir = '/tmp/repo';
-
-		// Install the git mock (worktree add/remove succeed) but break the
-		// verify child spawn: the FIRST spawned verify child is the baseline.
-		var execMod = require('osm:exec');
-		var origSpawn = execMod.spawn;
-		var origGitAsync = globalThis.prSplit._gitExecAsync;
-		// Route async git calls (worktree add/remove) through the mock table
-		// instead of the real exec.spawn('git', ...) path.
-		globalThis.prSplit._gitExecAsync = function(dir, args) {
-			var argv = ['git'];
-			if (dir && dir !== '' && dir !== '.') { argv.push('-C'); argv.push(dir); }
-			for (var i = 0; i < args.length; i++) argv.push(args[i]);
-			var a = argv.slice(1);
-			if (a.length >= 2 && a[0] === '-C') a = a.slice(2);
-			var key = a.join(' ');
-			var r = globalThis._gitResponses[key];
-			if (r === undefined) r = globalThis._gitResponses['worktree add'] || {stdout: '', stderr: '', code: 0, error: false, message: ''};
-			return r;
-		};
-		globalThis.__spawnCount = 0;
-		execMod.spawn = function(cmd, args, opts) {
-			if (cmd === 'git') return origSpawn.apply(this, arguments);
-			globalThis.__spawnCount++;
-			var isBaseline = globalThis.__spawnCount === 1;
-			function doneStream() {
-				return { read: function() { return Promise.resolve({done: true}); } };
+	for _, scenario := range baselineExecFailureScenarios {
+		t.Run(scenario, func(t *testing.T) {
+			evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+			scenarioJSON, err := json.Marshal(scenario)
+			if err != nil {
+				t.Fatal(err)
 			}
-			return {
-				stdout: doneStream(),
-				stderr: doneStream(),
-				wait: function() {
-					if (isBaseline) return Promise.reject(new Error('spawn failed: resource temporarily unavailable'));
-					return Promise.resolve({code: 1, signal: null});
-				},
-				kill: function() { return Promise.resolve(); },
-				isAlive: function() { return false; },
-				close: function() {}
-			};
-		};
-		globalThis._gitResponses = globalThis._gitResponses || {};
-		globalThis._gitResponses['worktree add'] = {stdout: '', stderr: '', code: 0, error: false, message: ''};
-		globalThis._gitResponses['worktree remove --force'] = globalThis._gitResponses['worktree add'];
+			raw, err := evalJS(`(async function() {
+				var scenario = ` + string(scenarioJSON) + `;
+				` + baselineExecFailureMockJS + `
+				setupPlanCache();
+				prSplit._state.planCache.sourceBranch = 'feature';
+				prSplit._state.planCache.splits = [
+					{name:'split/1', files:['a.go']},
+					{name:'split/2', files:['b.go'], dependencies:['split/1']}
+				];
+				prSplit.runtime.verifyCommand = 'make test';
+				prSplit.runtime.dir = '/tmp/repo';
+				var fixture = installBaselineExecFailureMock('feature', scenario);
+				try {
+					var s = initState('BRANCH_BUILDING');
+					s.isProcessing = true;
+					s.verifyingIdx = 0;
+					s.verifyOutput = {};
+					s.verificationResults = [];
+					s.outputLines = [];
+					s.verifyFallbackRunning = false;
+					s._verifyRunEpoch = 1;
+					prSplit.canSpawnInteractiveShell = function() { return false; };
+					prSplit.startVerifySession = function() { return {error:'no capture session', session:null}; };
 
-		var s = initState('BRANCH_BUILDING');
-		s.isProcessing = true;
-		s.verifyingIdx = 0;
-		s.verifyOutput = {};
-		s.verificationResults = [];
-		s.outputLines = [];
-		s.verifyFallbackRunning = false;
-		s._verifyRunEpoch = 1;
-
-		// Drive the verify-branch handler for both splits. Force the fallback
-		// (textonly) path so runVerifyFallbackAsync -> verifySplitAsync runs.
-		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
-		globalThis.prSplit.startVerifySession = function() { return { error: 'no capture session', session: null }; };
-
-		async function tickVerify() {
-			for (var i = 0; i < 50; i++) {
-				var r = update({type: 'Tick', id: 'verify-branch'}, s);
-				s = r[0];
-				// Let the baseline promise and the fallback promise settle:
-				// the event loop resolves tracked promises on its own poll,
-				// so drain both microtasks and a macrotask boundary.
-				for (var j = 0; j < 5; j++) await Promise.resolve();
-				await new Promise(function(res) { setTimeout(res, 0); });
-				var r2 = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
-				s = r2[0];
-				for (var k = 0; k < 5; k++) await Promise.resolve();
-				await new Promise(function(res) { setTimeout(res, 0); });
-				if (s.verifyingIdx >= 2 && !s.verifyFallbackRunning) break;
+					// Preserve the existing bounded event-loop driver. Await each
+					// macrotask boundary so the real baseline and fallback promises
+					// settle before driving the next verification transition.
+					for (var i = 0; i < 50; i++) {
+						s = update({type:'Tick', id:'verify-branch'}, s)[0];
+						for (var j = 0; j < 5; j++) await Promise.resolve();
+						await new Promise(function(resolve) { setTimeout(resolve, 0); });
+						s = update({type:'Tick', id:'verify-fallback-poll'}, s)[0];
+						for (var k = 0; k < 5; k++) await Promise.resolve();
+						await new Promise(function(resolve) { setTimeout(resolve, 0); });
+						if (s._baselineVerifyResult && !s.verifyFallbackRunning && (s.verifyingIdx >= 2 || s.wizard.current === 'ERROR')) break;
+					}
+					var baseline = s._baselineVerifyResult;
+					var debug = JSON.stringify({baseline:baseline, rows:s.verificationResults, fixture:fixture, wizard:s.wizard.current});
+					if (s._baselineVerifyStarted !== true || !baseline) return 'FAIL: baseline never settled: ' + debug;
+					if (baseline.failed !== false || baseline.passed || !baseline.execFailed || baseline.exitCode !== -1) return 'FAIL: baseline must be an unknown exec failure: ' + debug;
+					if (baseline.treeCleanupError) return 'FAIL: a rejected wait must not invent a tree cleanup error: ' + debug;
+					var wantsWait = scenario !== 'spawn_rejection';
+					if (fixture.baselineWaits !== (wantsWait ? 2 : 0) || fixture.baselineKills !== (wantsWait ? 1 : 0)) return 'FAIL: cleanup wait/kill path was not exercised: ' + debug;
+					if (fixture.spawned.length !== 2 || fixture.spawned.filter(function(name) { return name === 'feature'; }).length !== 1 || fixture.spawned.filter(function(name) { return name === 'split/1'; }).length !== 1) return 'FAIL: expected only baseline and split/1 attempts: ' + debug;
+					var r0 = s.verificationResults[0];
+					var r1 = s.verificationResults[1];
+					if (!r0 || r0.name !== 'split/1' || r0.passed || r0.exitCode !== 1 || r0.preExisting) return 'FAIL: split/1 must remain an unforgiven exit 1: ' + debug;
+					var baselineRemovals = fixture.removed.filter(function(path) { return path === fixture.worktrees.feature; }).length;
+					if (scenario === 'persistent_wait_rejection') {
+						if (!baseline.cleanupFailed || !baseline.worktreeRetained || baseline.worktreeDir !== fixture.worktrees.feature || baselineRemovals !== 0) return 'FAIL: unconfirmed child did not retain its worktree: ' + debug;
+						if (s.wizard.current !== 'ERROR' || !s.errorDetails || s.errorDetails.indexOf(baseline.worktreeDir) < 0 || s.errorDetails.indexOf('termination was not confirmed') < 0) return 'FAIL: retained baseline must display its cleanup error: ' + debug;
+						if (r1 || s.verificationResults.length !== 1) return 'FAIL: baseline cleanup failure must stop before dependent branch: ' + debug;
+					} else {
+						if (baseline.cleanupFailed || baseline.worktreeRetained || baselineRemovals !== 1) return 'FAIL: ordinary unknown baseline must have confirmed cleanup: ' + debug;
+						if (!r1 || r1.name !== 'split/2' || !r1.skipped || r1.passed || r1.preExisting) return 'FAIL: dependent split/2 must be skipped: ' + debug;
+						if (!r1.error || r1.error.indexOf('dependency split/1 failed') < 0) return 'FAIL: dependency guard reason missing: ' + debug;
+						if (s.verificationResults.length !== 2) return 'FAIL: unexpected result row: ' + debug;
+					}
+					return 'OK';
+				} finally {
+					fixture.restore();
+				}
+			})()`)
+			if err != nil {
+				t.Fatal(err)
 			}
-			globalThis.prSplit._gitExecAsync = origGitAsync;
-			return { started: s._baselineVerifyStarted, idx: s.verifyingIdx, results: s.verificationResults.length, epoch: s._verifyRunEpoch, processing: s.isProcessing, phase: s.verifyPhase, baseline: s._baselineVerifyResult };
-		}
-		var dbg = await tickVerify();
-		if (dbg.started !== true) return 'FAIL: baseline never started; dbg=' + JSON.stringify(dbg);
-		if (!s._baselineVerifyResult) return 'FAIL: baseline started but result never cached; dbg=' + JSON.stringify(dbg);
-
-		var baseline = s._baselineVerifyResult;
-		if (baseline.failed !== false) return 'FAIL: an execFailed baseline must be classified as no-info (failed:false), got ' + JSON.stringify(baseline);
-		var r0 = s.verificationResults[0];
-		var r1 = s.verificationResults[1];
-		if (!r0) return 'FAIL: no result for split/1';
-		if (r0.preExisting) return 'FAIL: split/1 failure must NOT be preExisting when the baseline verdict is unknown, got ' + JSON.stringify(r0);
-		if (!r1) return 'FAIL: no result for split/2';
-		if (!r1.skipped) return 'FAIL: split/2 must be skipped because its dependency split/1 failed, got ' + JSON.stringify(r1);
-		if (!r1.error || r1.error.indexOf('dependency split/1 failed') < 0) return 'FAIL: split/2 skip reason wrong: ' + r1.error;
-		return 'OK';
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if raw != "OK" {
-		t.Errorf("TUI baseline execFailed regression: %v", raw)
+			if raw != "OK" {
+				t.Errorf("TUI baseline execFailed regression: %v", raw)
+			}
+		})
 	}
 }
 

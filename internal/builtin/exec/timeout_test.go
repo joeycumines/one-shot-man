@@ -147,7 +147,7 @@ func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
 	defer cancel()
 	command, args := hangingCommand()
 	start := time.Now()
-	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
 	elapsed := time.Since(start)
 
 	if elapsed > 5*time.Second {

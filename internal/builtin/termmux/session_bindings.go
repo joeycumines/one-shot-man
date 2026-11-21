@@ -314,8 +314,16 @@ func registerSessionMethods(obj *goja.Object, s *muxState) {
 			}
 		}
 
+		var options []parent.RegisterOptions
+		if value := call.Argument(2); !goja.IsUndefined(value) && !goja.IsNull(value) {
+			optionsObj := value.ToObject(s.runtime)
+			if v := optionsObj.Get("remainOnExit"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				options = []parent.RegisterOptions{{RemainOnExit: v.ToBoolean()}}
+			}
+		}
+
 		return s.managerPromise(func() (any, error) {
-			id, err := s.mgr.Register(session, target)
+			id, err := s.mgr.Register(session, target, options...)
 			if err != nil {
 				return nil, err
 			}

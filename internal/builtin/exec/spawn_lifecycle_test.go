@@ -127,7 +127,7 @@ func TestRunExecWriterCloseFailurePreservesCleanupErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	command, args := hangingCommand()
-	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
 	if result["error"] != true {
 		t.Fatalf("runExec result = %#v, want error", result)
 	}
@@ -333,7 +333,7 @@ func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 	}
 
 	command, args := immediateExitCommand()
-	result := runExecCommand(context.Background(), command, args, newPipe, outputEOFCeiling)
+	result := runExecCommand(context.Background(), command, args, newPipe, newProcessTree, outputEOFCeiling)
 
 	if result["error"] != false {
 		t.Fatalf("runExec error = %v (%v), want false", result["error"], result["message"])
@@ -370,7 +370,7 @@ func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 	}()
 
 	command, args := immediateExitCommand()
-	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
 
 	if result["error"] != true {
 		t.Fatalf("runExec error = %v, want true — an aborted capture is an exec-layer failure, not an empty output", result["error"])
@@ -413,7 +413,7 @@ func TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach(t *testing.T) {
 
 	command, args := immediateExitCommand()
 	start := time.Now()
-	result := runExecCommand(context.Background(), command, args, newPipe, 2*time.Second)
+	result := runExecCommand(context.Background(), command, args, newPipe, newProcessTree, 2*time.Second)
 	elapsed := time.Since(start)
 
 	if elapsed > 5*time.Second {

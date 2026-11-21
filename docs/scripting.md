@@ -30,6 +30,29 @@ The arguments after the script filename are available in the `args` global (see 
 osm script -i
 ```
 
+### Script lifetime and exit status
+
+`process.exit(code)` ends the runtime and releases pending native work and an
+active BubbleTea program. Unhandled fatal JavaScript errors also terminate the
+runtime with their recorded failure status. Assigning `process.exitCode` sets
+the eventual status without stopping a live script; a manually emitted `exit`
+event likewise does not request shutdown. Exit listeners can change the status,
+so its final value is available after terminal completion.
+
+Go hosts should use `Engine.Close()`, `Runtime.Close()`, or the context supplied
+at construction to cancel execution. Shutdown cancels native operations and
+requests interruption of active JavaScript so pending execution can complete.
+Caller cancellation remains an error, and ordinary script or callback failures
+are preserved. The runtime's final status comes from the adapter and does not
+depend on a script-visible exit listener.
+
+For hosts using the low-level `Loop()` accessor, a direct loop shutdown does not
+carry a host cancellation cause. Clean loop completion can retain an already
+assigned script exit status regardless of who requested that shutdown. Use the
+engine/runtime cancellation APIs when the operation should be reported as
+cancellation. `ExitCode()` reports the currently recorded status; wait for
+completion before treating it as final.
+
 ## Globals (available in every script)
 
 ### `args` (script arguments)
@@ -180,7 +203,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → Promise<{exists: bool}>`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `writeFileScoped(root, relativePath, content, options?) → Promise<undefined>` (confined to `root`; same options), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string`, `isAbsolute(path) → bool`, `join(...paths) → string`, `platform() → string` |
-| `osm:exec` | Process execution | `execv(argv[], opts?) → Promise<{stdout, stderr, code, error, message, truncated}>` (`error` is `true` when the command failed — non-zero exit, signal, or it could not be started — **or its output could not be captured completely**; while it is `false`, the command exited `0` and `stdout`/`stderr` are the command's complete output. Capture waits for the command's process group to close its output, bounded at 30s and by `opts.timeoutMs`; `execv` always captures the full streams — it is not byte-capped), `spawn(cmd, args[], opts?) → Promise<ChildHandle>` (options: `cwd`, `env`, `envReplace`, `timeoutMs`, `maxBufferedOutputBytes` — retained-bytes cap per output stream, default 65536 (8 chunks × 8 KiB, `DefaultChanSize` × `DefaultBufSize`), 0/negative = default; handle: `stdin.write/close`, `stdout.read`/`stderr.read` → `Promise<{value, done, truncated?}>` where `truncated: true` means the stream ended before EOF and the `value`s received form a prefix of the stream. **Backpressure**: while a stream's queue holds `maxBufferedOutputBytes`, the pump stops reading the child's pipe, the kernel pipe fills, and the child's `write()` blocks — memory is bounded at cap + one 8 KiB in-flight chunk per stream and no bytes are dropped; draining via `read()` resumes the child. `wait() → Promise<{code, signal}>`, `kill() → Promise<void>`, `signal(name) → Promise<void>`; `wait().signal` is a POSIX signal name or `null`, and is `null` on Windows; `wait()` resolves when the process is reaped, not when its streams drain — a full unread queue does not delay it; `kill()`/`timeoutMs`/engine shutdown abort the drain promptly and end the stream with `truncated: true`; Windows `signal()` terminates the process tree) |
+| `osm:exec` | Process execution | `execv(argv[], opts?) → Promise<{stdout, stderr, code, error, message, truncated, treeCleanupError?}>`, `spawn(cmd, args[], opts?) → Promise<ChildHandle>`; see [process execution](#process-execution) for stream, cancellation, and buffering contracts. |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
 | `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
 | `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
@@ -192,6 +215,63 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:diff_triage` | Diff triage and file impact analysis | `triage(diff) → Promise<TriageResult[]>`, `triageSummary(diff) → Promise<map<string, number>>` |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 | `osm:format` | Number and byte formatting | `formatNum(n) → string` (comma grouping <10000, SI k/M/G above), `formatBytes(n) → string` (IEC binary B/kB/MB/GB/TB) |
+
+#### Process execution
+
+`execv(argv, opts?)` returns captured `stdout` and `stderr`, the exit `code`, an
+`error` boolean, a diagnostic `message`, and a `truncated` boolean. `error: false`
+means the child exited successfully and both output streams were captured
+completely. A failed command, an execution or cleanup error, or incomplete
+capture sets `error: true`. `truncated` specifically identifies incomplete
+capture; an error closing a pipe after EOF does not make its capture incomplete.
+`execv` has no output byte cap. The remaining drain after process-tree teardown
+is bounded by 30 seconds and by `opts.timeoutMs` when configured.
+
+`spawn(cmd, args, opts?)` supports `cwd`, `env`, `envReplace`, `timeoutMs`, and
+`maxBufferedOutputBytes`. Its child handle provides:
+
+| Method | Result and completion boundary |
+|--------|--------------------------------|
+| `stdin.write(data)` / `stdin.close()` | Promises for writing or closing child input. |
+| `stdout.read()` / `stderr.read()` | `Promise<{value, done, truncated?}>`; each nonterminal `value` is decoded text. A terminal result with `truncated: true` means capture was cut short. |
+| `wait()` | `Promise<{code, signal, treeCleanupError?}>` once the direct child is reaped. A recorded exit wins over concurrent caller cancellation; a wait cancelled before the exit was recorded rejects. `signal` is a POSIX signal name or `null`, and is always `null` on Windows. |
+| `kill()` | Terminates the process tree and aborts pending output draining, including draining that remains after the direct child has exited. |
+| `signal(name)` | Sends the named signal; on Windows this terminates the process tree. |
+
+Exit status, output completeness, and process-tree cleanup are separate facts.
+When teardown of a started child's process tree fails, `execv()` results and
+resolved `wait()` results include a nonempty `treeCleanupError` diagnostic string.
+Relevant `spawn()` or `wait()` rejections carry the same property on their error
+object. A known exit status still resolves, even when it is zero; callers that
+remove resources used by the process tree must also check `treeCleanupError`.
+An output-pipe close error after EOF does not set this property. Its absence
+means no tree-close failure was recorded, not that descendants which escaped
+the managed process group or job have been ruled out. Calling `kill()` after
+reap aborts pending output draining without signaling the former process again
+and does not erase a recorded tree-cleanup failure.
+
+The queue payload limit is **per stream**. `maxBufferedOutputBytes` defaults to
+65,536 bytes (`DefaultChanSize × DefaultBufSize`); zero or a negative value uses
+that default. Positive limits are honored even below the normal 8 KiB read size.
+This limits bytes retained in the queue, not total process memory: the read
+buffer, one chunk awaiting admission, queue metadata, and UTF-8 decoder carry
+also use memory. JavaScript text is decoded incrementally so a UTF-8 character
+split between pipe reads is preserved.
+
+A full queue parks its pump until a reader frees capacity. The kernel pipe can
+then fill and block the child's writes. **Drain stdout and stderr concurrently
+with `wait()`**: a child blocked in a write cannot exit until its output is read
+or it is terminated. Once the child has exited, an unread queue does not delay
+`wait()`, and its buffered output remains available for subsequent reads within
+the drain deadline.
+
+Only actual EOF after every captured byte has been admitted marks a stream
+complete. A read failure or refused admission marks it truncated, independently
+of the exit code. `kill()`, `timeoutMs`, engine shutdown, and the 30-second drain
+ceiling bound pending draining. A stream that reaches EOF with all bytes
+retained during the shutdown grace period remains complete; a stream cut short
+retains its admitted prefix and ends with `truncated: true`. A later cancellation
+cannot change an already-recorded terminal stream result.
 
 #### Data & text processing
 
@@ -253,7 +333,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:aimux` | Generic agent process multiplexer | `processProvider(opts)` → provider object; `newRegistry()` → registry object with `register(provider)`, `get(name)`, `list()`, `spawn(name, opts)`; `newParser()` → parser object with `.parse(line)`, `.patterns()`; parser event constants: `EVENT_TEXT`, `EVENT_RATE_LIMIT`, `EVENT_PERMISSION`, `EVENT_MODEL_SELECT`, `EVENT_SSO_LOGIN`, `EVENT_COMPLETION`, `EVENT_TOOL_USE`, `EVENT_ERROR`, `EVENT_THINKING`; `eventTypeName(type)`. Used by `osm pr-split` to spawn agent processes provider-agnostically. |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, opts?)`, `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.capture(id, opts?)` (returns `{plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp}` or `null`; opts `{start?, end?, joinWrapped?}` select a zero-based end-exclusive visible-row range and wrapped-line joining), `.input(data)`, `.resize(rows, cols)`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe()`, `.unsubscribe(subscription)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.capture(id, opts?)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.writeToChild(data)` and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (14 event names: `EXIT`, `RESIZE`, `FOCUS`, `BELL`, `OUTPUT`, `REGISTERED`, `ACTIVATED`, `CLOSED`, `TERMINAL_RESIZE`, `ACTIVITY`, `SILENCE`, `TITLE`, `CWD`/`WORKING_DIRECTORY`, `CLIPBOARD`). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newSessionManager(opts?) → mgr`; Opts: `{rows?, cols?, requestBuffer?, outputBuffer?}`; Manager methods: `.run()`, `.started()`, `.close()`, `.register(session, target?, opts?)` (target `{name?, kind?, id?}`; opts `{remainOnExit?}` overrides only this registration, preserving the owner's first close result after EOF when true), `.unregister(id)`, `.activate(id)`, `.attach(handle) → id`, `.detach()`, `.hasChild()`, `.passthrough(opts?)` (async — enters passthrough, returns `Promise<{reason, error?}>`), `.switchTo()` (async, returns `Promise<{reason, error?}>`), `.activeSide()`, `.activeID()`, `.sessions()`, `.capture(id, opts?)` (returns `{plain, ansi, fullScreen, gen, rows, cols, cursorRow, cursorCol, cursorVisible, mouseTracking, mouseSGR, locked, message, timestamp}` or `null`; opts `{start?, end?, joinWrapped?}` select a zero-based end-exclusive visible-row range and wrapped-line joining), `.input(data)`, `.resize(rows, cols)`, `.writeToChild(data)`, `.lastActivityMs(id?)`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.subscribe()`, `.unsubscribe(subscription)`, `.fromModel(model, opts?)`, `.session() → wrapper`; `newCaptureSession(cmd, args?, opts?) → session` (non-blocking PTY). Prefer pinned SessionIDs for production reads/writes: use `.capture(id, opts?)` for reads, `.lastActivityMs(id?)` for pinned activity timing, and explicit `.activate(id)` + `.input(data)` for writes; `.writeToChild(data)` and `.session()` are ActiveID-backed compatibility helpers. Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_AGENT`, `DEFAULT_TOGGLE_KEY`, `EVENT_*` (14 event names: `EXIT`, `RESIZE`, `FOCUS`, `BELL`, `OUTPUT`, `REGISTERED`, `ACTIVATED`, `CLOSED`, `TERMINAL_RESIZE`, `ACTIVITY`, `SILENCE`, `TITLE`, `CWD`/`WORKING_DIRECTORY`, `CLIPBOARD`). See [termmux JS API reference](reference/termmux-js-api.md) for full details. |
 | `osm:freezeterm` | Render captured terminal text as an SVG or PNG artifact via the external [freeze](https://github.com/charmbracelet/freeze) CLI | `info(opts?) → Promise<{available, executable, version, commit, raw, error?}>` (resolves `available:false` when the binary is missing); `render(text, opts?) → Promise<{path, format, temporary, text?}>` (caller-owned `output` path or a temporary file the caller owns; PNG results expose only a path); `renderText(text, opts?) → Promise<string>` (temporary SVG text, file removed). Opts mirror freeze flags: `{executable?, output?, format? ('svg'|'png'), language?, theme?, background?, window?, width?, height?, margin?, padding?, wrap?, lineHeight?, lines?, showLineNumbers?, font?{family,file,size,ligatures}, border?{radius,width,color}, shadow?{blur,x,y}, args?, dir?}`. Every call is asynchronous and validated strictly; unknown options throw `TypeError`. Compose with `osm:termmux`: `freezeterm.renderText(termmux.capture(id).ansi)`. |
 
 ### osm:bt (Behavior Trees)
@@ -355,7 +435,14 @@ Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbrac
 **Program lifecycle**:
 - `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
 - `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Options: `{toggleKey, onToggle}` for termmux passthrough integration. Terminal features (`altScreen`, `mouseMode`, `reportFocus`, `windowTitle`) are NO-OP as run() options in v2 — set them via the declarative `view()` return object instead.
-- `tea.isTTY() → bool` — Check if terminal is a TTY
+- `tea.isTTY() → bool` — Check whether either input or output is a terminal.
+
+Rendering and terminal escape sequences require terminal output. Redirected
+output receives no renderer, paste-mode, or toggle-screen sequences, even when
+stdin is a terminal. Terminal stdin keeps its raw-mode and release/restore
+lifecycle; explicitly provided piped input is still consumed. When neither
+stream is a terminal, the renderer is disabled and input defaulted from `nil`
+is dropped.
 
 **View return contract**: The `view()` function can return a string or a declarative object:
 

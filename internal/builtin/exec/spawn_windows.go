@@ -24,8 +24,9 @@ func setProcAttr(cmd *osexec.Cmd) {
 
 // waitProcessBeforeReap waits for the direct child without reaping it. The
 // command handle held by os/exec keeps the process object alive while this
-// second handle waits, so the Job Object can be closed before Cmd.Wait drains
-// output pipes inherited by descendants.
+// second handle waits, so the Job Object can be closed before Cmd.Wait reaps
+// the child. The output pumps or collector drain the explicitly supplied file
+// pipes independently; Cmd.Wait does not drain those pipes.
 func waitProcessBeforeReap(cmd *osexec.Cmd) (bool, error) {
 	if cmd == nil || cmd.Process == nil {
 		return false, nil
@@ -103,7 +104,7 @@ func (t *windowsProcessTree) failAttach(err error) error {
 	t.mu.Unlock()
 	if job != 0 {
 		if closeErr := windows.CloseHandle(job); closeErr != nil {
-			return errors.Join(err, fmt.Errorf("close process job after attach failure: %w", closeErr))
+			return errors.Join(err, &processTreeCloseError{err: fmt.Errorf("close process job after attach failure: %w", closeErr)})
 		}
 	}
 	return err

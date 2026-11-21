@@ -538,17 +538,9 @@
                     ? captureRef.exitCode() : -1;
             },
             close: function() {
-                try {
-                    var result = tuiMux.unregister(sessionID);
-                    if (result && typeof result.catch === 'function') {
-                        return result.catch(function(e) {
-                            log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
-                        });
-                    }
-                    return result;
-                } catch (e) {
-                    log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
-                }
+                // Unregister can detach the session while reporting a failed
+                // native close. Preserve that result for worktree ownership.
+                return tuiMux.unregister(sessionID);
             },
             isRunning: function() {
                 return captureRef ? !captureRef.isDone() : false;
@@ -624,20 +616,33 @@
         return !!value && typeof value.then === 'function';
     }
 
-    function closeInteractivePaneSession(s, tab, debugPrefix) {
+    function closeInteractivePaneSession(s, tab, debugPrefix, onFailure) {
         var session = getInteractivePaneSession(s, tab);
-        if (!session || typeof session.close !== 'function') return Promise.resolve(false);
+        if (!session || typeof session.close !== 'function') {
+            if (session && onFailure) onFailure(new Error('session.close is unavailable'));
+            return Promise.resolve(false);
+        }
         try {
             var result = session.close();
+            if (result === false) {
+                if (onFailure) onFailure(new Error('session.close returned false'));
+                return false;
+            }
             if (!result || typeof result.then !== 'function') return true;
-            return Promise.resolve(result).then(function() {
+            return Promise.resolve(result).then(function(value) {
+                if (value === false) {
+                    if (onFailure) onFailure(new Error('session.close returned false'));
+                    return false;
+                }
                 return true;
             }, function(e) {
-                log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + (e.message || e));
+                log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + ((e && e.message) || String(e)));
+                if (onFailure) onFailure(e);
                 return false;
             });
         } catch (e) {
-            log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + (e.message || e));
+            log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + ((e && e.message) || String(e)));
+            if (onFailure) onFailure(e);
             return Promise.resolve(false);
         }
     }
@@ -658,8 +663,58 @@
         var session = getInteractivePaneSession(s, 'verify');
         var verifyWorktree = s.activeVerifyWorktree;
         var verifyDir = s.activeVerifyDir;
+        var verifyBranch = s.activeVerifyBranch;
+        var verifyRunEpoch = s._verifyRunEpoch;
+        var verifyRows = s.verificationResults;
+        var sessionCloseError = null;
+        var sessionCloseFailed = false;
         var token = {};
         var settled = false;
+
+        var removalFailure = function(error) {
+            if (error && (error.treeCleanupError || error.cleanupFailed)) return error;
+            var reason = error && (error.error || error.message) || String(error);
+            return Object.assign({}, error && typeof error === 'object' ? error : {}, {
+                passed: false, execFailed: true, cleanupFailed: true,
+                worktreeDir: verifyWorktree,
+                error: 'worktree removal failed: ' + reason +
+                    (verifyWorktree ? '; worktree removal was attempted at ' + verifyWorktree : '')
+            });
+        };
+
+        var recordCleanupOutcome = function(result) {
+            if (!result || (!result.treeCleanupError && !result.cleanupFailed)) return result;
+            var detail = result.error || result.message || (result.treeCleanupError
+                ? 'process tree teardown failed: ' + result.treeCleanupError : 'verification cleanup failed');
+            if (verifyWorktree && detail.indexOf(verifyWorktree) < 0) {
+                detail += (result.worktreeRetained ? '; worktree retained at ' : '; worktree removal was attempted at ') + verifyWorktree;
+            }
+            // The diagnostic remains observable even after a reset, but an
+            // old cleanup cannot rewrite a replacement run's rows or pane.
+            log.warn('verify cleanup failed', {
+                branch: verifyBranch, worktreeDir: verifyWorktree, error: detail
+            });
+            if (s._verifyPaneCleanupToken !== token || s._verifyRunEpoch !== verifyRunEpoch) return result;
+            if (s.outputLines) s.outputLines.push(detail);
+            if (verifyRows && s.verificationResults === verifyRows) {
+                for (var i = verifyRows.length - 1; i >= 0; i--) {
+                    var row = verifyRows[i];
+                    if (row.name !== verifyBranch) continue;
+                    row.passed = false;
+                    row.preExisting = false;
+                    row.status = branchStatuses.FAILED;
+                    row.execFailed = true;
+                    row.cleanupFailed = true;
+                    if (result.treeCleanupError) row.treeCleanupError = result.treeCleanupError;
+                    row.worktreeDir = verifyWorktree;
+                    if (result.worktreeRetained) row.worktreeRetained = true;
+                    else delete row.worktreeRetained;
+                    row.error = (row.error ? row.error + '; ' : '') + detail;
+                    break;
+                }
+            }
+            return result;
+        };
 
         var clearState = function() {
             if (settled || s._verifyPaneCleanupToken !== token) return;
@@ -667,6 +722,7 @@
             s._verifyPaneCleanupPending = false;
             s._verifyPaneCleanupPromise = null;
             s._verifyPaneCleanupToken = null;
+            if (s._verifyRunEpoch !== verifyRunEpoch) return;
             s.activeVerifySession = null;
             s._verifySessionRef = null;
             s.activeVerifyWorktree = null;
@@ -687,7 +743,18 @@
             }
         };
 
-        var runCleanup = function() {
+        var runCleanup = function(closed) {
+            if (closed === false) {
+                // Close can reject when the native child survives its force
+                // deadline. Keep the worktree unless termination is confirmed.
+                return {
+                    passed: false, execFailed: true, cleanupFailed: true,
+                    worktreeDir: verifyWorktree, worktreeRetained: !!verifyWorktree,
+                    error: 'verify session teardown failed: ' +
+                        (sessionCloseFailed ? String((sessionCloseError && sessionCloseError.message) || sessionCloseError) : 'termination was not confirmed') +
+                        (verifyWorktree ? '; worktree retained at ' + verifyWorktree : '')
+                };
+            }
             if (!cleanupWorktree || !verifyWorktree || !verifyDir ||
                 typeof prSplit.cleanupVerifyWorktree !== 'function') {
                 return null;
@@ -695,17 +762,23 @@
             try {
                 return prSplit.cleanupVerifyWorktree(verifyDir, verifyWorktree);
             } catch (e) {
-                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
-                return null;
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + ((e && e.message) || String(e)));
+                return removalFailure(e);
             }
         };
 
         var closeResult = null;
-        if (session && typeof session.close === 'function') {
+        if (session) {
             try {
-                closeResult = closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+                closeResult = closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup', function(error) {
+                    sessionCloseFailed = true;
+                    sessionCloseError = error;
+                });
             } catch (e) {
-                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + (e.message || e));
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + ((e && e.message) || String(e)));
+                sessionCloseFailed = true;
+                sessionCloseError = e;
+                closeResult = false;
             }
         }
 
@@ -715,19 +788,26 @@
         var cleanupResult = null;
         if (isThenable(closeResult)) {
             cleanupResult = closeResult.then(runCleanup, function(e) {
-                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + (e.message || e));
-                return runCleanup();
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifySession close failed: ' + ((e && e.message) || String(e)));
+                sessionCloseFailed = true;
+                sessionCloseError = e;
+                return runCleanup(false);
             });
         } else {
-            cleanupResult = runCleanup();
+            cleanupResult = runCleanup(closeResult);
         }
 
         if (isThenable(cleanupResult)) {
-            var operation = Promise.resolve(cleanupResult).then(function() {
+            var operation = Promise.resolve(cleanupResult).then(function(result) {
+                recordCleanupOutcome(result);
                 clearState();
+                return result && (result.treeCleanupError || result.cleanupFailed) ? result : undefined;
             }, function(e) {
-                log.debug((options.debugPrefix || 'verifyCleanup') + ': verify cleanup failed: ' + (e.message || e));
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verify cleanup failed: ' + ((e && e.message) || String(e)));
+                var failure = removalFailure(e);
+                recordCleanupOutcome(failure);
                 clearState();
+                return failure;
             });
             s._verifyPaneCleanupPromise = typeof prSplit._trackPaneOperation === 'function'
                 ? prSplit._trackPaneOperation(s, operation)
@@ -735,8 +815,9 @@
             return s._verifyPaneCleanupPromise;
         }
 
+        recordCleanupOutcome(cleanupResult);
         clearState();
-        return null;
+        return cleanupResult && (cleanupResult.treeCleanupError || cleanupResult.cleanupFailed) ? cleanupResult : null;
     }
 
     function hasInteractivePaneSession(s, tab) {

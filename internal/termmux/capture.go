@@ -573,10 +573,10 @@ func (cs *CaptureSession) IsPaused() bool {
 
 // Resize changes the PTY dimensions. Returns an error if the session has
 // not been started or is closed. Concurrent resizes are serialized under
-// resizeMu without holding cs.mu across the PTY ioctl (so a blocked
-// ResizePseudoConsole cannot wedge Close/Write/Reader), and the stored
-// dimensions are only updated under cs.mu when the PTY resize succeeds on a
-// still-open session.
+// resizeMu without holding cs.mu across the PTY ioctl. Session state remains
+// accessible during that call, but Close and Write can still wait for the
+// underlying Process lock. Stored dimensions are only updated under cs.mu
+// when the PTY resize succeeds on a still-open session.
 func (cs *CaptureSession) Resize(rows, cols int) error {
 	if rows <= 0 || cols <= 0 {
 		return errors.New("capture: rows and cols must be positive")

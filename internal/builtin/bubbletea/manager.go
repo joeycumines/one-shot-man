@@ -119,21 +119,22 @@ func (c *programCompletion) completed() bool {
 
 // Manager holds bubbletea-related state per engine instance.
 type Manager struct {
-	ctx          context.Context
-	mu           sync.Mutex
-	input        io.Reader
-	output       io.Writer
-	stderr       io.Writer // Stderr for logging panics/errors
-	signalNotify func(c chan<- os.Signal, sig ...os.Signal)
-	signalStop   func(c chan<- os.Signal)
-	isTTY        bool                   // Whether input is a TTY
-	ttyFd        int                    // TTY file descriptor (if available)
-	inputDefaulted bool                 // Whether input was defaulted from nil (not explicitly provided)
-	program      *tea.Program           // Currently running program (if any)
-	jsRunner     JSRunner               // REQUIRED: thread-safe JS execution via event loop
-	promisify    PromisifyFunc          // Optional: keeps loop alive while program runs
-	programDone  *programCompletion     // Current or most recently completed BubbleTea run
-	adapter      *gojaeventloop.Adapter // Optional: JS-promise exports (waitForProgram)
+	ctx            context.Context
+	mu             sync.Mutex
+	input          io.Reader
+	output         io.Writer
+	stderr         io.Writer // Stderr for logging panics/errors
+	signalNotify   func(c chan<- os.Signal, sig ...os.Signal)
+	signalStop     func(c chan<- os.Signal)
+	isTTY          bool                   // Whether either input or output is a TTY
+	outputTTY      bool                   // Whether rendering/terminal escapes may be written to output
+	ttyFd          int                    // TTY file descriptor (if available)
+	inputDefaulted bool                   // Whether input was defaulted from nil (not explicitly provided)
+	program        *tea.Program           // Currently running program (if any)
+	jsRunner       JSRunner               // REQUIRED: thread-safe JS execution via event loop
+	promisify      PromisifyFunc          // Optional: keeps loop alive while program runs
+	programDone    *programCompletion     // Current or most recently completed BubbleTea run
+	adapter        *gojaeventloop.Adapter // Optional: JS-promise exports (waitForProgram)
 }
 
 // PromisifyFunc is a function that executes work in a goroutine and returns a Future.
@@ -205,47 +206,17 @@ func NewManagerWithStderr(
 		signalStop = signal.Stop
 	}
 
-	// Detect TTY for input - check TerminalChecker interface first (for TUIReader/TUIWriter wrappers).
-	// Skipped entirely when the caller passed nil for both input and output:
-	// that signals the caller doesn't need terminal detection (e.g. engine
-	// construction for non-interactive scripts), and probing stdin there would
-	// touch the process console for no reason.
-	isTTY := false
-	ttyFd := -1
+	// Detect each stream independently. An input terminal preserves terminal
+	// input handling, but cannot authorize rendering into a redirected output.
+	// Two nil streams still skip probing entirely for noninteractive callers.
+	inputFd, outputFd := -1, -1
 	if !skipTTYDetection {
-		if tc, ok := input.(TerminalChecker); ok {
-			if tc.IsTerminal() {
-				if fd := tc.Fd(); fd != ^uintptr(0) {
-					isTTY = true
-					ttyFd = int(fd)
-				}
-			}
-		} else if f, ok := input.(*os.File); ok {
-			// Fallback for direct *os.File
-			fd := int(f.Fd())
-			if term.IsTerminal(fd) {
-				isTTY = true
-				ttyFd = fd
-			}
-		}
-
-		// If input isn't a TTY, check output
-		if !isTTY {
-			if tc, ok := output.(TerminalChecker); ok {
-				if tc.IsTerminal() {
-					if fd := tc.Fd(); fd != ^uintptr(0) {
-						isTTY = true
-						ttyFd = int(fd)
-					}
-				}
-			} else if f, ok := output.(*os.File); ok {
-				fd := int(f.Fd())
-				if term.IsTerminal(fd) {
-					isTTY = true
-					ttyFd = fd
-				}
-			}
-		}
+		inputFd = terminalFD(input)
+		outputFd = terminalFD(output)
+	}
+	ttyFd := inputFd
+	if ttyFd < 0 {
+		ttyFd = outputFd
 	}
 
 	m := &Manager{
@@ -255,13 +226,29 @@ func NewManagerWithStderr(
 		stderr:         stderr,
 		signalNotify:   signalNotify,
 		signalStop:     signalStop,
-		isTTY:          isTTY,
+		isTTY:          ttyFd >= 0,
+		outputTTY:      outputFd >= 0,
 		ttyFd:          ttyFd,
 		inputDefaulted: inputDefaulted,
 		jsRunner:       jsRunner, // REQUIRED: set at construction time
 	}
 
 	return m
+}
+
+func terminalFD(stream any) int {
+	if checker, ok := stream.(TerminalChecker); ok {
+		if checker.IsTerminal() {
+			if fd := checker.Fd(); fd != ^uintptr(0) {
+				return int(fd)
+			}
+		}
+	} else if file, ok := stream.(*os.File); ok {
+		if fd := int(file.Fd()); term.IsTerminal(fd) {
+			return fd
+		}
+	}
+	return -1
 }
 
 // SetJSRunner configures the Manager to use thread-safe JS execution.

@@ -32,6 +32,130 @@
         return command || '';
     }
 
+    function getTreeCleanupError(result) {
+        return result && typeof result.treeCleanupError === 'string'
+            ? result.treeCleanupError : '';
+    }
+
+    function reportTreeCleanupFailure(outcome, reason, worktreeDir, retained) {
+        outcome.passed = false;
+        outcome.execFailed = true;
+        outcome.treeCleanupError = reason;
+        outcome.cleanupFailed = true;
+        outcome.worktreeDir = worktreeDir;
+        if (retained) outcome.worktreeRetained = true;
+        var note = 'process tree teardown failed: ' + reason + '; ' +
+            (retained ? 'worktree retained at ' : 'worktree removal was attempted at ') + worktreeDir;
+        outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + note;
+    }
+
+    // Final removal is a verification operation in its own right. Its result
+    // never supplies the verification command's exit/capture status, and an
+    // attempted removal cannot establish that the directory is still present.
+    // The setup fallback below intentionally has a different contract: removing
+    // a possibly absent worktree before detached-add may legitimately fail.
+    async function removeVerificationWorktree(runGit, dir, worktreeDir) {
+        var result;
+        var rejected = false;
+        try {
+            result = await runGit(dir, ['worktree', 'remove', '--force', worktreeDir]);
+        } catch (e) {
+            result = e;
+            rejected = true;
+        }
+        var treeError = getTreeCleanupError(result);
+        if (!rejected && result && result.code === 0 && result.error !== true &&
+            result.truncated !== true && !treeError) return;
+
+        var reason = rejected ? String((result && result.message) || result)
+            : (result ? execFailReason(result) : '');
+        if (!reason) {
+            if (result && result.truncated === true) reason = 'output capture was incomplete';
+            else if (result && result.code !== undefined) reason = 'exit ' + result.code;
+            else reason = 'no command result';
+        }
+        var failure = {
+            dir: dir,
+            passed: false,
+            execFailed: true,
+            cleanupFailed: true,
+            worktreeDir: worktreeDir,
+            error: 'worktree removal failed: ' + reason
+        };
+        if (treeError) {
+            failure.treeCleanupError = treeError;
+            if (reason.indexOf(treeError) < 0) failure.error += '; process tree teardown failed: ' + treeError;
+        }
+        failure.error += '; worktree removal was attempted at ' + worktreeDir;
+        return failure;
+    }
+
+    function applyRemovalFailure(outcome, failure) {
+        if (!failure) return;
+        outcome.passed = false;
+        outcome.execFailed = true;
+        outcome.cleanupFailed = true;
+        outcome.worktreeDir = failure.worktreeDir;
+        if (failure.treeCleanupError) outcome.treeCleanupError = failure.treeCleanupError;
+        outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + failure.error;
+    }
+
+    // A failed tree close can accompany exit zero or a rejected post-start
+    // spawn. Do not start another command or remove its worktree in either
+    // case: a direct-child status does not establish process-tree teardown.
+    async function setupVerificationWorktree(runGit, dir, worktreeDir, branchName) {
+        function treeFailure(result, retained) {
+            var reason = getTreeCleanupError(result);
+            if (!reason) return null;
+            var outcome = {
+                name: branchName,
+                passed: false,
+                output: '',
+                exitCode: result.code !== undefined ? result.code : -1,
+                execFailed: true,
+                error: 'create worktree failed: ' + execFailReason(result)
+            };
+            reportTreeCleanupFailure(outcome, reason, worktreeDir, retained);
+            return outcome;
+        }
+        var removing = false;
+        try {
+            var added = await runGit(dir, ['worktree', 'add', worktreeDir, branchName]);
+            var failure = treeFailure(added, true);
+            if (failure) return failure;
+            if (added.code !== 0) {
+                removing = true;
+                var removed = await runGit(dir, ['worktree', 'remove', '--force', worktreeDir]);
+                failure = treeFailure(removed, false);
+                if (failure) return failure;
+                removing = false;
+                added = await runGit(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+                failure = treeFailure(added, true);
+                if (failure) return failure;
+                if (added.code !== 0) {
+                    return {
+                        name: branchName,
+                        passed: false,
+                        output: '',
+                        exitCode: added.code,
+                        execFailed: true,
+                        error: 'create worktree failed: ' + execFailReason(added)
+                    };
+                }
+            }
+            return null;
+        } catch (e) {
+            var failure = treeFailure(e, !removing);
+            if (failure) return failure;
+            throw e;
+        }
+    }
+
+    function failedVerifyBatch(result, results) {
+        results.push(result);
+        return { allPassed: false, results: results, error: result.error || 'verification failed' };
+    }
+
     // --- verifySplit — runs verify command on a single branch ---
     async function verifySplit(branchName, config) {
         // This function must not reject: an unhandled rejection is fatal to the
@@ -69,30 +193,8 @@
         // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
-        // Try proper branch checkout first (preserves branch name in HEAD).
-        var wtAdd = await gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
-        if (wtAdd.code !== 0) {
-            // Branch might be checked out elsewhere (user's CWD); fallback to detached HEAD.
-            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
-            if (wtAdd.code !== 0) {
-                // Worktree setup is an environment/exec failure, not a verify
-                // verdict: tag it execFailed so it is never forgiven as
-                // pre-existing.
-                return {
-                    name: branchName,
-                    passed: false,
-                    output: '',
-                    exitCode: wtAdd.code,
-                    execFailed: true,
-                    error: 'create worktree failed: ' + execFailReason(wtAdd)
-                };
-            }
-        }
-
-        async function cleanupWorktree() {
-            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-        }
+        var setupFailure = await setupVerificationWorktree(gitExec, dir, worktreeDir, branchName);
+        if (setupFailure) return setupFailure;
 
         var startMs = Date.now();
         var shellCmd;
@@ -125,46 +227,53 @@
             }
         }
 
-        var result;
+        var result = null;
+        var bodyError;
+        var bodyFailed = false;
+        var treeCleanupError = '';
         try {
-            result = await shellSpawnSync(shellCmd, {
-                timeoutMs: timeoutMs,
-                onStdout: function(chunk) {
-                    stdoutBuf += chunk;
-                    emitChunk(chunk);
-                },
-                onStderr: function(chunk) {
-                    stderrBuf += chunk;
-                    emitChunk(chunk);
-                }
-            });
-        } finally {
-            // The worktree must be removed even if the spawn throws.
-            await cleanupWorktree();
+            // execv has already captured both streams. Record its lifecycle
+            // result before invoking an output callback, which may throw.
+            result = await shellSpawnSync(shellCmd, { timeoutMs: timeoutMs });
+            treeCleanupError = getTreeCleanupError(result);
+            stdoutBuf = result.stdout || '';
+            stderrBuf = result.stderr || '';
+            if (stdoutBuf) emitChunk(stdoutBuf);
+            if (stderrBuf) emitChunk(stderrBuf);
+        } catch (e) {
+            bodyError = e;
+            bodyFailed = true;
+            treeCleanupError = treeCleanupError || getTreeCleanupError(e);
         }
+
+        // Cleanup owns a separate lifetime. Its duration must not turn an
+        // already-completed verification command into a timeout.
         var elapsedMs = Date.now() - startMs;
+        var removalFailure;
+        if (!treeCleanupError) {
+            removalFailure = await removeVerificationWorktree(gitExec, dir, worktreeDir);
+        }
+        var captureCutShort = !!(result && (result.truncated === true ||
+            (result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || '')))));
+        var execLayerFailed = result && !captureCutShort && result.error === true && result.code === -1;
+        var timedOut = !!(result && timeoutMs > 0 &&
+            (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs));
+        var outcome;
 
-        // An aborted capture is an exec-layer failure whose stderr may be
-        // empty: the verdict is unknown, so it can neither pass nor count as
-        // a deterministic failure (and must never be forgiven as pre-existing).
-        // The structural flag from the exec layer is authoritative; the message
-        // regex is a fallback for results that predate the flag.
-        var captureCutShort = result.truncated === true ||
-            (result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || '')));
-        // A non-exit exec error (spawn/wait failure, code -1 with error) is
-        // likewise an unknown verdict, tagged execFailed like the async path.
-        var execLayerFailed = !captureCutShort && result.error === true && result.code === -1;
-        var timedOut = timeoutMs > 0 && (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs);
-
-        // Unknown-verdict gates run BEFORE timeout classification: a run with
-        // no observed exit status (or a cut capture) must not be relabelled as
-        // a deterministic timeout just because the elapsed-time condition also
-        // holds (elapsedMs includes worktree removal, so slow cleanup can
-        // otherwise push an exec-layer failure across this boundary). When a
-        // real verify timeout coincided with a cut capture, keep BOTH
-        // truncated:true (unknown verdict) and timedOut:true (attribution).
-        if (captureCutShort) {
-            return {
+        if (bodyFailed) {
+            outcome = {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                exitCode: result && result.code !== undefined ? result.code : -1,
+                execFailed: true,
+                truncated: captureCutShort || undefined,
+                timedOut: timedOut || undefined,
+                error: 'verify exec-layer failure: ' + String((bodyError && bodyError.message) || bodyError)
+            };
+        } else if (captureCutShort) {
+            // Capture completeness and timeout attribution are independent.
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -176,10 +285,8 @@
                     : 'verify failed: ' + (result.message || 'output capture was cut short before EOF') +
                         (stderrBuf.trim() !== '' ? ': ' + stderrBuf.trim() : '')
             };
-        }
-
-        if (execLayerFailed) {
-            return {
+        } else if (execLayerFailed) {
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -187,11 +294,8 @@
                 execFailed: true,
                 error: 'verify exec-layer failure: ' + execFailReason(result)
             };
-        }
-
-        // Timeout gate: reached only when the verdict is NOT unknown.
-        if (timedOut) {
-            return {
+        } else if (timedOut) {
+            outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
@@ -199,17 +303,23 @@
                 exitCode: result.code,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
             };
+        } else {
+            outcome = {
+                name: branchName,
+                passed: result.code === 0,
+                output: stdoutBuf,
+                exitCode: result.code,
+                error: result.code !== 0
+                    ? 'verify failed (exit ' + result.code + '): ' + execFailReason(result)
+                    : null
+            };
         }
-
-        return {
-            name: branchName,
-            passed: result.code === 0,
-            output: stdoutBuf,
-            exitCode: result.code,
-            error: result.code !== 0
-                ? 'verify failed (exit ' + result.code + '): ' + execFailReason(result)
-                : null
-        };
+        if (treeCleanupError) {
+            reportTreeCleanupFailure(outcome, treeCleanupError, worktreeDir, true);
+        } else {
+            applyRemovalFailure(outcome, removalFailure);
+        }
+        return outcome;
     }
 
     // --- verifySplits — runs verification for all splits, respects cancellation ---
@@ -244,6 +354,10 @@
                 verifyTimeoutMs: verifyTimeoutMs,
                 outputFn: options.outputFn || null
             });
+            if (baselineResult.cleanupFailed) {
+                baselineResult.baseline = true;
+                return failedVerifyBatch(baselineResult, results);
+            }
             // A baseline whose verdict is UNKNOWN — a truncated capture or an
             // exec-layer failure with no exit status — is not a baseline
             // failure: it disables pre-existing detection rather than
@@ -319,6 +433,7 @@
                 onBranchDone(split.name, result.passed, result.exitCode || 0, branchElapsedMs, false, !!result.preExisting);
             }
 
+            if (result.cleanupFailed) return failedVerifyBatch(result, results);
             results.push(result);
             if (!result.passed && !result.preExisting) {
                 allPassed = false;
@@ -454,17 +569,13 @@
 
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
-        var wtAdd = await gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
-        if (wtAdd.code !== 0) {
-            // Branch might be checked out elsewhere; fallback to detached HEAD.
-            await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
-            if (wtAdd.code !== 0) {
-                return {
-                    error: 'create worktree failed: ' + execFailReason(wtAdd),
-                    worktreeDir: null
-                };
+        var setupFailure = await setupVerificationWorktree(gitExec, dir, worktreeDir, branchName);
+        if (setupFailure) {
+            if (setupFailure.treeCleanupError) {
+                setupFailure.dir = dir;
+                return setupFailure;
             }
+            return { error: setupFailure.error, worktreeDir: null };
         }
 
         return { worktreeDir: worktreeDir, dir: dir };
@@ -496,7 +607,7 @@
         // Delegate worktree creation.
         var wt = await prepareVerifyWorktree(branchName, config);
         if (wt.error) {
-            return { error: wt.error, session: null, worktreeDir: null };
+            return Object.assign({}, wt, { session: null });
         }
         if (wt.skipped) {
             return { skipped: true, session: null, worktreeDir: null };
@@ -517,30 +628,45 @@
                 await started;
             }
         } catch (e) {
+            var closeFailure = '';
             if (session && typeof session.close === 'function') {
                 try {
                     var closeResult = session.close();
                     if (closeResult && typeof closeResult.then === 'function') {
-                        await closeResult;
+                        closeResult = await closeResult;
                     }
+                    if (closeResult === false) closeFailure = 'capture session close did not confirm termination';
                 } catch (closeErr) {
+                    closeFailure = 'capture session close failed: ' + ((closeErr && closeErr.message) || String(closeErr));
                     log.debug('startVerifySession: failed to close failed session', {
-                        error: closeErr.message || String(closeErr)
+                        error: (closeErr && closeErr.message) || String(closeErr)
                     });
                 }
+            } else if (session) {
+                closeFailure = 'capture session has no close method to confirm termination';
             }
-            try {
-                await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            } catch (cleanupErr) {
-                log.debug('startVerifySession: failed to clean worktree after startup error', {
-                    error: cleanupErr.message || String(cleanupErr)
-                });
-            }
-            return {
+            var failedStart = {
                 error: 'start verify session failed: ' + ((e && e.message) ? e.message : String(e)),
                 session: null,
                 worktreeDir: null
             };
+            if (closeFailure) {
+                failedStart.passed = false;
+                failedStart.execFailed = true;
+                failedStart.cleanupFailed = true;
+                failedStart.worktreeRetained = true;
+                failedStart.worktreeDir = worktreeDir;
+                failedStart.dir = dir;
+                failedStart.error += '; cleanup: ' + closeFailure + '; worktree retained at ' + worktreeDir;
+                return failedStart;
+            }
+            var cleanupResult = await cleanupVerifyWorktree(dir, worktreeDir);
+            if (cleanupResult) {
+                var startError = failedStart.error;
+                Object.assign(failedStart, cleanupResult);
+                failedStart.error = startError + '; ' + cleanupResult.error;
+            }
+            return failedStart;
         }
 
         return {
@@ -553,9 +679,11 @@
     }
 
     // cleanupVerifyWorktree removes a temporary worktree created by
-    // startVerifySession.
+    // startVerifySession. Success remains undefined; every failed removal
+    // resolves with its diagnostic and path without claiming retention or
+    // replacing the verification command's recorded exit status.
     async function cleanupVerifyWorktree(dir, worktreeDir) {
-        await gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+        return await removeVerificationWorktree(gitExec, dir, worktreeDir);
     }
 
     // --- DESIGN NOTE (T003): PTY Verify Pipeline Audit ---
@@ -621,28 +749,8 @@
 
         var worktreeDir = worktreeTmpPath('osm-verify-');
 
-        var wtAdd = await gitExecAsync(dir, ['worktree', 'add', worktreeDir, branchName]);
-        if (wtAdd.code !== 0) {
-            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
-            if (wtAdd.code !== 0) {
-                // Worktree setup is an environment/exec failure, not a verify
-                // verdict: tag it execFailed so it is never forgiven as
-                // pre-existing.
-                return {
-                    name: branchName,
-                    passed: false,
-                    output: '',
-                    exitCode: wtAdd.code,
-                    execFailed: true,
-                    error: 'create worktree failed: ' + execFailReason(wtAdd)
-                };
-            }
-        }
-
-        async function cleanupWorktreeAsync() {
-            return await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
-        }
+        var setupFailure = await setupVerificationWorktree(gitExecAsync, dir, worktreeDir, branchName);
+        if (setupFailure) return setupFailure;
 
         // Cleanup runs as an explicit phase that preserves the verification
         // result: the body (or catch on abnormal exit) assigns `outcome`, and
@@ -652,6 +760,7 @@
         var outcome = null;
         var stdoutBuf = '';
         var cleanupNotes = [];
+        var treeCleanupError = '';
         // boundedAwait waits for promise with at most msLeft milliseconds,
         // always clearing its timer. Returns {settled: bool, value/reason}.
         function boundedAwait(promise, msLeft) {
@@ -792,7 +901,16 @@
                 stderrBuf += chunk;
                 emitChunk(chunk);
             }),
-            child.wait().then(function(r) { waitResult = r || {}; waitSettled = true; waitResolvedWithStatus = true; }, function(err) { waitError = err; waitSettled = true; })
+            child.wait().then(function(r) {
+                waitResult = r || {};
+                treeCleanupError = getTreeCleanupError(r) || treeCleanupError;
+                waitSettled = true;
+                waitResolvedWithStatus = true;
+            }, function(err) {
+                waitError = err;
+                treeCleanupError = getTreeCleanupError(err) || treeCleanupError;
+                waitSettled = true;
+            })
         ]);
 
         var exitResult = waitResult;
@@ -829,15 +947,14 @@
                 error: 'verify wait failed after ' + elapsedMs + 'ms with no exit status: ' + String((waitError && waitError.message) || waitError)
             };
         } else if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
-            // Timeout gate, reached only when the verdict is not unknown. If
-            // the capture is also known to be incomplete, keep truncated:true
-            // on the result: the verdict is unknown, and the batch classifier
-            // must not read this as a deterministic timeout that could be
-            // forgiven as pre-existing.
+            // Timeout attribution and capture completeness are independent.
+            // Keep both flags when output is incomplete so the batch
+            // classifier cannot forgive an unknown verdict as pre-existing.
             outcome = {
                 name: branchName,
                 passed: false,
                 output: stdoutBuf,
+                timedOut: true,
                 truncated: streamsTruncated || undefined,
                 exitCode: exitCode,
                 error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
@@ -876,6 +993,7 @@
             // so cleanup diagnostics (worktreeRetained, cleanupFailed,
             // worktreeDir, cleanupNotes) are always attached rather than
             // discarded when outcome is null.
+            treeCleanupError = getTreeCleanupError(e) || treeCleanupError;
             outcome = {
                 name: branchName,
                 passed: false,
@@ -903,12 +1021,10 @@
             // child may still be running: kill it and confirm its exit (both
             // bounded by the cleanup deadline, with every timer cleared)
             // BEFORE removing the worktree, which fails on Windows while the
-            // child holds it as CWD. Only a wait that RESOLVED with a status
-            // establishes termination; a rejected wait, a failed kill, or a
-            // deadline expiry does not — in those cases the worktree is
-            // retained and reported rather than removed while the child may
-            // still hold it.
-            if (child && (!waitSettled || !waitResolvedWithStatus)) {
+            // child holds it as CWD. A fulfilled wait establishes direct-child
+            // termination; a known tree-close failure separately prohibits
+            // removal. Never retry a signal against an already-reaped group.
+            if (!treeCleanupError && child && (!waitSettled || !waitResolvedWithStatus)) {
                 var killOutcome = null;
                 try {
                     var killResult = child.kill();
@@ -921,6 +1037,7 @@
                     killOutcome = { settled: true, rejected: true, reason: e };
                 }
                 if (killOutcome && killOutcome.settled && killOutcome.rejected) {
+                    treeCleanupError = getTreeCleanupError(killOutcome.reason) || treeCleanupError;
                     cleanupNotes.push('kill failed: ' + String((killOutcome.reason && killOutcome.reason.message) || killOutcome.reason));
                     log.debug('verifySplitAsync: abnormal-exit kill failed', { error: (killOutcome.reason && killOutcome.reason.message) || String(killOutcome.reason) });
                 } else if (killOutcome && !killOutcome.settled) {
@@ -936,42 +1053,37 @@
                     waitOutcome = { settled: true, rejected: true, reason: e };
                 }
                 if (waitOutcome && waitOutcome.settled && waitOutcome.value && waitOutcome.value.code !== undefined) {
+                    waitResult = waitOutcome.value;
+                    treeCleanupError = getTreeCleanupError(waitResult) || treeCleanupError;
                     waitResolvedWithStatus = true;
                 } else if (waitOutcome && waitOutcome.settled && waitOutcome.rejected) {
+                    treeCleanupError = getTreeCleanupError(waitOutcome.reason) || treeCleanupError;
                     cleanupNotes.push('exit wait rejected: ' + String((waitOutcome.reason && waitOutcome.reason.message) || waitOutcome.reason));
                 } else if (waitOutcome && !waitOutcome.settled) {
                     cleanupNotes.push('exit wait did not settle before the cleanup deadline');
                 }
             }
-            if (!child) {
-                // Spawn itself failed before any child process existed, so no
-                // process holds the worktree CWD and removal is safe.
+            if (!child && !treeCleanupError) {
+                // A rejected spawn can follow process creation. The binding
+                // carries a tree cleanup error when that rollback failed.
                 waitResolvedWithStatus = true;
             }
-            if (worktreeReady) {
+            var removalFailure;
+            if (worktreeReady && !treeCleanupError) {
                 if (waitResolvedWithStatus) {
-                    try {
-                        var cleanupResult = await cleanupWorktreeAsync();
-                        // A failed worktree removal must be part of the
-                        // returned result, not just a debug log.
-                        if (cleanupResult && cleanupResult.code !== 0) {
-                            cleanupNotes.push('worktree removal failed: ' + execFailReason(cleanupResult));
-                            log.debug('verifySplitAsync: worktree cleanup failed', { error: execFailReason(cleanupResult) });
-                        }
-                    } catch (e) {
-                        cleanupNotes.push('worktree removal failed: ' + String((e && e.message) || e));
-                        log.debug('verifySplitAsync: worktree cleanup failed', { error: (e && e.message) || String(e) });
-                    }
+                    removalFailure = await removeVerificationWorktree(gitExecAsync, dir, worktreeDir);
                 } else {
                     // Termination was never confirmed (rejected wait, failed
                     // kill, or deadline expiry): removing the worktree now
                     // could fail on Windows while the child still holds it as
                     // CWD, and claiming success would be a lie. Retain the
                     // worktree and report its path.
-                    cleanupNotes.push('worktree retained: child termination was not confirmed');
+                    cleanupNotes.push('worktree retained at ' + worktreeDir + ': child termination was not confirmed');
                 }
             }
             if (outcome !== null && cleanupNotes.length > 0) {
+                outcome.passed = false;
+                outcome.execFailed = true;
                 outcome.cleanupFailed = true;
                 outcome.worktreeDir = worktreeDir;
                 if (!waitResolvedWithStatus && worktreeReady) {
@@ -979,6 +1091,26 @@
                 }
                 var note = cleanupNotes.join('; ');
                 outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + note;
+            }
+            if (outcome !== null && (treeCleanupError || removalFailure || outcome.cleanupFailed)) {
+                // A cleanup failure does not erase the verification command's
+                // status. Preserve it and all independently known
+                // capture, timeout and cancellation facts, including when an
+                // output callback threw before the first wait completed.
+                if (waitResult && waitResult.code !== undefined) {
+                    outcome.exitCode = waitResult.code;
+                    if (timeoutMs > 0 && (waitResult.code === 124 || waitResult.code === 137 ||
+                        waitResult.code === 143 || (typeof elapsedMs === 'number' && elapsedMs >= timeoutMs))) {
+                        outcome.timedOut = true;
+                    }
+                }
+                if (streamsTruncated) outcome.truncated = true;
+                if (cancelled || isCancelledNow()) outcome.cancelled = true;
+            }
+            if (outcome !== null && treeCleanupError) {
+                reportTreeCleanupFailure(outcome, treeCleanupError, worktreeDir, true);
+            } else if (outcome !== null) {
+                applyRemovalFailure(outcome, removalFailure);
             }
         }
         return outcome;
@@ -1033,6 +1165,10 @@
                 outputFn: options.outputFn || null,
                 isCancelled: isCancelledNow
             });
+            if (baselineResult.cleanupFailed) {
+                baselineResult.baseline = true;
+                return failedVerifyBatch(baselineResult, results);
+            }
             if (baselineResult.cancelled || isCancelledNow()) {
                 return { allPassed: false, results: [], error: 'verification cancelled by user' };
             }
@@ -1089,6 +1225,7 @@
                 isCancelled: isCancelledNow
             });
             if (result.cancelled || isCancelledNow()) {
+                if (result.cleanupFailed) return failedVerifyBatch(result, results);
                 return { allPassed: false, results: results, error: 'verification cancelled by user' };
             }
             if (scopedCmd !== baseCmd) {
@@ -1110,6 +1247,7 @@
                 onBranchDone(split.name, result.passed, result.exitCode || 0, branchElapsedMs, false, !!result.preExisting);
             }
 
+            if (result.cleanupFailed) return failedVerifyBatch(result, results);
             results.push(result);
             if (!result.passed && !result.preExisting) {
                 allPassed = false;

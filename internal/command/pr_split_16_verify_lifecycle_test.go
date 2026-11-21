@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
@@ -375,10 +376,15 @@ func TestVerifyRunBranch_InteractiveRegisterFailureUsesRawCleanup(t *testing.T) 
 
 func TestVerifyRunBranch_ShellSpawnFailureFallsBackToOneShot(t *testing.T) {
 	t.Parallel()
-	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+	eng := prsplittest.NewTUIEngineE(t)
+	evalJS := eng.EvalJSTimeout(t, 30*time.Second)
+	if _, err := evalJS(prsplittest.Chunk16Helpers); err != nil {
+		t.Fatal(err)
+	}
 
-	raw, err := evalJS(`(function() {
+	raw, err := evalJS(`(async function() {
 		setupPlanCache();
+		globalThis.prSplit._state.planCache.sourceBranch = '';
 		globalThis.prSplit.runtime.dir = '.';
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
@@ -386,9 +392,12 @@ func TestVerifyRunBranch_ShellSpawnFailureFallsBackToOneShot(t *testing.T) {
 		var origPrepare = globalThis.prSplit.prepareVerifyWorktree;
 		var origSpawn = globalThis.prSplit.spawnShellSession;
 		var origStart = globalThis.prSplit.startVerifySession;
-		var origGitExec = globalThis.prSplit._gitExec;
-		var gitCalls = [];
+		var origCleanup = globalThis.prSplit.cleanupVerifyWorktree;
+		var cleanupCalls = [];
 		var startCalled = 0;
+		var cleanupEntered, finishCleanup;
+		var entered = new Promise(function(resolve) { cleanupEntered = resolve; });
+		var cleanup = new Promise(function(resolve) { finishCleanup = resolve; });
 
 		globalThis.prSplit.canSpawnInteractiveShell = function() { return true; };
 		globalThis.prSplit.prepareVerifyWorktree = function() {
@@ -415,9 +424,10 @@ func TestVerifyRunBranch_ShellSpawnFailureFallsBackToOneShot(t *testing.T) {
 				startTime: 123
 			};
 		};
-		globalThis.prSplit._gitExec = function(dir, args) {
-			gitCalls.push([dir, args.join(' ')]);
-			return { code: 0, stdout: '', stderr: '' };
+		globalThis.prSplit.cleanupVerifyWorktree = function(dir, worktree) {
+			cleanupCalls.push([dir, worktree]);
+			cleanupEntered();
+			return cleanup;
 		};
 
 		try {
@@ -431,22 +441,40 @@ func TestVerifyRunBranch_ShellSpawnFailureFallsBackToOneShot(t *testing.T) {
 
 			var result = update({type: 'Tick', id: 'verify-branch'}, s);
 			s = result[0];
+			if (cleanupCalls.length !== 1) {
+				throw new Error('shell spawn failure did not enter worktree cleanup');
+			}
+			await entered;
+			var pending = s._verifySetup;
+			if (!pending || !pending.pending || startCalled !== 0) {
+				throw new Error('fallback did not wait for interactive worktree cleanup');
+			}
+			update({type: 'Tick', id: 'verify-branch'}, s);
+			if (startCalled !== 0 || s._verifySetup !== pending || cleanupCalls.length !== 1) {
+				throw new Error('pending cleanup was repeated or allowed fallback');
+			}
+			finishCleanup();
+			await pending.promise;
+			await settlePaneOperations(s);
+			result = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = result[0];
 
 			return JSON.stringify({
 				startCalled: startCalled,
 				verifyMode: s.verifyMode,
 				worktree: s.activeVerifyWorktree,
-				cleanupAttempted: gitCalls.some(function(call) {
-					return call[1] === 'worktree remove --force /tmp/osm-verify-interactive';
+				cleanupAttempted: cleanupCalls.length === 1 && cleanupCalls.some(function(call) {
+					return call[0] === '/tmp/repo' && call[1] === '/tmp/osm-verify-interactive';
 				}),
 				hasTick: !!(result && result[1])
 			});
 		} finally {
+			finishCleanup();
 			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.prepareVerifyWorktree = origPrepare;
 			globalThis.prSplit.spawnShellSession = origSpawn;
 			globalThis.prSplit.startVerifySession = origStart;
-			globalThis.prSplit._gitExec = origGitExec;
+			globalThis.prSplit.cleanupVerifyWorktree = origCleanup;
 		}
 	})()`)
 	if err != nil {
@@ -544,16 +572,22 @@ func TestVerifyRunBranch_InvalidShellStartFallsBackToOneShot(t *testing.T) {
 		var originalCanSpawn = prSplit.canSpawnInteractiveShell;
 		var originalPrepare = prSplit.prepareVerifyWorktree;
 		var originalStart = prSplit.startVerifySession;
-		var originalGitExec = prSplit._gitExec;
+		var originalCleanup = prSplit.cleanupVerifyWorktree;
 		var cleanupCalls = [];
+		var startCalled = 0;
+		var cleanupEntered;
+		var entered = new Promise(function(resolve) { cleanupEntered = resolve; });
+		var finishCleanup;
+		var cleanup = new Promise(function(resolve) { finishCleanup = resolve; });
 		prSplit.canSpawnInteractiveShell = function() { return true; };
 		prSplit.prepareVerifyWorktree = function() {
 			return { worktreeDir: '/tmp/invalid-shell-worktree', dir: '/tmp/repo' };
 		};
-		prSplit.startVerifySession = function() { return { skipped: true }; };
-		prSplit._gitExec = function(dir, args) {
-			cleanupCalls.push([dir, args.join(' ')]);
-			return { code: 0, stdout: '', stderr: '' };
+		prSplit.startVerifySession = function() { startCalled++; return { skipped: true }; };
+		prSplit.cleanupVerifyWorktree = function(dir, worktree) {
+			cleanupCalls.push([dir, worktree]);
+			cleanupEntered();
+			return cleanup;
 		};
 		try {
 			var s = initState('EXECUTING');
@@ -565,15 +599,16 @@ func TestVerifyRunBranch_InvalidShellStartFallsBackToOneShot(t *testing.T) {
 			if (!first[0]._verifySetup || !first[0]._verifySetup.pending) {
 				return 'FAIL: invalid shell startup was not deferred';
 			}
-			var cleanupDeadline = Date.now() + 2000;
-			while (cleanupCalls.length === 0 && Date.now() < cleanupDeadline) {
-				await new Promise(function(resolve) { setTimeout(resolve, 5); });
-			}
+			await entered;
+			if (startCalled !== 0) return 'FAIL: fallback started before failed shell cleanup settled';
+			finishCleanup();
+			await first[0]._verifySetup.promise;
+			await Promise.resolve();
 			var second = update({type: 'Tick', id: 'verify-branch'}, first[0]);
-			if (second[0].verifyMode === 'interactive' || second[0].activeVerifySession) {
+			if (startCalled !== 1 || second[0].verifyMode === 'interactive' || second[0].activeVerifySession) {
 				return 'FAIL: invalid shell was accepted as an interactive session';
 			}
-			if (cleanupCalls.length === 0 || cleanupCalls[0][1].indexOf('/tmp/invalid-shell-worktree') < 0) {
+			if (cleanupCalls.length !== 1 || cleanupCalls[0][1] !== '/tmp/invalid-shell-worktree') {
 				return 'FAIL: invalid shell worktree was not cleaned: ' + JSON.stringify(cleanupCalls);
 			}
 			return 'OK';
@@ -581,7 +616,7 @@ func TestVerifyRunBranch_InvalidShellStartFallsBackToOneShot(t *testing.T) {
 			prSplit.canSpawnInteractiveShell = originalCanSpawn;
 			prSplit.prepareVerifyWorktree = originalPrepare;
 			prSplit.startVerifySession = originalStart;
-			prSplit._gitExec = originalGitExec;
+			prSplit.cleanupVerifyWorktree = originalCleanup;
 		}
 	})()`)
 	if err != nil {
@@ -604,9 +639,13 @@ func TestVerifyRunBranch_AsyncShellStartFailureFallsBackToOneShot(t *testing.T) 
 		var originalPrepare = prSplit.prepareVerifyWorktree;
 		var originalSpawn = prSplit.spawnShellSession;
 		var originalStart = prSplit.startVerifySession;
-		var originalGitExec = prSplit._gitExec;
+		var originalCleanup = prSplit.cleanupVerifyWorktree;
 		var startCalled = 0;
 		var cleanupCalls = [];
+		var cleanupEntered;
+		var entered = new Promise(function(resolve) { cleanupEntered = resolve; });
+		var finishCleanup;
+		var cleanup = new Promise(function(resolve) { finishCleanup = resolve; });
 
 		prSplit.canSpawnInteractiveShell = function() { return true; };
 		prSplit.prepareVerifyWorktree = function() {
@@ -614,16 +653,18 @@ func TestVerifyRunBranch_AsyncShellStartFailureFallsBackToOneShot(t *testing.T) 
 		};
 		prSplit.spawnShellSession = function() {
 			return {
-				start: function() { return Promise.reject(new Error('pty start failed')); }
+				start: function() { return Promise.reject(new Error('pty start failed')); },
+				close: function() {}
 			};
 		};
 		prSplit.startVerifySession = function() {
 			startCalled++;
 			return { skipped: true, session: null, worktreeDir: null };
 		};
-		prSplit._gitExec = function(dir, args) {
-			cleanupCalls.push([dir, args.join(' ')]);
-			return { code: 0, stdout: '', stderr: '' };
+		prSplit.cleanupVerifyWorktree = function(dir, worktree) {
+			cleanupCalls.push([dir, worktree]);
+			cleanupEntered();
+			return cleanup;
 		};
 
 		try {
@@ -638,7 +679,10 @@ func TestVerifyRunBranch_AsyncShellStartFailureFallsBackToOneShot(t *testing.T) 
 			if (!first[0]._verifySetup || !first[0]._verifySetup.pending) {
 				return 'FAIL: shell startup was not deferred';
 			}
-			await Promise.resolve();
+			await entered;
+			if (startCalled !== 0) return 'FAIL: fallback started before failed shell cleanup settled';
+			finishCleanup();
+			await first[0]._verifySetup.promise;
 			await Promise.resolve();
 			var second = update({type: 'Tick', id: 'verify-branch'}, first[0]);
 			if (startCalled !== 1 || second[0].verifyMode === 'interactive' || second[0].activeVerifySession) {
@@ -648,7 +692,7 @@ func TestVerifyRunBranch_AsyncShellStartFailureFallsBackToOneShot(t *testing.T) 
 					active: second[0].activeVerifySession
 				});
 			}
-			if (cleanupCalls.length === 0 || cleanupCalls[0][1].indexOf('/tmp/async-start-worktree') < 0) {
+			if (cleanupCalls.length !== 1 || cleanupCalls[0][1] !== '/tmp/async-start-worktree') {
 				return 'FAIL: failed startup worktree was not cleaned: ' + JSON.stringify(cleanupCalls);
 			}
 			return 'OK';
@@ -657,7 +701,7 @@ func TestVerifyRunBranch_AsyncShellStartFailureFallsBackToOneShot(t *testing.T) 
 			prSplit.prepareVerifyWorktree = originalPrepare;
 			prSplit.spawnShellSession = originalSpawn;
 			prSplit.startVerifySession = originalStart;
-			prSplit._gitExec = originalGitExec;
+			prSplit.cleanupVerifyWorktree = originalCleanup;
 		}
 	})()`)
 	if err != nil {

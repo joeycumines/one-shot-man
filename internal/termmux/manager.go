@@ -877,8 +877,10 @@ const (
 
 // registerPayload carries the arguments for a reqRegister request.
 type registerPayload struct {
-	session InteractiveSession
-	target  SessionTarget
+	session         InteractiveSession
+	target          SessionTarget
+	remainOnExitSet bool
+	remainOnExit    bool
 }
 
 // monitorConfigPayload carries the session ID and new monitor config.
@@ -1679,17 +1681,37 @@ func (m *SessionManager) rejectQueuedRequests() {
 	}
 }
 
+// RegisterOptions sets policy for one registration without changing the
+// manager's defaults. When supplied, RemainOnExit overrides that default even
+// when false. With true, EOF keeps the exited session and its snapshot until
+// its owner calls Unregister, which observes the first underlying Close result.
+type RegisterOptions struct {
+	RemainOnExit bool
+}
+
 // Register adds a new session to the manager and returns its unique SessionID.
 // The first registered session automatically becomes the active input target.
-func (m *SessionManager) Register(session InteractiveSession, target SessionTarget) (SessionID, error) {
-	resp := m.sendRequest(reqRegister, &registerPayload{session: session, target: target})
+// At most one options value may be supplied; omission inherits the manager's
+// remain-on-exit default. Options are copied before the request is enqueued.
+func (m *SessionManager) Register(session InteractiveSession, target SessionTarget, options ...RegisterOptions) (SessionID, error) {
+	if len(options) > 1 {
+		return 0, fmt.Errorf("%w: register accepts at most one options value", ErrInvalidPayload)
+	}
+	payload := &registerPayload{session: session, target: target}
+	if len(options) == 1 {
+		payload.remainOnExitSet = true
+		payload.remainOnExit = options[0].RemainOnExit
+	}
+	resp := m.sendRequest(reqRegister, payload)
 	if resp.err != nil {
 		return 0, resp.err
 	}
 	return resp.value.(SessionID), nil
 }
 
-// Unregister closes and removes a session by ID.
+// Unregister closes and removes a session by ID. If the underlying Close
+// fails, the session is still detached and the returned error wraps that
+// failure; detachment alone does not confirm that its child terminated.
 func (m *SessionManager) Unregister(id SessionID) error {
 	return m.sendRequest(reqUnregister, id).err
 }
@@ -2540,13 +2562,17 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		}
 	}
 
+	remainOnExit := m.paneMgr.RemainOnExit()
+	if p.remainOnExitSet {
+		remainOnExit = p.remainOnExit
+	}
 	ms := &managedSession{
 		session:      p.session,
 		vterm:        v,
 		state:        SessionCreated,
 		target:       p.target,
 		lastActive:   time.Now(),
-		remainOnExit: m.paneMgr.RemainOnExit(),
+		remainOnExit: remainOnExit,
 	}
 
 	if cs, ok := p.session.(*CaptureSession); ok {
@@ -2625,9 +2651,12 @@ func (m *SessionManager) handleUnregister(id SessionID) response {
 	// Close any active pipe before closing the underlying session.
 	m.closePipeForSession(ms)
 
-	// Close the underlying session — log errors rather than silently discarding.
-	if err := ms.session.Close(); err != nil {
-		slog.Warn("session close failed during unregister", "sessionID", id, "error", err)
+	// Preserve the Close outcome independently of registry detachment. Callers
+	// may own resources (such as a worktree) that an unconfirmed child can still
+	// use, and must not mistake removal from this registry for a clean close.
+	closeErr := ms.session.Close()
+	if closeErr != nil {
+		slog.Warn("session close failed during unregister", "sessionID", id, "error", closeErr)
 	}
 	ms.state = SessionClosed
 	delete(m.sessions, id)
@@ -2638,6 +2667,9 @@ func (m *SessionManager) handleUnregister(id SessionID) response {
 	}
 
 	m.eventBus.emit(EventSessionClosed, id)
+	if closeErr != nil {
+		return response{err: fmt.Errorf("termmux: close session %d during unregister: %w", id, closeErr)}
+	}
 	return response{}
 }
 

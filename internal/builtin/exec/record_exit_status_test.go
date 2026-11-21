@@ -112,8 +112,7 @@ func TestWaitContext_CallerAbortBeforeReapRejects(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns a short-lived helper process")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cmd := osexec.CommandContext(ctx, "sh", "-c", "kill -TERM $$; sleep 5")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
@@ -133,8 +132,7 @@ func TestWaitContext_CallerAbortBeforeReapRejects(t *testing.T) {
 	if code != -1 || !errors.Is(err, context.Canceled) {
 		t.Fatalf("WaitContext = (%d, %v), want (-1, context.Canceled) for a caller-aborted wait", code, err)
 	}
-	var aborted *waitAbortedError
-	if !errors.As(err, &aborted) {
+	if _, ok := errors.AsType[*waitAbortedError](err); !ok {
 		t.Fatalf("WaitContext error = %T, want *waitAbortedError so waitRejection rejects unconditionally", err)
 	}
 	if rejectErr := child.waitRejection(code, err); rejectErr == nil || !errors.Is(rejectErr, context.Canceled) {
@@ -191,8 +189,7 @@ func TestRecordExit_SignalledChildRecordsSignal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX signal semantics")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	cmd := osexec.CommandContext(ctx, "sh", "-c", "kill -TERM $$; sleep 5")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)

@@ -544,8 +544,8 @@ func TestVerifySplitAsync_RemovalFailureSetsCleanupFailed(t *testing.T) {
 	if err := json.Unmarshal([]byte(s), &res); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !res.CleanupFailed {
-		t.Errorf("cleanupFailed = false, want true when worktree removal returns exit 128")
+	if res.Passed || !res.ExecFailed || !res.CleanupFailed || res.ExitCode != 0 {
+		t.Errorf("removal failure must invalidate the overall result while preserving verification exit 0: %+v", res)
 	}
 	if res.WorktreeRetained {
 		t.Errorf("worktreeRetained = true, want false (the wait resolved with a status; removal was attempted)")

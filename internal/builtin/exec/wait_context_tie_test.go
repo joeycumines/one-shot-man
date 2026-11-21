@@ -40,7 +40,7 @@ func TestWaitContext_ReapedChildPreemptsCancelledContext(t *testing.T) {
 	cancel()
 
 	const iters = 1000
-	for i := 0; i < iters; i++ {
+	for i := range iters {
 		code, waitErr = child.WaitContext(ctx)
 		if waitErr != nil {
 			t.Fatalf("iter %d: a completed exit lost the tie to a done context: (%d, %v)", i, code, waitErr)

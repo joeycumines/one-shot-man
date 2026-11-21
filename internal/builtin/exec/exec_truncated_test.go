@@ -74,7 +74,7 @@ func TestRunExec_NonEOFReadErrorWithKnownExitCodeIsTruncated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	command, args := exitCodeCommand(7)
-	result := runExecCommand(ctx, command, args, pipeFactory, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
 
 	if result["code"] != 7 {
 		t.Fatalf("code = %v, want 7 (the real exit status must survive)", result["code"])
@@ -115,7 +115,7 @@ func TestRunExec_CloseErrorAfterEOFStaysComplete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	command, args := exitCodeCommand(0)
-	result := runExecCommand(ctx, command, args, pipeFactory, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
 
 	if result["code"] != 0 {
 		t.Fatalf("code = %v, want 0: the child exited 0 and ProcessState holds the real status even though Close failed after EOF", result["code"])
@@ -171,7 +171,7 @@ func TestRunExec_CancelAfterCleanExitPreservesCode(t *testing.T) {
 	}
 
 	command, args := exitCodeCommand(0)
-	result := runExecCommand(ctx, command, args, pipeFactory, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
 
 	if result["code"] != 0 {
 		t.Fatalf("code = %v, want 0 (message=%q)", result["code"], result["message"])

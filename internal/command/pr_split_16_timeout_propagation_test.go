@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
@@ -155,10 +156,18 @@ func TestPrSplitTUIUsesDefaultVerifyTimeout(t *testing.T) {
 
 func TestPrSplitOneShotVerifyDeadlineFailsSession(t *testing.T) {
 	t.Parallel()
-	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+	eng := prsplittest.NewTUIEngineE(t)
+	evalJS := eng.EvalJSTimeout(t, 30*time.Second)
+	if _, err := evalJS(prsplittest.Chunk16Helpers); err != nil {
+		t.Fatal(err)
+	}
 
-	raw, err := evalJS(`(function() {
-		var killed = false;
+	raw, err := evalJS(`(async function() {
+		var events = [];
+		var finishKill, finishClose, signalCloseEntered;
+		var kill = new Promise(function(resolve) { finishKill = resolve; });
+		var close = new Promise(function(resolve) { finishClose = resolve; });
+		var closeEntered = new Promise(function(resolve) { signalCloseEntered = resolve; });
 		var s = initState('BRANCH_BUILDING');
 		s.verifyMode = 'oneshot';
 		s.activeVerifyBranch = 'split/timeout';
@@ -173,16 +182,60 @@ func TestPrSplitOneShotVerifyDeadlineFailsSession(t *testing.T) {
 			isDone: function() { return false; },
 			screen: function() { return ''; },
 			output: function() { return 'partial'; },
-			kill: function() { killed = true; }
+			kill: function() {
+				events.push('kill');
+				return kill.then(function() { events.push('kill settled'); });
+			},
+			close: function() {
+				events.push('close');
+				signalCloseEntered();
+				return close.then(function() { events.push('close settled'); });
+			}
 		};
-		var r = update({type: 'Tick', id: 'verify-poll'}, s);
-		if (!killed || r[0].verifyingIdx !== 1) {
-			return 'FAIL: deadline did not terminate one-shot session';
+		try {
+			var r = update({type: 'Tick', id: 'verify-poll'}, s);
+			if (events.join(',') !== 'kill' || r[0].verifyingIdx !== 0 ||
+				!r[0]._verifyTimeoutKillPending || r[0].verificationResults.length !== 0) {
+				return 'FAIL: deadline did not wait for kill settlement';
+			}
+			update({type: 'Tick', id: 'verify-poll'}, s);
+			if (events.join(',') !== 'kill' || s.verifyingIdx !== 0) {
+				return 'FAIL: pending kill was repeated or advanced verification';
+			}
+
+			finishKill();
+			await closeEntered;
+			if (events.join(',') !== 'kill,kill settled,close' || s.verifyingIdx !== 0 ||
+				!s._verifyPaneCleanupPending || s._verifyTimeoutKillPending) {
+				return 'FAIL: close did not follow kill while blocking advancement';
+			}
+			if (s.verificationResults.length !== 1 || s.verificationResults[0].passed) {
+				return 'FAIL: timeout did not record exactly one failed verification';
+			}
+			update({type: 'Tick', id: 'verify-poll'}, s);
+			if (s.verifyingIdx !== 0 || events.join(',') !== 'kill,kill settled,close') {
+				return 'FAIL: verification advanced before close settled';
+			}
+
+			var cleanup = s._verifyPaneCleanupPromise;
+			finishClose();
+			await cleanup;
+			r = update({type: 'Tick', id: 'verify-poll'}, s);
+			var row = r[0].verificationResults[0];
+			if (r[0].verifyingIdx !== 1 || r[0].activeVerifySession !== null ||
+				r[0]._verifyPaneCleanupPending || r[0].verificationResults.length !== 1 ||
+				events.join(',') !== 'kill,kill settled,close,close settled') {
+				return 'FAIL: completed close did not advance exactly once';
+			}
+			if (!row || row.passed || row.preExisting || row.output !== 'partial' ||
+				row.name !== 'split/timeout' || row.error.indexOf('verify timeout after ') !== 0) {
+				return 'FAIL: deadline did not preserve the failed timeout result';
+			}
+			return 'OK';
+		} finally {
+			finishKill();
+			finishClose();
 		}
-		if (!r[0].verificationResults[0] || r[0].verificationResults[0].passed) {
-			return 'FAIL: deadline did not record a failed verification';
-		}
-		return 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)

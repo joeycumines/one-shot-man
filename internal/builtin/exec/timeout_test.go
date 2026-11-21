@@ -57,7 +57,7 @@ func TestSpawnChild_ContextDeadline(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_, _ = child.Wait()
+		_, _ = child.WaitContext(context.Background())
 		close(done)
 	}()
 	select {
@@ -77,7 +77,7 @@ func TestSpawnChild_AlreadyExpiredContext(t *testing.T) {
 	child, err := SpawnChild(ctx, SpawnConfig{Command: command, Args: args})
 	if err == nil {
 		_ = child.Kill()
-		_, _ = child.Wait()
+		_, _ = child.WaitContext(context.Background())
 		t.Fatal("SpawnChild with an expired context succeeded, want an error")
 	}
 	if _, ok := errors.AsType[*SpawnContextError](err); !ok {
@@ -147,7 +147,7 @@ func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
 	defer cancel()
 	command, args := hangingCommand()
 	start := time.Now()
-	result := runExecCommand(ctx, command, args, newPipe, outputEOFCeiling)
+	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
 	elapsed := time.Since(start)
 
 	if elapsed > 5*time.Second {

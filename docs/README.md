@@ -18,6 +18,8 @@ If you just want to try it, see the [root README](../README.md).
 - [Configuration reference](reference/config.md)
 - [TUI API reference](reference/tui-api.md)
 - [TUI lifecycle](reference/tui-lifecycle.md)
+- [TUI keymap](reference/tui-keymap.md)
+- [JS runtime compliance suite](reference/js-compliance-suite.md)
 - [Sophisticated session-id auto-determination](reference/sophisticated-auto-determination-of-session-id.md)
 
 ### Scripting module reference
@@ -31,22 +33,10 @@ If you just want to try it, see the [root README](../README.md).
 ## Architecture & internals
 
 - [Architecture](architecture.md)
-- [PR-Split Chunk Architecture](architecture-pr-split-chunks.md)
 - [Terminal Multiplexer (termmux) Architecture](architecture-termmux.md)
 - [Terminal Multiplexer JS API Reference](reference/termmux-js-api.md)
-- [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)
 - [Elm commands and Goja](reference/elm-commands-and-goja.md)
 - [Planning and acting using behavior trees](reference/planning-and-acting-using-behavior-trees.md)
 - [BT blackboard usage](reference/bt-blackboard-usage.md)
 - [Visuals](visuals/README.md)
-
-## Architecture Decision Records
-
-- [ADR 001: PR-Split Chunked Architecture](adr/001-pr-split-chunked-architecture.md)
-
-## Archive
-
-Archived documents and notes (not canonical docs):
-
-- [docs/archive/](archive/)

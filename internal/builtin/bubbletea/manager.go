@@ -83,6 +83,31 @@ func (c *programCompletion) wait() error {
 	return c.err
 }
 
+// waitCtx blocks until the completion fires or ctx is cancelled. On
+// cancellation it returns ctx.Err(); the completion itself is left running
+// so later callers can still observe the real result. If the completion has
+// already fired, its recorded result wins even when ctx is already done:
+// select chooses randomly among ready cases, so both a done completion and a
+// cancelled ctx are checked explicitly to make the outcome deterministic.
+func (c *programCompletion) waitCtx(ctx context.Context) error {
+	select {
+	case <-c.done:
+		return c.err
+	default:
+	}
+	select {
+	case <-c.done:
+		return c.err
+	case <-ctx.Done():
+		select {
+		case <-c.done:
+			return c.err
+		default:
+		}
+		return ctx.Err()
+	}
+}
+
 func (c *programCompletion) completed() bool {
 	select {
 	case <-c.done:
@@ -94,20 +119,22 @@ func (c *programCompletion) completed() bool {
 
 // Manager holds bubbletea-related state per engine instance.
 type Manager struct {
-	ctx          context.Context
-	mu           sync.Mutex
-	input        io.Reader
-	output       io.Writer
-	stderr       io.Writer // Stderr for logging panics/errors
-	signalNotify func(c chan<- os.Signal, sig ...os.Signal)
-	signalStop   func(c chan<- os.Signal)
-	isTTY        bool                   // Whether input is a TTY
-	ttyFd        int                    // TTY file descriptor (if available)
-	program      *tea.Program           // Currently running program (if any)
-	jsRunner     JSRunner               // REQUIRED: thread-safe JS execution via event loop
-	promisify    PromisifyFunc          // Optional: keeps loop alive while program runs
-	programDone  *programCompletion     // Current or most recently completed BubbleTea run
-	adapter      *gojaeventloop.Adapter // Optional: JS-promise exports (waitForProgram)
+	ctx            context.Context
+	mu             sync.Mutex
+	input          io.Reader
+	output         io.Writer
+	stderr         io.Writer // Stderr for logging panics/errors
+	signalNotify   func(c chan<- os.Signal, sig ...os.Signal)
+	signalStop     func(c chan<- os.Signal)
+	isTTY          bool                   // Whether either input or output is a TTY
+	outputTTY      bool                   // Whether rendering/terminal escapes may be written to output
+	ttyFd          int                    // TTY file descriptor (if available)
+	inputDefaulted bool                   // Whether input was defaulted from nil (not explicitly provided)
+	program        *tea.Program           // Currently running program (if any)
+	jsRunner       JSRunner               // REQUIRED: thread-safe JS execution via event loop
+	promisify      PromisifyFunc          // Optional: keeps loop alive while program runs
+	programDone    *programCompletion     // Current or most recently completed BubbleTea run
+	adapter        *gojaeventloop.Adapter // Optional: JS-promise exports (waitForProgram)
 }
 
 // PromisifyFunc is a function that executes work in a goroutine and returns a Future.
@@ -162,7 +189,8 @@ func NewManagerWithStderr(
 	// Track if we received nil inputs - if so, skip TTY detection entirely.
 	// This avoids triggering stdin access during engine construction in tests.
 	skipTTYDetection := input == nil && output == nil
-	if input == nil {
+	inputDefaulted := input == nil
+	if inputDefaulted {
 		input = os.Stdin
 	}
 	if output == nil {
@@ -178,63 +206,49 @@ func NewManagerWithStderr(
 		signalStop = signal.Stop
 	}
 
+	// Detect each stream independently. An input terminal preserves terminal
+	// input handling, but cannot authorize rendering into a redirected output.
+	// Two nil streams still skip probing entirely for noninteractive callers.
+	inputFd, outputFd := -1, -1
+	if !skipTTYDetection {
+		inputFd = terminalFD(input)
+		outputFd = terminalFD(output)
+	}
+	ttyFd := inputFd
+	if ttyFd < 0 {
+		ttyFd = outputFd
+	}
+
 	m := &Manager{
-		ctx:          ctx,
-		input:        input,
-		output:       output,
-		stderr:       stderr,
-		signalNotify: signalNotify,
-		signalStop:   signalStop,
-		isTTY:        false,
-		ttyFd:        -1,
-		jsRunner:     jsRunner, // REQUIRED: set at construction time
-	}
-
-	// Skip TTY detection if caller passed nil for both input and output.
-	// This indicates the caller doesn't need terminal detection (e.g., during
-	// engine construction for non-interactive scripts).
-	if skipTTYDetection {
-		return m
-	}
-
-	// Detect TTY for input - check TerminalChecker interface first (for TUIReader/TUIWriter wrappers)
-	if tc, ok := input.(TerminalChecker); ok {
-		if tc.IsTerminal() {
-			fd := tc.Fd()
-			if fd != ^uintptr(0) {
-				m.isTTY = true
-				m.ttyFd = int(fd)
-			}
-		}
-	} else if f, ok := input.(*os.File); ok {
-		// Fallback for direct *os.File
-		fd := int(f.Fd())
-		if term.IsTerminal(fd) {
-			m.isTTY = true
-			m.ttyFd = fd
-		}
-	}
-
-	// If input isn't a TTY, check output
-	if !m.isTTY {
-		if tc, ok := output.(TerminalChecker); ok {
-			if tc.IsTerminal() {
-				fd := tc.Fd()
-				if fd != ^uintptr(0) {
-					m.isTTY = true
-					m.ttyFd = int(fd)
-				}
-			}
-		} else if f, ok := output.(*os.File); ok {
-			fd := int(f.Fd())
-			if term.IsTerminal(fd) {
-				m.isTTY = true
-				m.ttyFd = fd
-			}
-		}
+		ctx:            ctx,
+		input:          input,
+		output:         output,
+		stderr:         stderr,
+		signalNotify:   signalNotify,
+		signalStop:     signalStop,
+		isTTY:          ttyFd >= 0,
+		outputTTY:      outputFd >= 0,
+		ttyFd:          ttyFd,
+		inputDefaulted: inputDefaulted,
+		jsRunner:       jsRunner, // REQUIRED: set at construction time
 	}
 
 	return m
+}
+
+func terminalFD(stream any) int {
+	if checker, ok := stream.(TerminalChecker); ok {
+		if checker.IsTerminal() {
+			if fd := checker.Fd(); fd != ^uintptr(0) {
+				return int(fd)
+			}
+		}
+	} else if file, ok := stream.(*os.File); ok {
+		if fd := int(file.Fd()); term.IsTerminal(fd) {
+			return fd
+		}
+	}
+	return -1
 }
 
 // SetJSRunner configures the Manager to use thread-safe JS execution.

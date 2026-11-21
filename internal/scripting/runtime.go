@@ -96,9 +96,8 @@ type Runtime struct {
 	// done is closed when the event loop returns from Run()
 	done chan struct{}
 
-	processExitCode      atomic.Int64
-	processExitCodeSet   atomic.Bool
 	processExitRequested atomic.Bool
+	interruptOnce        sync.Once
 
 	// bootstrapDone is closed when natural auto-exit is allowed to proceed.
 	// We hold a Promisify token until this is closed to prevent premature shutdown.
@@ -109,10 +108,16 @@ type Runtime struct {
 	started bool
 	stopped bool
 
-	// ctx is the lifecycle context for Done() channel
+	// ctx releases dependent work without waiting for terminal completion.
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
+
+// errRuntimeExit marks clean loop completion with a recorded script status or
+// an explicit default exit. It does not identify who requested raw loop
+// shutdown: host cancellation must use Close or cancel the caller context.
+// Metadata alone cannot publish it; the event-loop owner must have returned.
+var errRuntimeExit = errors.New("runtime completed with script exit status")
 
 // NewRuntime creates a new Runtime with an initialized event loop.
 // The event loop is automatically started and runs in a background goroutine.
@@ -161,7 +166,7 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 
 	// Create internal lifecycle context from the caller context so cancellation
 	// propagates to bindings and lifecycle work without waiting for AfterFunc.
-	childCtx, cancel := context.WithCancel(ctx)
+	childCtx, cancel := context.WithCancelCause(ctx)
 
 	rt := &Runtime{
 		loop:          loop,
@@ -176,8 +181,11 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 
 	// Use Promisify to keep the loop alive until natural exit is requested.
 	// This prevents the loop from auto-exiting during the registration phase.
-	loop.Promisify(ctx, func(ctx context.Context) (any, error) {
-		<-rt.bootstrapDone
+	loop.Promisify(childCtx, func(ctx context.Context) (any, error) {
+		select {
+		case <-rt.bootstrapDone:
+		case <-ctx.Done():
+		}
 		return nil, nil
 	})
 
@@ -189,11 +197,13 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	if err2 != nil {
 		close(rt.bootstrapDone)
 		loopCancel()
+		cancel(context.Canceled)
 		return nil, fmt.Errorf("failed to create goja adapter: %w", err2)
 	}
 	if err2 = rt.adapter.Bind(); err2 != nil {
 		close(rt.bootstrapDone)
 		loopCancel()
+		cancel(context.Canceled)
 		return nil, fmt.Errorf("failed to bind JS globals: %w", err2)
 	}
 	rt.adapter.SetConsoleOutput(os.Stderr)
@@ -229,17 +239,36 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	if err := rt.bindProcessLifecycle(); err != nil {
 		close(rt.bootstrapDone)
 		loopCancel()
-		cancel()
+		cancel(context.Canceled)
 		return nil, fmt.Errorf("failed to bind process lifecycle: %w", err)
 	}
 
+	// Context cancellation must interrupt a callback that never returns to the
+	// loop's cancellation check. Stop this hook after owner exit so publishing
+	// terminal completion cannot overwrite the adapter's process.exit signal.
+	stopInterrupt := context.AfterFunc(childCtx, func() { rt.interrupt(childCtx.Err()) })
 	// Start the event loop in background goroutine
 	go func() {
 		defer close(rt.done)
+		defer rt.cancel(context.Canceled)
 		// Run loop on its own goroutine
-		if err := rt.loop.Run(loopCtx); err != nil && err != context.Canceled {
+		runErr := rt.loop.Run(loopCtx)
+		stopInterrupt()
+		// Engine contexts also observe the cancellation below. The owner has
+		// already returned, so retire the shared hook before waking them.
+		rt.interruptOnce.Do(func() {})
+		if runErr != nil && runErr != context.Canceled {
 			// Report unexpected loop exit
-			slog.Error("eventloop terminated unexpectedly", "error", err)
+			slog.Error("eventloop terminated unexpectedly", "error", runErr)
+		}
+		// Graceful Loop.Run does not wait for Promisify workers to finish.
+		// Cancel their lifecycle here: waiting for adapter.Done would make
+		// an idle BubbleTea worker wait for the join that waits for it.
+		if runErr == nil {
+			_, codeSet := rt.ExitCode()
+			if codeSet || rt.processExitRequested.Load() {
+				rt.cancel(errRuntimeExit)
+			}
 		}
 	}()
 
@@ -257,12 +286,20 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	return rt, nil
 }
 
-// ExitCode returns the exit status captured from process.exitCode at process exit.
+// interrupt gives host cancellation one VM interrupt, even when both the
+// engine and runtime lifecycle are cancelled during the same teardown.
+func (rt *Runtime) interrupt(err error) {
+	rt.interruptOnce.Do(func() { rt.vm.Interrupt(err) })
+}
+
+// ExitCode returns the adapter's current script exit status. It is safe to call
+// concurrently and does not depend on mutable JS listeners. Wait for terminal
+// completion before treating the result as final: an exit listener can change it.
 func (rt *Runtime) ExitCode() (int, bool) {
-	if rt == nil || !rt.processExitCodeSet.Load() {
+	if rt == nil || rt.adapter == nil {
 		return 0, false
 	}
-	return int(rt.processExitCode.Load()), true
+	return rt.adapter.ExitCode()
 }
 
 // Close gracefully shuts down the runtime and event loop.
@@ -274,6 +311,10 @@ func (rt *Runtime) Close() error {
 		return nil
 	}
 	rt.stopped = true
+	// Publish host cancellation before releasing the bootstrap token. On an
+	// otherwise idle loop, releasing it first can let auto-exit publish a
+	// script-status cause before Close records who cancelled the runtime.
+	rt.cancel(context.Canceled)
 
 	// Release the bootstrap token under the same mutex used by Wait. Close and
 	// Wait may race, but the channel must be closed exactly once.
@@ -283,9 +324,6 @@ func (rt *Runtime) Close() error {
 		close(rt.bootstrapDone)
 	}
 	rt.mu.Unlock()
-
-	// Cancel the lifecycle context
-	rt.cancel()
 
 	// Stop the event loop
 	if rt.loopCancel != nil {
@@ -335,9 +373,18 @@ func (rt *Runtime) Done() <-chan struct{} {
 	return rt.ctx.Done()
 }
 
-// Loop returns the underlying Go event loop.
+// Loop returns the underlying Go event loop. For host cancellation use Close:
+// raw loop termination does not record a cancellation cause, so a clean return
+// still completes with any script exit status already assigned.
 func (rt *Runtime) Loop() *goeventloop.Loop {
 	return rt.loop
+}
+
+// Ctx returns the runtime's lifecycle context. Close cancels it before joining
+// the loop; script exits and other loop termination cancel it when the owner
+// returns, allowing terminal cleanup to finish joining dependent workers.
+func (rt *Runtime) Ctx() context.Context {
+	return rt.ctx
 }
 
 // Runtime returns the underlying goja.Runtime.

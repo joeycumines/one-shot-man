@@ -27,14 +27,25 @@ import (
 //
 // Any helper that captures offset internally is UNSAFE and creates race conditions!
 
+// exitWaitBound converts a wedged child into a per-test failure. Console.WaitExit
+// blocks until its context is cancelled or the process exits, so a child that
+// ignores the quit command otherwise hangs until the package timeout: run
+// 129562188826 died at `panic: test timed out after 40m0s` with a test parked in
+// WaitExit for 38m46s, taking every other test in the package with it.
+const exitWaitBound = 30 * time.Second
+
+// requireExpectExitCode waits for p to exit with exitCode, bounding the wait so a
+// child that never exits fails this test rather than stalling the package.
 func requireExpectExitCode(ctx context.Context, t *testing.T, p *termtest.Console, exitCode int) {
 	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, exitWaitBound)
+	defer cancel()
 	code, err := p.WaitExit(ctx)
 	if err != nil {
-		t.Fatalf("Failed to wait for exit: %v", err)
+		t.Fatalf("Failed to wait for exit: %v\nBuffer: %q", err, p.String())
 	}
 	if code != exitCode {
-		t.Fatalf("Expected exit code %d, but got %d", exitCode, code)
+		t.Fatalf("Expected exit code %d, but got %d\nBuffer: %q", exitCode, code, p.String())
 	}
 }
 

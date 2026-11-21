@@ -7,17 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `osm:exec` output queues wait for capacity without spinning after child exit, retain an ordered prefix on abort, and report incomplete capture whenever bytes cannot be retained or a read fails before EOF. Output completion no longer reads `Cmd.ProcessState` concurrently with the reaper or infers EOF from process exit.
+- `osm:exec` cancellation continues to bound output draining after reap; `kill()` also aborts pending drains for an already-reaped child. Completed streams keep their recorded completion result.
+- `osm:exec` enforces small `maxBufferedOutputBytes` limits without truncating configuration values on 32-bit platforms, and decodes JavaScript stream text incrementally across UTF-8 byte boundaries.
+- `osm:exec` exposes known process-tree teardown failures as `treeCleanupError` separately from exit status and output completeness, including failures after a child starts but before `spawn()` returns its handle. PR-split verification withholds worktree removal when setup or verification reports this error, preserves cleanup diagnostics through CLI/TUI results, and blocks dependent verification. A failure in the removal command itself is reported as an attempted removal.
+- Interactive PR-split verification preserves worktree ownership across asynchronous preparation, shell startup, rollback, and reset. Failed session shutdown retains the worktree and marks its verification result failed; stale cleanup reports its original path without changing a replacement run. `SessionManager.Unregister` and the verify-session proxy propagate native close errors while preserving registry detachment and events.
+- PR-split verification reports ordinary failed worktree removal through the public helpers, CLI, and TUI without replacing the command's exit/capture facts or claiming that an attempted removal was withheld. Cleanup duration no longer contributes to the synchronous command's timeout classification.
+- Verification registrations retain their exited native session until explicit cleanup observes its first close result. The optional per-registration `remainOnExit` policy preserves other registrations' defaults; stale registration callbacks dispose of their own IDs without changing a replacement run.
+- `osm:bubbletea` gates rendering, paste-mode, and toggle-screen escapes on output-terminal detection independently of stdin. Redirected output stays free of terminal sequences while terminal stdin preserves raw mode and terminal handoff.
+- `osm pr-split` async timeout results include `timedOut: true` independently of `truncated`, preserving timeout attribution and unknown-verdict dependency guards.
+- Script runtime termination cancels dependent BubbleTea programs, bootstrap work, and native bindings so worker joins can complete. Engine and runtime shutdown interrupt active JavaScript, preserve caller cancellation and real callback errors, and read final script exit status from the adapter instead of a mutable JavaScript exit listener.
+- CI runs the native Go tests with race detection on Linux, macOS, and Windows.
+
+## [v0.9.1] - 2026-11-20
+
+### Changed
+- `osm:exec` `execv` result objects now include a boolean `truncated` field across all return paths (including pre-child validation errors) to distinguish incomplete output capture structurally from normal exit codes.
+- `osm:exec` `child.wait()` now observes caller/engine context cancellation via `WaitContext(ctx)`: a caller abort before reap rejects with the context error, while a recorded exit status wins over a concurrent cancellation.
+- `osm:bubbletea` runs headless (`tea.WithoutRenderer()`, bracketed-paste escapes gated on TTY) when stdin/stdout is not a terminal, binds program lifecycle and `WaitForProgram` to the engine's context (so `Engine.Close()` and unlistened signals tear down idle programs promptly), unwraps file-backed non-TTY input directly to `*os.File` (preserving piped stdin while bypassing `go-prompt`/`go-tty` on Windows), and drops defaulted `nil` input.
+- `internal/termmux` `CaptureSession.Resize` serializes concurrent resizes without holding the session mutex across the PTY ioctl and propagates PTY resize errors (including `ErrClosed` and `ErrNotSupported`) while leaving stored dimensions unchanged on failure.
+
+### Fixed
+- `osm:exec` `child.wait()` reports the child's exit status even when tearing down its process tree failed, including a clean `exit 0`; `runExecCommand` reads `ProcessState` directly so post-reap context cancellation or post-EOF pipe-close errors preserve the real exit code instead of degrading to `-1`.
+- `osm pr-split` classifies unknown baseline and split verdicts (`execFailed`, `truncated`, `cancelled`) as "no information" in both CLI and TUI verification paths so failing splits are never forgiven as pre-existing and dependency guards stay intact; sync and async timeout results preserve both `truncated: true` and timeout attribution (`timedOut: true`).
+- `osm pr-split` `verifySplitAsync` computes its cleanup budget in `finally` (decoupled from `verifyTimeoutMs`, clearing all bounded-await timers), captures abnormal-exit errors in `catch` before `finally` so `cleanupFailed`, `worktreeRetained`, `worktreeDir`, and cleanup diagnostics always attach, and awaits bounded kill + child exit before removing the worktree (retaining it if termination is unconfirmed).
+- `osm pr-split` reports non-cancellation `child.wait()` rejections with the failure reason instead of collapsing to `exit -1`, and reports rejecting stream reads as cut-short captures rather than unhandled rejections.
+- `internal/termmux/pty` ConPTY runtime probe fails the Windows test suite on broken `Spawn`/`Wait`/`Close` (skipping only `STATUS_DLL_INIT_FAILED` and absent pseudoconsole APIs), caches verdicts including failures, runs `cmd.exe /d /c exit 0` with a 4096-byte rolling output tail, and includes exit code and output tail on close failures.
+- `internal/termmux` and `internal/termmux/pty` test reliability: `TestProcess_Close_CustomGracePeriod` now uses `testing/synctest` for exact fake-clock verification of grace-period timing; `TestSessionManager_Pipeline_EOFTransition` and sibling event tests wait on the event channel with a deadline and verify post-exit state; ConPTY smoke output deadline raised to 60s.
+- `osm sync load` strips YAML frontmatter from files with CRLF line endings and no longer truncates an entry whose frontmatter value contains `---`; `osm sync --help` lists `config-push`/`config-pull`.
+- CI pins `actions/checkout` and `actions/setup-go` by commit SHA, installs the exact Go patch from `go.mod` with `GOTOOLCHAIN=local` so the compiler stays aligned with pinned `staticcheck`, and `NewEngine` cancels its derived context on initialization errors.
+- `osm pr-split` test harness pins prompt-ready knobs via `_setNumberKnob`, keeps a 2-minute default `EvalTimeout` with a 10-minute opt-in for the 10,000-file grouping tests, and verifies the TUI palette's WCAG AA contrast ratios.
+
+## [v0.9.0] - 2026-11-15
+
 ### Added
 - `osm pr-split` agent tab is a live interactive terminal surface (clipped-pane termpane embedding with working cursor) instead of polled screenshots; non-reserved keys and inside-pane clicks reach the agent PTY with screenshot fallback when detached.
 - `osm pr-split` preserves the agent session plus MCP callback on classification and heartbeat-stale timeouts: captures evidence, writes a transcript under the storage session directory (same family as `pr-split-mux.state.json`), and offers ERROR-state `a`/`f`/`d` actions (show, focus, discard-and-quit after teardown settles).
+- `osm:termmux` `newKeymap({prefix?, passthroughKey?, keys?, chords?})`, a self-contained key-command mapper with an optional chord prefix, a direct key→action map, a chord map, and a passthrough key. `handleKey` reports handled/action/armed state, `<esc>` or a repeated prefix cancels an armed chord, and unbound chord keys reach the child. Bindings mutate at runtime through `bind`/`bindChord`/`unbind`/`unbindChord`/`setPrefix`/`setPassthroughKey`, and `listKeys` renders a deterministic aligned table.
+- `osm:termmux` `keymapOverlay({keymap, tea, onClose?})`, a ready-to-run BubbleTea model (same shape as `chooseTree`) that renders a keymap's `listKeys` table as a centered popup and closes on any key.
+- `osm:termmux` `inputStaged(id, data)` and `session.writeStaged(data)`: a staged/atomic session write that copies the payload once and delivers it to the PTY in a single `Write`, so large pastes are never seen by the child as several contiguous chunks. Ordering against regular input is preserved because both use the same queue.
+- `.github/workflows/release.yml` publishes cross-platform binary assets for tagged releases.
 
 ### Changed
 - Terminal session events are delivered by a lossless `ChanPubSub` fan-out instead of the previous best-effort bus: one shared unbuffered broadcast channel replaces per-subscriber buffered queues, so no control event is ever dropped when a consumer falls behind. Subscribers acknowledge every event before doing other work, and an unacknowledged subscriber blocks publishers by design rather than silently losing events. `SessionManager.Subscribe`/`Unsubscribe(id)`/`EventsDropped` and the JS `eventsDropped` binding are replaced by `SubscribeEvents`/`UnsubscribeEvents`/`AckEvent`; a drop counter no longer has meaning.
 - Session output is no longer an event-bus signal. It is a conflated, stateful wake-up (`WatchOutput`/`WatchAnyOutput`/`TakeOutputDirty`) that consumers resolve against the screen snapshot, so a fast child process can no longer overrun a slow consumer and a burst collapses to a single pending notification. The JS `output` listener contract is unchanged.
 - The `osm:termmux` JavaScript event bridge subscribes only while listeners exist and delivers at most 128 events or 5ms per event-loop turn, rescheduling the remainder, so a large backlog cannot monopolise the event loop. A manager with no JavaScript listener no longer holds a bridge subscription or a subscription goroutine.
+- `termpane` forwards pastes as one staged write instead of 4096-byte chunks.
+- Modified navigation and tilde keys now use the tmux-verified xterm modifier parameter `ESC[1;{mod}{letter}` (and `ESC[{num};{mod}~` for tilde keys), with `mod = 1 + shift(1)|alt(2)|ctrl(4)|meta(8)`; application cursor mode uses the SS3 form. Previously only shift/ctrl+shift prefixes were handled, so alt+left arrived as a double-ESC sequence whose trailing bytes surfaced as literal characters. `alt+<printable>` keeps the legacy ESC prefix.
 
 ### Fixed
 - `osm pr-split` spawns the agent argv with exactly one `--mcp-config` by construction (empty provider `defaultArgs`, single builder, both `--mcp-config x` and `--mcp-config=x` user forms rejected); dead `agent-model`/`agent-config-dir` flags removed from flags, config, JS, docs, completions, and tests; help copy is honest about required agent-command, comma-rule agent-env, and non-bounding timeout.
+
+## [v0.8.0] - 2026-11-10
+
+### Added
+- `userk8s` accepts `gemini` as a client surface. The GenerateContent surface is a shaper capability rather than an access protocol: chat, messages, and responses accesses can each serve it by transcoding, the surface is accepted for every shaper protocol, and it is rejected on a direct transport, which can only carry its own protocol's surface.
+
+### Changed
+- A trailing `/v1beta` on a gemini endpoint is normalized so the derived shaper mount prefix matches the other surfaces.
+
+## [v0.7.1] - 2026-11-10
+
+### Changed
+- `osm version` reads the CLI version from `runtime/debug` build info instead of a hard-coded constant, so tagged releases and VCS pseudo-versions are reported accurately and missing build metadata falls back to `devel`.
+- Shaper route validation canonicalizes endpoint paths and removes the surface API suffix before deriving the mount prefix, which accepts the renderer's real layouts while rejecting API-only endpoints, repeated slashes, and dot segments that could hide a duplicate or conflicting mount.
+
+### Fixed
+- The rendered personal profile fixture and its count assertions match the current registry output.
+
+## [v0.7.0] - 2026-11-02
+
+### Added
+- `userk8s` catalog: `Model` describes only canonical identity and capabilities; provider offers move to `ModelServing`, fallback chains to `ModelSelection`, and entity access to `ModelRoute`. A serving carries the provider's wire id and narrowing overrides, a route carries the access, credential binding, exposed offers, surfaces, and transport, and `LocalSecretBinding` declares its own credential scheme. Consumers read `serving.effective` rather than merging model and serving facts themselves.
+- The userk8s JavaScript surface exposes servings, routes, selections, and bindings, resolves credentials by binding, projects by serving, and returns promises for every catalog operation.
+- Signal-delivery failures are reported on stderr, so an undelivered signal is distinguishable from a missing listener.
+
+### Fixed
+- The files backend matches the API server: it applies CRD defaults while decoding and validates the same CEL invariants in Go, including reasoning facts, tool settings against effective capabilities, route surfaces, offer ids, selection cycles, and shaper mount collisions.
+- Bubblezone markers survive the compositor: they are transcoded to APC carriers that the ultraviolet cell parser keeps, only balanced marker pairs are restored after render, and hit tests use a geometry-only layer stack.
+
+### Changed
+- Documented that client-facing `Model` context and output token limits may be lower than a provider's hard limits, so a safety-buffered budget does not imply an upstream ceiling.
+- Bumped dependencies including the Kubernetes libraries.
+
+## [v0.6.0] - 2026-10-08
+
+### Fixed
+- `exec` submits the lifetime task before starting the loop, closing the startup race that could strand a child when auto-exit terminated the loop before admission.
+- The pr-split empty-merge-base guard covers the async paths and the diff-stats path, and the regression tests use `GitMockSetupJS`.
+- Scripting suppresses the post-exit callback race when `process.exit` terminates the event loop.
+- ConPTY test probing retries three times with backoff, so a transient `exit 1` on a loaded runner no longer reads as a broken host; a genuinely broken host is still detected.
+- The MCP init watcher no longer leaks goroutines: `WatchForInit` returns a deregistering cancel function, all call sites use the leak-safe `injectOnMCPInit` helper, and bespoke pr-split MCP-inject goroutines are fully done-interruptible.
+
+### Changed
+- `GO_TEST_FLAGS` default timeout is 40 minutes, and the pr-split `EvalJS` default timeout is 2 minutes, both to accommodate heavy real-git evaluations on loaded parallel CI runners.
 
 ## [v0.5.0] - 2026-09-17
 
@@ -107,7 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm pr-split`. Split a large branch into stacked, reviewable PRs. New command in `internal/command/pr_split.go` with helpers `pr_split_00_*` through `pr_split_12_*` (diff analysis, grouping, plan, validation, git execution, verification, PR creation, conflict resolution, Claude integration) and an interactive Bubble Tea wizard `pr_split_13_*` to `pr_split_16*` (configure, plan review, execution, verification) plus headless mode. Strategies are `directory`, `directory-deep`, `extension`, `chunks`, `dependency`, `auto`. Flags include `-base`, `-strategy`, `-max`, `-verify`, `-resume`.
 - Terminal multiplexer and VT stack. New `internal/termmux` (VT parser, screen, render, PTY, manager, persistence, SGR mouse, status bar) exposed as `osm:termmux` in `internal/builtin/termmux/module.go`, plus `osm:claudemux` building blocks and `osm:mcp`/`osm:mcpcallback` for Model Context Protocol.
 - Async `osm:fetch` and `osm:grpc`/`osm:protobuf`. `osm:fetch` is promise based and browser compatible (`fetch(url, {method, headers, body, signal, timeout})` returns `Promise<Response>` with `Headers` and `text()`/`json()` promises, `AbortController` cancellation). `osm:grpc` and `osm:protobuf` are promise based via `goja-grpc`/`goja-protobuf` on `go-inprocgrpc`.
-- Helpers, examples, and docs. `osm:format` (`formatNum`/`formatBytes`), example goals in `goals` and scripts `scripts/example-06-api-client.js` and `example-07-flag-parsing.js`, new reference pages `docs/reference/termmux-js-api.md`, `tui-keymap.md`, `security.md`, and `docs/architecture-pr-split-chunks.md`.
+- Helpers, examples, and docs. `osm:format` (`formatNum`/`formatBytes`), example goals in `goals` and scripts `scripts/example-06-api-client.js` and `example-07-flag-parsing.js`, and new reference pages `docs/reference/termmux-js-api.md`, `tui-keymap.md`, `security.md`.
 
 ### Changed
 - TUI and Go runtime upgraded. Go 1.25.7 to 1.26.2 and Charm stack `github.com/charmbracelet/{bubbles,bubbletea,lipgloss}` v1 to `charm.land/*` v2 (`bubbles/v2`, `bubbletea/v2`, `lipgloss/v2`, `bubblezone/v2`) plus `go-git/v6`, `modelcontextprotocol/go-sdk` and `x/*` bumps in `go.mod`.
@@ -139,7 +223,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Config file loading rejects symlinks to prevent path traversal attacks
 
-[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.9.1...HEAD
+[v0.9.1]: https://github.com/joeycumines/one-shot-man/compare/v0.9.0...v0.9.1
+[v0.9.0]: https://github.com/joeycumines/one-shot-man/compare/v0.8.0...v0.9.0
+[v0.8.0]: https://github.com/joeycumines/one-shot-man/compare/v0.7.1...v0.8.0
+[v0.7.1]: https://github.com/joeycumines/one-shot-man/compare/v0.7.0...v0.7.1
+[v0.7.0]: https://github.com/joeycumines/one-shot-man/compare/v0.6.0...v0.7.0
+[v0.6.0]: https://github.com/joeycumines/one-shot-man/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/joeycumines/one-shot-man/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/joeycumines/one-shot-man/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/joeycumines/one-shot-man/compare/v0.3.0...v0.4.0

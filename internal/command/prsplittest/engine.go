@@ -108,12 +108,16 @@ func (e *Engine) LoadChunks(t testing.TB, names ...string) {
 // test infrastructure.
 func (e *Engine) EvalJS(t testing.TB) func(string) (any, error) {
 	t.Helper()
-	// 2m rather than 30s: heavy real-git evaluations (executeSplit,
-	// cleanupBranches) can legitimately exceed 30s of wall-clock on a loaded
-	// parallel CI runner while still making progress; the package-level test
-	// timeout still bounds genuine hangs.
-	return makeEvalJS(t, e.engine, 2*time.Minute)
+	return makeEvalJS(t, e.engine, EvalTimeout)
 }
+
+// EvalTimeout is the shared default bound for JS evaluations. It mirrors the
+// 10-minute prSplitEvalTimeout used by the pipeline tests: heavy evaluations
+// (real git worktree/chunk flows, 10k-file grouping, loaded parallel
+// windows-latest runners) can legitimately exceed 2m wall-clock, and the
+// package-level go test timeout (40m in CI) still bounds genuine hangs. Tests
+// that need an even longer bound opt in via [Engine.EvalJSTimeout].
+const EvalTimeout = 10 * time.Minute
 
 // EvalJSTimeout is like [Engine.EvalJS] but with a custom timeout.
 func (e *Engine) EvalJSTimeout(t testing.TB, timeout time.Duration) func(string) (any, error) {

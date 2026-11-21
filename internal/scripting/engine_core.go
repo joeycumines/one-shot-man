@@ -91,6 +91,7 @@ type Engine struct {
 	bubblezoneManager      builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 	requireModule          *require.RequireModule    // CommonJS require module for file-based script execution
 	stateRefreshDispatcher *stateRefreshDispatcher
+	cancel                 context.CancelFunc // cancels the engine's own lifecycle ctx on Close
 }
 
 // stateRefreshDispatcher coalesces rapid state refreshes per key into a single
@@ -309,11 +310,22 @@ func NewEngine(
 
 	vm := runtime.Runtime()
 
+	// Engine.Close can cancel its own dependents first. Runtime termination
+	// must also reach them: derive from the runtime lifecycle, not a sibling
+	// context that would survive process.exit and block its worker join.
+	engineCtx, engineCancel := context.WithCancel(runtime.Ctx())
+	engineReady := false
+	defer func() {
+		if !engineReady {
+			engineCancel()
+		}
+	}()
+
 	engine := &Engine{
 		runtime:        runtime,
 		vm:             vm,
 		registry:       registry,
-		ctx:            ctx,
+		ctx:            engineCtx,
 		stdout:         stdout,
 		stderr:         stderr,
 		globals:        make(map[string]any),
@@ -321,6 +333,7 @@ func NewEngine(
 		logger:         NewTUILogger(stdout, logFile, logBufferSize, logLevel),
 		terminalIO:     terminalIO,
 	}
+	engine.cancel = engineCancel
 
 	// Register native Go modules. These are all prefixed with "osm:".
 	// Pass through the engine's context and a TUI sink for modules that need them.
@@ -331,7 +344,7 @@ func NewEngine(
 	if eopts.hasUserK8s {
 		registerOpts = append(registerOpts, builtin.WithUserK8sOptions(eopts.userK8s))
 	}
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, registerOpts...)
+	registerResult := builtin.Register(engineCtx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, registerOpts...)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
@@ -409,16 +422,12 @@ func NewEngine(
 		return nil, fmt.Errorf("failed to set up globals: %w", err)
 	}
 
-	// Interrupt JS execution when context is canceled.
-	// Capture vm locally for the context.AfterFunc callback. goja.Runtime.Interrupt
-	// is documented as safe to call from any goroutine.
-	vmForInterrupt := engine.vm
-	context.AfterFunc(ctx, func() {
-		if vmForInterrupt != nil {
-			vmForInterrupt.Interrupt(ctx.Err())
-		}
-	})
+	// Engine.Close cancels this context before joining managers that can be
+	// waiting for a VM callback. Interrupt that callback immediately, sharing
+	// the runtime's one host interrupt with Runtime.Close and parent teardown.
+	context.AfterFunc(engineCtx, func() { runtime.interrupt(engineCtx.Err()) })
 
+	engineReady = true
 	return engine, nil
 }
 
@@ -598,6 +607,11 @@ func (e *Engine) LoadScriptString(name, content string) *Script {
 // happens on the CALLING goroutine (not the event loop), so the event loop
 // remains free for BubbleTea's RunJSSync callbacks.
 func (e *Engine) ExecuteScript(script *Script) error {
+	if e.ctx != nil {
+		if err := e.ctx.Err(); err != nil {
+			return err
+		}
+	}
 	// Create execution context for this script
 	ctx := &ExecutionContext{
 		engine: e,
@@ -669,7 +683,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		}
 		return nil
 	}); err != nil {
-		return err
+		return e.scriptExecutionError(err)
 	}
 
 	// If the script started a BubbleTea program (via non-blocking tea.run()),
@@ -679,7 +693,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	// and the BubbleTea TUI runs orphaned in the background.
 	if mgr := e.bubbleteaManager; mgr != nil {
 		if waitErr := mgr.WaitForProgram(); waitErr != nil {
-			return waitErr
+			return e.scriptExecutionError(waitErr)
 		}
 
 		// After BubbleTea exits, execute any registered post-exit callback
@@ -701,22 +715,44 @@ func (e *Engine) ExecuteScript(script *Script) error {
 			}
 			return nil
 		}); cbErr != nil {
-			// The script requested process.exit (typically from a signal
-			// listener), which terminates the event loop and races this
-			// post-exit callback — whether the submit is rejected outright
-			// (ErrLoopTerminated) or the loop drains/drops the queued callback
-			// and the wait observes runtime shutdown. Any resulting failure here
-			// is an artifact of that exit, not an execution failure: the
-			// script's exit decision wins, and the exit code is recovered via
-			// ExitCode after Wait returns.
-			if e.runtime != nil && e.runtime.processExitRequested.Load() {
+			// A process.exit called by this callback interrupts its own JS
+			// execution. Other callback failures must remain errors even if
+			// another callback concurrently requests exit.
+			if e.IsProcessExitSignal(cbErr) {
 				return nil
 			}
-			return cbErr
+			return e.scriptExecutionError(cbErr)
 		}
 	}
 
 	return nil
+}
+
+// scriptExecutionError preserves script failures while recognizing the
+// cancellation used to release dependents after terminal script completion.
+func (e *Engine) scriptExecutionError(err error) error {
+	// executeOnLoop and WaitForProgram return these host cancellation values
+	// directly. Do not unwrap arbitrary script errors: a callback failure
+	// wrapping cancellation must not be erased by a concurrent process.exit.
+	if err != context.Canceled && err != goeventloop.ErrLoopTerminated {
+		return err
+	}
+	if e.ctx == nil || e.runtime == nil {
+		return err
+	}
+	if err == goeventloop.ErrLoopTerminated && !e.Loop().IsCallbackOwner() {
+		// Submit may observe terminal admission just before Run publishes the
+		// lifecycle cause. Join only the owner exit, never adapter completion
+		// (which can still be joining the BubbleTea worker).
+		select {
+		case <-e.runtime.done:
+		case <-e.ctx.Done():
+		}
+	}
+	if context.Cause(e.ctx) == errRuntimeExit {
+		return nil
+	}
+	return err
 }
 
 // Wait blocks until the event loop naturally exits.
@@ -756,7 +792,7 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 			if err := ctx.Err(); err != nil {
 				errCh <- err
 			} else {
-				errCh <- errors.New("engine stopped before script started")
+				errCh <- goeventloop.ErrLoopTerminated
 			}
 			return
 		}
@@ -782,11 +818,17 @@ func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
 		return err
 	case <-e.runtime.Done():
 		if state.CompareAndSwap(0, 2) {
-			return errors.New("runtime stopped before script completion")
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return goeventloop.ErrLoopTerminated
 		}
 		err := <-errCh
 		if err == nil {
-			return errors.New("runtime stopped before script completion")
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return goeventloop.ErrLoopTerminated
 		}
 		return err
 	}
@@ -837,11 +879,23 @@ func (e *Engine) GetTerminalWriter() io.Writer {
 
 // Loop returns the shared event loop.
 // This implements builtin.EventLoopProvider.
+// Use Engine.Close for host cancellation; raw loop termination can complete
+// with an assigned script status without recording a host cancellation cause.
 func (e *Engine) Loop() *goeventloop.Loop {
 	if e.runtime == nil {
 		return nil
 	}
 	return e.runtime.Loop()
+}
+
+// Ctx returns the engine's base lifecycle context: the context that owns the
+// event loop's lifetime. It is cancelled when the engine closes, so
+// long-lived subsystems (e.g. the bubbletea manager) derive their own
+// context from it and shut down with the engine rather than with the
+// per-call context that happened to register them.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Ctx() context.Context {
+	return e.ctx
 }
 
 // Runtime returns the goja.Runtime for JavaScript execution.
@@ -893,6 +947,15 @@ func (e *Engine) Close() error {
 	// a double-close would re-close the TUI manager, btBridge, etc.
 	if !e.closed.CompareAndSwap(false, true) {
 		return nil
+	}
+
+	// Cancel the engine's own lifecycle context first: subsystems that
+	// derived from EventLoopProvider.Ctx() (e.g. the bubbletea manager) and
+	// the parked WaitForProgram observe this cancellation and unblock, so the
+	// rest of teardown cannot wedge on a still-running program even when the
+	// caller's parent ctx is never cancelled.
+	if e.cancel != nil {
+		e.cancel()
 	}
 
 	// Close TUI manager if it exists (this persists state)

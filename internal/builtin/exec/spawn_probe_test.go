@@ -57,8 +57,6 @@ func TestWaitAndCloseProcessTree_ProbeFailureDoesNotFailCommand(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell helper")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
 
 	for _, tc := range []struct {
 		name  string
@@ -72,7 +70,7 @@ func TestWaitAndCloseProcessTree_ProbeFailureDoesNotFailCommand(t *testing.T) {
 		{"kqueue failure", errors.New("EVFILT_PROC lookup failed")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return false, tc.probe }
+			probe := func(*osexec.Cmd) (bool, error) { return false, tc.probe }
 
 			// `true` exits 0 immediately.
 			cmd := osexec.Command("sh", "-c", "exit 0")
@@ -81,7 +79,7 @@ func TestWaitAndCloseProcessTree_ProbeFailureDoesNotFailCommand(t *testing.T) {
 			}
 			tree := &recordingTree{}
 
-			waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+			waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 			if waitErr != nil {
 				t.Errorf("waitErr = %v, want nil for an exit-0 command", waitErr)
 			}
@@ -103,9 +101,7 @@ func TestWaitAndCloseProcessTree_ProbeFailureWaitsBeforeClosing(t *testing.T) {
 		t.Skip("skipping subprocess lifecycle test in short mode")
 	}
 
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) {
+	probe := func(*osexec.Cmd) (bool, error) {
 		return false, errors.New("pre-reap process observation is unavailable")
 	}
 
@@ -125,7 +121,7 @@ func TestWaitAndCloseProcessTree_ProbeFailureWaitsBeforeClosing(t *testing.T) {
 	}
 	resultCh := make(chan result, 1)
 	go func() {
-		waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+		waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 		resultCh <- result{waitErr: waitErr, closeErr: closeErr}
 	}()
 
@@ -159,16 +155,14 @@ func TestWaitAndCloseProcessTree_ProbeSuccessClosesBeforeWait(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell helper")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return true, nil }
+	probe := func(*osexec.Cmd) (bool, error) { return true, nil }
 
 	cmd := osexec.Command("sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start helper process: %v", err)
 	}
 	tree := &recordingTree{}
-	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 	if waitErr != nil || closeErr != nil {
 		t.Fatalf("waitErr=%v closeErr=%v, want nil nil", waitErr, closeErr)
 	}
@@ -181,9 +175,7 @@ func TestWaitAndCloseProcessTree_RetriesPermissionFailureAfterReap(t *testing.T)
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX process-group behavior")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return true, nil }
+	probe := func(*osexec.Cmd) (bool, error) { return true, nil }
 
 	cmd := osexec.Command("sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
@@ -191,7 +183,7 @@ func TestWaitAndCloseProcessTree_RetriesPermissionFailureAfterReap(t *testing.T)
 	}
 	tree := &reapRetryTree{}
 
-	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 	if waitErr != nil || closeErr != nil {
 		t.Fatalf("waitErr=%v closeErr=%v, want nil nil", waitErr, closeErr)
 	}
@@ -204,9 +196,7 @@ func TestWaitAndCloseProcessTree_PropagatesPersistentPermissionFailure(t *testin
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX process-group behavior")
 	}
-	orig := waitProcessBeforeReapFn
-	t.Cleanup(func() { waitProcessBeforeReapFn = orig })
-	waitProcessBeforeReapFn = func(*osexec.Cmd) (bool, error) { return true, nil }
+	probe := func(*osexec.Cmd) (bool, error) { return true, nil }
 
 	cmd := osexec.Command("sh", "-c", "exit 0")
 	if err := cmd.Start(); err != nil {
@@ -214,7 +204,7 @@ func TestWaitAndCloseProcessTree_PropagatesPersistentPermissionFailure(t *testin
 	}
 	tree := &reapRetryTree{persistent: true}
 
-	waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
 	if waitErr != nil {
 		t.Errorf("waitErr = %v, want nil for an exit-0 command", waitErr)
 	}
@@ -223,5 +213,36 @@ func TestWaitAndCloseProcessTree_PropagatesPersistentPermissionFailure(t *testin
 	}
 	if tree.closed != 2 {
 		t.Errorf("tree closed %d times, want 2", tree.closed)
+	}
+}
+
+// TestWaitAndCloseProcessTree_ProbeErrorStillWaits pins the failure-path
+// ordering: when the pre-reap probe fails, the tree is closed AFTER cmd.Wait
+// and the wait's verdict decides the outcome. The POSIX shell helper keeps
+// this test on non-Windows platforms; Windows has its own real pre-reap probe
+// (waitProcessBeforeReap in spawn_windows.go uses OpenProcess/WaitForSingleObject),
+// so the probe-error branch is exercised here with an injected probe failure.
+func TestWaitAndCloseProcessTree_ProbeErrorStillWaits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell helper")
+	}
+	probeErr := errors.New("probe unavailable")
+	probe := func(*osexec.Cmd) (bool, error) { return false, probeErr }
+
+	cmd := osexec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start helper process: %v", err)
+	}
+	tree := &recordingTree{}
+
+	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
+	if waitErr != nil {
+		t.Fatalf("waitErr = %v, want nil for an exit-0 command despite the probe failure", waitErr)
+	}
+	if closeErr != nil {
+		t.Fatalf("closeErr = %v, want nil", closeErr)
+	}
+	if tree.closed != 1 {
+		t.Errorf("tree closed %d times, want 1 (after wait, not before)", tree.closed)
 	}
 }

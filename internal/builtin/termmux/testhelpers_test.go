@@ -58,28 +58,19 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("create event loop: %v", err)
 	}
 
-	// Auto-exit is deliberately OFF for tests: it would terminate the loop as
-	// soon as no ref'd work remains, racing the test's trackOrdered workers
-	// (whose liveness is released when they settle) and rejecting later Submits
-	// with ErrLoopTerminated. Tests drive the loop explicitly and always shut
-	// it down via t.Cleanup, so auto-exit buys nothing here.
+	// Auto-exit is deliberately OFF for tests (goeventloop.New's default):
+	// with auto-exit enabled the loop would terminate as soon as no ref'd work
+	// remains, racing the test's own workers (whose liveness is released when
+	// they settle) and rejecting later Submits with ErrLoopTerminated. Tests
+	// drive the loop explicitly and always shut it down via t.Cleanup, so
+	// auto-exit buys nothing here.
 	//
-	// Liveness is held for the whole test by an in-flight Promisify worker on
-	// a context that is never cancelled until cleanup: promisifyCount is loop
-	// liveness, so the loop cannot auto-exit (or accept a terminal transition)
-	// while the worker blocks. The worker is admitted BEFORE loop.Run starts,
-	// so its admission cannot lose to any quiescing window.
-	keepAliveCtx, stopKeepAlive := context.WithCancel(context.Background())
-	keepAliveDone := make(chan struct{})
-	loop.Promisify(keepAliveCtx, func(ctx context.Context) (any, error) {
-		defer close(keepAliveDone)
-		<-ctx.Done()
-		return nil, ctx.Err()
-	})
-	if !loop.Alive() {
-		stopKeepAlive()
-		t.Fatalf("keepalive worker not admitted: loop reports not alive before Run")
-	}
+	// No liveness token is needed for that, because auto-exit is the only
+	// thing liveness gates. A blocking Promisify worker was previously used as
+	// one, which was both redundant and a source of flakiness: Promisify's
+	// worker rejects at entry when its context is already done, so a
+	// cancellation that beat the worker's first scheduling skipped the user
+	// function entirely and the "worker exited" signal never fired.
 
 	runtime := goja.New()
 	registry := require.NewRegistry()
@@ -125,23 +116,14 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(func() {
 		testLoops.Delete(runtime)
 		testAdapters.Delete(runtime)
-		stopKeepAlive()
-		// Bound every wait in this cleanup: a wedged Promisify worker or a
-		// Shutdown that cannot join in-flight work must fail this test loudly
+		cancel()
+		// Bound the remaining waits: a wedged loop must fail this test loudly
 		// instead of hanging until the package-level test timeout panics and
 		// dumps every other parallel test's goroutines. The bound is 30s (not
 		// tight): CI runners run dozens of parallel tests each with its own
-		// loop and child processes, and goroutine scheduling of the cancelled
-		// keepalive worker can lag far beyond the ms-scale expectation under
-		// load — the bound exists to convert a 40m package panic into a
-		// per-test failure, not to assert a scheduling latency.
+		// loop and child processes, so this bound exists to convert a package
+		// panic into a per-test failure, not to assert a scheduling latency.
 		const cleanupBound = 30 * time.Second
-		select {
-		case <-keepAliveDone:
-		case <-time.After(cleanupBound):
-			t.Errorf("keepalive worker did not exit within %s of stopKeepAlive", cleanupBound)
-		}
-		cancel()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cleanupBound)
 		defer shutdownCancel()
 		if err := loop.Shutdown(shutdownCtx); err != nil && !errors.Is(err, goeventloop.ErrLoopTerminated) {

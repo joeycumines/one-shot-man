@@ -7,10 +7,12 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/creack/pty"
 	"github.com/joeycumines/goja"
 	"github.com/stretchr/testify/assert"
@@ -374,5 +376,110 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		slaveForBT.Close()
 		t.Fatal("program didn't exit")
+	}
+}
+
+// quitOnKeyModel is a tea.Model whose Update quits the program when it
+// receives a key press matching want.
+type quitOnKeyModel struct {
+	want string
+	got  chan string
+}
+
+func (m quitOnKeyModel) Init() tea.Cmd { return nil }
+func (m quitOnKeyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if km, ok := msg.(tea.KeyMsg); ok {
+		s := km.String()
+		select {
+		case m.got <- s:
+		default:
+		}
+		if s == m.want {
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+func (m quitOnKeyModel) View() tea.View { return tea.NewView("") }
+
+// TestRunProgram_HeadlessExplicitInputIsConsumed pins V6: when the caller
+// passes an EXPLICIT non-TTY input (e.g. a strings.Reader), the headless
+// branch must preserve it — the program reads the scripted key and quits on
+// it — instead of unconditionally replacing input with nil.
+func TestRunProgram_HeadlessExplicitInputIsConsumed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping program run in short mode")
+	}
+	vm := goja.New()
+	var out bytes.Buffer
+	got := make(chan string, 1)
+	model := quitOnKeyModel{want: "q", got: got}
+	// Explicit non-TTY input + non-TTY output -> headless branch, but the
+	// explicit reader must still be wired into the program.
+	m := NewManagerWithStderr(context.Background(), strings.NewReader("q"), &out, &out, &SyncJSRunner{Runtime: vm}, nil, nil)
+	require.False(t, m.isTTY)
+	require.False(t, m.inputDefaulted)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.runProgram(model) }()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("program did not exit on the scripted 'q' key: explicit non-TTY input was not consumed")
+	}
+	select {
+	case k := <-got:
+		if k != "q" {
+			t.Fatalf("got key %q, want %q", k, "q")
+		}
+	default:
+		t.Fatal("no key message observed: input reader was never read")
+	}
+	// Headless output must not contain terminal escape sequences.
+	if bytes.Contains(out.Bytes(), []byte("\x1b[")) {
+		t.Fatalf("headless output contains escape sequences: %q", out.String())
+	}
+}
+
+// TestRunProgram_HeadlessDefaultInputIsDropped pins the other half of V6:
+// when input was defaulted from nil (no explicit reader), the headless branch
+// still replaces stdin with nil so bubbletea never blocks on it, and no
+// bracketed-paste escape sequences are written to a non-TTY output.
+func TestRunProgram_HeadlessDefaultInputIsDropped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping program run in short mode")
+	}
+	vm := goja.New()
+	// Give an explicit non-TTY output only, so skipTTYDetection is false but
+	// isTTY stays false; input stays defaulted.
+	rOut, wOut, err := os.Pipe()
+	require.NoError(t, err)
+	defer rOut.Close()
+	defer wOut.Close()
+	m := NewManagerWithStderr(context.Background(), nil, wOut, wOut, &SyncJSRunner{Runtime: vm}, nil, nil)
+	require.False(t, m.isTTY)
+	require.True(t, m.inputDefaulted)
+
+	// Model quits immediately; if input were wired to stdin the read loop
+	// could spin, but with nil input the program must exit promptly.
+	model := quitOnKeyModel{want: "never", got: make(chan string, 1)}
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.runProgram(model) }()
+	// Force quit from outside after a short delay in case Init's nil cmd
+	// leaves the program idle.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		m.mu.Lock()
+		if m.program != nil {
+			m.program.Quit()
+		}
+		m.mu.Unlock()
+	}()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("headless program with defaulted input did not exit")
 	}
 }

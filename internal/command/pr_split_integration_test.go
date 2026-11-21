@@ -97,8 +97,8 @@ func newPrSplitEvalFromFlags(t testing.TB, args ...string) (*PrSplitCommand, fun
 		select {
 		case <-done:
 			return result, resultErr
-		case <-time.After(30 * time.Second):
-			return nil, fmt.Errorf("eval timeout after 30s")
+		case <-time.After(prSplitEvalTimeout):
+			return nil, fmt.Errorf("eval timeout after %s", prSplitEvalTimeout)
 		}
 	}
 
@@ -785,6 +785,48 @@ func TestIntegration_SendToHandle_FirstSendError(t *testing.T) {
 	}
 }
 
+// assertObservedSendKnobsJS configures and verifies all send-to-handle numeric
+// test knobs via _setNumberKnob and asserts _resolveSendConfig() observes them.
+func assertObservedSendKnobsJS(maxNewlineAttempts int) string {
+	return fmt.Sprintf(`
+			var knobs = {
+				'SEND_TEXT_NEWLINE_DELAY_MS': 0,
+				'SEND_PROMPT_READY_TIMEOUT_MS': 2000,
+				'SEND_PROMPT_READY_POLL_MS': 1,
+				'SEND_PROMPT_READY_STABLE_SAMPLES': 1,
+				'SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS': 25,
+				'SEND_PRE_SUBMIT_STABLE_POLL_MS': 1,
+				'SEND_PRE_SUBMIT_STABLE_SAMPLES': 1,
+				'SEND_SUBMIT_ACK_TIMEOUT_MS': 5,
+				'SEND_SUBMIT_ACK_POLL_MS': 1,
+				'SEND_SUBMIT_ACK_STABLE_SAMPLES': 1,
+				'SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS': %d
+			};
+			Object.keys(knobs).forEach(function(k) {
+				prSplit._setNumberKnob(k, knobs[k]);
+				prSplit._assertNumberKnob(k, prSplit[k]);
+				if (prSplit[k] !== knobs[k]) throw new Error('knob ' + k + ' = ' + prSplit[k] + ', want ' + knobs[k]);
+			});
+			var resolved = prSplit._resolveSendConfig();
+			var resolvedExpect = {
+				textNewlineDelayMs: 0,
+				promptReadyTimeoutMs: 2000,
+				promptReadyPollMs: 1,
+				promptReadyStableSamples: 1,
+				preSubmitStableTimeoutMs: 25,
+				preSubmitStablePollMs: 1,
+				preSubmitStableSamples: 1,
+				submitAckTimeoutMs: 5,
+				submitAckPollMs: 1,
+				submitAckStableSamples: 1,
+				submitMaxNewlineAttempts: %d
+			};
+			Object.keys(resolvedExpect).forEach(function(k) {
+				if (resolved[k] !== resolvedExpect[k]) throw new Error('resolveSendConfig().' + k + ' = ' + resolved[k] + ', want ' + resolvedExpect[k]);
+			});
+`, maxNewlineAttempts, maxNewlineAttempts)
+}
+
 // TestIntegration_SendToHandle_ObservedSubmissionRetry verifies
 // sendToHandle retries Enter submission when terminal output does not change
 // after the first Enter, and succeeds once output change is observed.
@@ -822,14 +864,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
-			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
-			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
-			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
+			` + assertObservedSendKnobsJS(3) + `
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -905,14 +940,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
-			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
-			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
-			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
-			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
-			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
+			` + assertObservedSendKnobsJS(2) + `
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -980,9 +1008,9 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 20;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 20);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -1048,9 +1076,9 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 50);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 1);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
@@ -1125,9 +1153,9 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 				}
 			};
 
-			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 2000;
-			prSplit.SEND_PROMPT_READY_POLL_MS = 10;
-			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit._setNumberKnob('SEND_PROMPT_READY_TIMEOUT_MS', 2000);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_POLL_MS', 10);
+			prSplit._setNumberKnob('SEND_PROMPT_READY_STABLE_SAMPLES', 1);
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
 			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
 			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;

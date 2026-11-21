@@ -19,6 +19,7 @@ import (
 	"github.com/joeycumines/goja"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -429,14 +430,10 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 	return eng.Stdout, eng.Dispatch, eng.EvalJS, eng.EvalJSAsync
 }
 
-// prSplitEvalTimeout bounds each evalJS/evalJSAsync/dispatch round trip. The
-// JS itself is trivial (mock setup, a single command call), so this bound
-// absorbs goroutine scheduling latency, not computation: under make -j on a
-// loaded CI runner, hundreds of parallel engines' event-loop goroutines can
-// starve for minutes (observed on windows: internal/command at 996s with
-// every call timing out at the former 60s bound, after a 191-426s baseline).
-// The bound stays finite so a genuinely wedged loop still fails the test.
-const prSplitEvalTimeout = 10 * time.Minute
+// prSplitEvalTimeout is the shared eval/dispatch ceiling. It is an alias of
+// prsplittest.EvalTimeout so the older pipeline helpers and the new prsplittest
+// helpers cannot drift apart; the rationale lives with the exported constant.
+const prSplitEvalTimeout = prsplittest.EvalTimeout
 
 func loadPrSplitEngineWithRuntime(t testing.TB, overrides map[string]any) prSplitTestEngine {
 	t.Helper()

@@ -3,6 +3,7 @@ package pty
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,12 +11,32 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
 type writerFunc func([]byte) (int, error)
 
 func (w writerFunc) Write(p []byte) (int, error) { return w(p) }
+
+// closeSchedulingSlack is how far past a configured Close bound a test tolerates
+// the shutdown finishing. It is scheduling allowance, not part of the Close
+// contract: CI runners oversubscribe their CPUs, so a correct Close can be
+// descheduled well past the configured grace and force-wait totals. 30s
+// rather than 5s: a loaded windows-latest runner once descheduled the Close
+// goroutine for 163ms past grace+force (run 43785914039 measured 12.163s
+// against a 12s bound with the old 5s slack already in place), and the tests
+// assert bounded shutdown, not wall-clock precision — the bound being
+// asserted is the configured grace+force total, not the slack.
+const closeSchedulingSlack = 30 * time.Second
+
+// conPTYOutputDeadline bounds how long a ConPTY test waits for the child to
+// produce recognisable output on a loaded runner. PowerShell CLR startup on
+// an oversubscribed windows-latest host has exceeded 10s without any defect
+// in Spawn/Read (run 43785914039 emitted only the ConPTY enable sequences
+// within 10s), so the deadline is a generous ceiling, not a performance
+// assertion.
+const conPTYOutputDeadline = 60 * time.Second
 
 func skipIfWindows(t *testing.T) {
 	t.Helper()
@@ -24,53 +45,302 @@ func skipIfWindows(t *testing.T) {
 	}
 }
 
+// conPTYProbeResult caches the outcome (ready, unavailable, or failure) of
+// probing the host for a working ConPTY. Ten tests call requireConPTYRuntime
+// and several of them t.Parallel with each other, so probing per call meant up
+// to thirty spawns per package run, each up to 10s, competing for the same
+// loaded runner. Caching failures too fails subsequent callers immediately
+// with the same signal instead of burning ~31s per test re-probing a broken
+// contract.
+var conPTYProbeResult struct {
+	mu     sync.Mutex
+	probed bool // true once a verdict (ready, unavailable, or failure) has been cached
+	// unavailable is a human-readable reason, or empty when ConPTY works.
+	unavailable string
+	// failure is a human-readable contract failure reason, or empty on success/unavailable.
+	failure string
+	// probeMu serializes probeConPTY calls: the check-then-probe sequence must
+	// be single-flight, or parallel t.Parallel callers all probe at once — the
+	// spawn storm the cache exists to prevent. Held across the probe so later
+	// callers reuse the cached verdict.
+	probeMu sync.Mutex
+}
+
+// conPTYStatusDLLInitFailed is STATUS_DLL_INIT_FAILED (0xC0000142), the
+// documented headless-runner limitation where the child's console cannot
+// initialise. Together with the API-absence errnos below it is the only probe
+// outcome that legitimately means "this host cannot run these tests".
+const conPTYStatusDLLInitFailed = 3221225794
+
+// probeExitCode converts an unsigned Windows status code to the int field the
+// probe records. The conversion must happen at runtime: writing
+// `conPTYProbeAttempt{code: conPTYStatusDLLInitFailed}` is a compile-time
+// constant conversion that overflows on windows/386, where release binaries are
+// built. On 32-bit the wrapped value is negative; classifyConPTYAttempt reads
+// it back through uint32, so the verdict is identical.
+func probeExitCode(status uint32) int {
+	return int(status)
+}
+
+// Windows errnos meaning the ConPTY API itself is not present on this host.
+// They are declared as plain syscall.Errno values because this file builds on
+// every platform, while golang.org/x/sys/windows does not. Pre-1809 Windows
+// Server has no pseudoconsole at all, which is host capability, not a
+// regression in this package.
+const (
+	conPTYErrCallNotImplemented = syscall.Errno(120) // ERROR_CALL_NOT_IMPLEMENTED
+	conPTYErrProcNotFound       = syscall.Errno(127) // ERROR_PROC_NOT_FOUND
+)
+
+// conPTYProbeVerdict is the outcome of one probe attempt.
+type conPTYProbeVerdict int
+
+const (
+	// conPTYProbeReady: the host spawned, waited on and closed a console.
+	conPTYProbeReady conPTYProbeVerdict = iota
+	// conPTYProbeUnavailable: the host cannot initialise a console.
+	conPTYProbeUnavailable
+	// conPTYProbeFailure: the pty contract itself is broken.
+	conPTYProbeFailure
+)
+
+// conPTYProbeAttempt is one attempt's raw observations.
+type conPTYProbeAttempt struct {
+	spawnErr   error
+	waitErr    error
+	closeErr   error
+	code       int
+	outputTail string
+}
+
+// probeTail is a bounded rolling buffer keeping the MOST RECENT max bytes:
+// for startup diagnosis the tail of the output is the evidence, and a buffer
+// that stops accepting after max bytes would keep the head and drop exactly
+// the diagnostic tail. Writes crossing the cap keep the end of the new data.
+type probeTail struct {
+	buf []byte
+	max int
+}
+
+func (t *probeTail) write(p []byte) {
+	if len(p) >= t.max {
+		t.buf = append(t.buf[:0], p[len(p)-t.max:]...)
+		return
+	}
+	if len(t.buf)+len(p) > t.max {
+		drop := len(t.buf) + len(p) - t.max
+		t.buf = t.buf[drop:]
+	}
+	t.buf = append(t.buf, p...)
+}
+
+func (t *probeTail) String() string { return string(t.buf) }
+
+// truncateForProbeReason keeps a diagnostic tail bounded so a pathological
+// child cannot turn the probe reason into an unbounded log line. The cut is
+// rune-aware so a multi-byte UTF-8 sequence is never split mid-rune.
+func truncateForProbeReason(s string) string {
+	const max = 512
+	if len(s) <= max {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[len(runes)-max:])
+}
+
+// classifyConPTYAttempt decides what one probe attempt means.
+//
+// The probe runs the code under test, so a failure can be either "this host
+// cannot run a console" or "Spawn/Wait/Close is broken". Only two things are the
+// former: STATUS_DLL_INIT_FAILED, the documented headless-runner console-init
+// limitation, and a spawn that reports the ConPTY API itself is absent. Everything
+// else — any other Spawn error, a Wait error (including a deadlock that hit the
+// attempt bound), an unexpected exit code, or a Close that could not release the
+// pseudoconsole — is a broken contract and must fail the suite loudly rather
+// than skip it green.
+func classifyConPTYAttempt(attempt conPTYProbeAttempt) (conPTYProbeVerdict, string) {
+	if attempt.spawnErr != nil {
+		if errors.Is(attempt.spawnErr, ErrNotSupported) ||
+			errors.Is(attempt.spawnErr, conPTYErrCallNotImplemented) ||
+			errors.Is(attempt.spawnErr, conPTYErrProcNotFound) {
+			return conPTYProbeUnavailable, fmt.Sprintf("ConPTY is not available on this host: %v", attempt.spawnErr)
+		}
+		return conPTYProbeFailure, fmt.Sprintf("pty.Spawn failed: %v", attempt.spawnErr)
+	}
+	if attempt.waitErr != nil {
+		return conPTYProbeFailure, fmt.Sprintf("pty.Wait failed: %v", attempt.waitErr)
+	}
+	if uint32(attempt.code) == conPTYStatusDLLInitFailed {
+		return conPTYProbeUnavailable, fmt.Sprintf("child console init failed with %#x (STATUS_DLL_INIT_FAILED): this host cannot run ConPTY", uint32(attempt.code))
+	}
+	if attempt.closeErr != nil {
+		reason := fmt.Sprintf("pty.Close failed: %v", attempt.closeErr)
+		if attempt.code != 0 {
+			reason += fmt.Sprintf(" (exit code %d)", attempt.code)
+		}
+		if tail := strings.TrimSpace(attempt.outputTail); tail != "" {
+			reason += "; output tail: " + truncateForProbeReason(tail)
+		}
+		return conPTYProbeFailure, reason
+	}
+	if attempt.code != 0 {
+		reason := fmt.Sprintf("probe command exited with code %d", attempt.code)
+		if tail := strings.TrimSpace(attempt.outputTail); tail != "" {
+			reason += "; output tail: " + truncateForProbeReason(tail)
+		}
+		return conPTYProbeFailure, reason
+	}
+	return conPTYProbeReady, ""
+}
+
+// requireConPTYRuntime skips the calling test unless the host can run ConPTY,
+// and fails it when the probe proves the pty contract is broken.
+//
+// The distinction matters: a host that cannot spawn a working console is a
+// reason to skip, because no ConPTY test in this package can then say anything
+// about the code (run 129562188488 reported `ConPTY runtime probe exited with
+// code 1 after 3 attempts`; that exit 1 came from the old PowerShell CLR
+// startup timing out, not from STATUS_DLL_INIT_FAILED 0xC0000142, and is now a
+// hard failure). But a Spawn or Wait regression is exactly what these tests
+// exist to catch, so it must fail the package instead of silently
+// skipping all ten callers.
 func requireConPTYRuntime(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		t.Skip("ConPTY runtime probe requires Windows")
 	}
 
-	// On loaded CI runners, ConPTY+powershell can fail transiently (exit 1)
-	// even when the host is healthy. Retry before declaring the host broken.
-	var lastCode int
-	for attempt := 1; attempt <= 3; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		proc, err := Spawn(ctx, SpawnConfig{
-			Command: "powershell.exe",
-			Args:    []string{"-NoProfile", "-Command", "exit 0"},
-			Rows:    24,
-			Cols:    80,
-		})
-		if err != nil {
-			cancel()
-			if attempt == 3 {
-				t.Fatalf("ConPTY runtime probe spawn failed (attempt %d/3): %v", attempt, err)
-			}
-			time.Sleep(500 * time.Millisecond)
-			continue
+	conPTYProbeResult.mu.Lock()
+	probed := conPTYProbeResult.probed
+	cachedUnavailable := conPTYProbeResult.unavailable
+	cachedFailure := conPTYProbeResult.failure
+	conPTYProbeResult.mu.Unlock()
+	if probed {
+		if cachedFailure != "" {
+			t.Fatalf("ConPTY runtime probe failed (cached): %s", cachedFailure)
 		}
-		code, waitErr := proc.Wait()
-		proc.Close()
-		cancel()
-		if waitErr != nil {
-			if attempt == 3 {
-				t.Fatalf("ConPTY runtime probe wait failed (attempt %d/3): %v", attempt, waitErr)
-			}
-			time.Sleep(500 * time.Millisecond)
-			continue
+		if cachedUnavailable != "" {
+			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
 		}
-		if code == 3221225794 {
-			t.Skipf("skipping ConPTY tests on this host: child console init failed with %#x", uint32(code))
-		}
-		if code == 0 {
-			return
-		}
-		lastCode = code
-		if attempt == 3 {
-			t.Fatalf("ConPTY runtime probe exited with code %d after 3 attempts", lastCode)
-		}
-		time.Sleep(500 * time.Millisecond)
+		return
 	}
+	// Single-flight: hold probeMu across the probe and the cache write so
+	// parallel callers wait for the one active probe and reuse its verdict
+	// instead of stampeding the host with concurrent spawns.
+	conPTYProbeResult.probeMu.Lock()
+	defer conPTYProbeResult.probeMu.Unlock()
+	// Re-check under the probe lock: another caller may have completed the
+	// probe while this one waited.
+	conPTYProbeResult.mu.Lock()
+	probed = conPTYProbeResult.probed
+	cachedUnavailable = conPTYProbeResult.unavailable
+	cachedFailure = conPTYProbeResult.failure
+	conPTYProbeResult.mu.Unlock()
+	if probed {
+		if cachedFailure != "" {
+			t.Fatalf("ConPTY runtime probe failed (cached): %s", cachedFailure)
+		}
+		if cachedUnavailable != "" {
+			t.Skipf("skipping ConPTY tests: %s", cachedUnavailable)
+		}
+		return
+	}
+	unavailable, failure := probeConPTY()
+	conPTYProbeResult.mu.Lock()
+	conPTYProbeResult.probed = true
+	conPTYProbeResult.unavailable = unavailable
+	conPTYProbeResult.failure = failure
+	conPTYProbeResult.mu.Unlock()
+	if failure != "" {
+		t.Fatalf("ConPTY runtime probe failed: %s", failure)
+	}
+	if unavailable != "" {
+		t.Skipf("skipping ConPTY tests: %s", unavailable)
+	}
+}
+
+// probeConPTY reports why the host cannot run ConPTY tests (unavailable) or why
+// the pty contract is broken (failure), or two empty strings when ConPTY works.
+//
+// The command is cmd.exe rather than powershell.exe: PowerShell loads the CLR,
+// which made the probe slow enough to need a wide bound and flaky enough on a
+// loaded runner to need retries. Output is drained concurrently so a child that
+// writes before exiting cannot fill the ConPTY pipe and wedge Wait. Each attempt
+// releases its own process and context (probeConPTYAttempt), so a failed attempt
+// leaves no handle behind for the retry.
+func probeConPTY() (unavailable, failure string) {
+	const attempts = 3
+
+	lastFailure := "probe produced no verdict"
+	for attempt := 1; attempt <= attempts; attempt++ {
+		verdict, reason := probeConPTYAttempt()
+		switch verdict {
+		case conPTYProbeReady:
+			return "", ""
+		case conPTYProbeUnavailable:
+			// A console that cannot initialise will not start working on a
+			// retry: it is a property of this host, so report it immediately.
+			return reason, ""
+		case conPTYProbeFailure:
+			// A failure may be a loaded-runner artefact (handle exhaustion,
+			// a timeout), so retry before calling the contract broken.
+			lastFailure = reason
+		}
+		if attempt < attempts {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	return "", lastFailure + fmt.Sprintf(" (after %d attempts)", attempts)
+}
+
+// probeConPTYAttempt runs one spawn/wait/close cycle and classifies it.
+func probeConPTYAttempt() (conPTYProbeVerdict, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var observed conPTYProbeAttempt
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		// /d disables the machine/user Command Processor AutoRun hooks, so
+		// the probe cannot execute unrelated startup code (which could exit
+		// non-zero or block) before reaching `exit 0`. The previous
+		// PowerShell invocation used -NoProfile for the same reason.
+		Args: []string{"/d", "/c", "exit 0"},
+		Rows: 24,
+		Cols: 80,
+	})
+	if err != nil {
+		observed.spawnErr = err
+		return classifyConPTYAttempt(observed)
+	}
+
+	// Drain concurrently into a bounded ROLLING tail: an undrained ConPTY
+	// output pipe can block the child before it exits, which would surface as
+	// a bogus Wait timeout, and discarding the output made a repeat exit-1
+	// undiagnosable. The tail keeps the most recent 4096 bytes — the end of
+	// the output is what distinguishes a console-init failure from a broken
+	// Spawn/Wait contract.
+	var tailMu sync.Mutex
+	tail := &probeTail{max: 4096}
+	proc.DrainOutput(writerFunc(func(p []byte) (int, error) {
+		n := len(p)
+		tailMu.Lock()
+		tail.write(p)
+		tailMu.Unlock()
+		return n, nil
+	}))
+
+	observed.code, observed.waitErr = proc.Wait()
+	observed.closeErr = proc.Close()
+	tailMu.Lock()
+	observed.outputTail = tail.String()
+	tailMu.Unlock()
+
+	return classifyConPTYAttempt(observed)
 }
 
 func TestSpawn_EchoHello(t *testing.T) {
@@ -899,7 +1169,7 @@ func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
 
 	// Leave wider slack for busy CI runners; this test validates bounded
 	// shutdown semantics, not tight wall-clock precision.
-	maxExpected := DefaultCloseGracePeriod + DefaultCloseForceWait + 5*time.Second
+	maxExpected := DefaultCloseGracePeriod + DefaultCloseForceWait + closeSchedulingSlack
 	if elapsed > maxExpected {
 		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
 	}
@@ -923,52 +1193,64 @@ func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
 
 // TestProcess_Close_CustomGracePeriod verifies that Close uses the configured
 // grace period and force wait durations from SpawnConfig.
+//
+// Written with testing/synctest: the fake clock advances instantly when every
+// goroutine in the bubble is blocked, so the 500ms grace + 300ms force wait
+// elapse in zero wall-clock time and the assertions on elapsed become exact.
+// A mutation substituting DefaultCloseGracePeriod (5s) for the configured
+// 500ms fails deterministically because the fake clock would advance 5s, not
+// 500ms, before SIGKILL.
 func TestProcess_Close_CustomGracePeriod(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping slow test in short mode")
 	}
+	synctest.Test(t, func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
+		}
 
-	t.Parallel()
+		handle := &stuckHandle{}
+		gracePeriod := 500 * time.Millisecond
+		forceWait := 300 * time.Millisecond
+		proc := &Process{
+			ptyFile:           r,
+			ttyFile:           w,
+			done:              make(chan struct{}),
+			exitCode:          -1,
+			cmd:               handle,
+			closeGracefulWait: gracePeriod,
+			closeForceWait:    forceWait,
+		}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
+		start := time.Now()
+		closeErr := proc.Close()
+		elapsed := time.Since(start)
 
-	handle := &stuckHandle{}
-	gracePeriod := 500 * time.Millisecond
-	forceWait := 300 * time.Millisecond
-	proc := &Process{
-		ptyFile:           r,
-		ttyFile:           w,
-		done:              make(chan struct{}),
-		exitCode:          -1,
-		cmd:               handle,
-		closeGracefulWait: gracePeriod,
-		closeForceWait:    forceWait,
-	}
+		var timeoutErr *ErrForceKillTimeout
+		if !errors.As(closeErr, &timeoutErr) {
+			t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
+		}
+		if timeoutErr.Wait != forceWait {
+			t.Fatalf("expected Wait=%v, got %v", forceWait, timeoutErr.Wait)
+		}
 
-	start := time.Now()
-	closeErr := proc.Close()
-	elapsed := time.Since(start)
-
-	var timeoutErr *ErrForceKillTimeout
-	if !errors.As(closeErr, &timeoutErr) {
-		t.Fatalf("expected ErrForceKillTimeout, got: %v", closeErr)
-	}
-	if timeoutErr.Wait != forceWait {
-		t.Fatalf("expected Wait=%v, got %v", forceWait, timeoutErr.Wait)
-	}
-
-	// Elapsed time should be approximately gracePeriod + forceWait.
-	minExpected := gracePeriod + forceWait
-	maxExpected := minExpected + 2*time.Second
-	if elapsed < minExpected {
-		t.Fatalf("Close returned too quickly: %v (min expected ~%v)", elapsed, minExpected)
-	}
-	if elapsed > maxExpected {
-		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
-	}
+		// With the fake clock the elapsed time is exactly grace + force:
+		// Close waits the full grace (done never closes), then SIGKILLs and
+		// waits the full force wait. Any deviation means the configured
+		// values were not honoured — e.g. the 5s default grace would show up
+		// as elapsed = 5s + 300ms.
+		want := gracePeriod + forceWait
+		if elapsed != want {
+			t.Fatalf("elapsed = %v, want exactly %v (grace %v + force wait %v); a default-grace mutation would report ~%v", elapsed, want, gracePeriod, forceWait, DefaultCloseGracePeriod+forceWait)
+		}
+		if handle.SignalCount(syscall.SIGTERM) != 1 {
+			t.Fatalf("expected exactly one SIGTERM, got %d", handle.SignalCount(syscall.SIGTERM))
+		}
+		if handle.SignalCount(syscall.SIGKILL) != 1 {
+			t.Fatalf("expected exactly one SIGKILL, got %d", handle.SignalCount(syscall.SIGKILL))
+		}
+	})
 }
 
 // TestProcess_Close_CustomGracePeriod_QuickExit verifies that Close returns
@@ -1098,7 +1380,7 @@ func TestConPTY_Smoke(t *testing.T) {
 	requireConPTYRuntime(t)
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), conPTYOutputDeadline)
 	defer cancel()
 
 	proc, err := Spawn(ctx, SpawnConfig{
@@ -1114,7 +1396,7 @@ func TestConPTY_Smoke(t *testing.T) {
 
 	// Read output — should contain the echo string.
 	var output strings.Builder
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(conPTYOutputDeadline)
 	done := false
 	for !done {
 		readCh := make(chan struct {

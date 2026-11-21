@@ -127,11 +127,22 @@ typically available as `tuiMux` in pr-split scripts.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
-| `register(session, opts?)` | `SessionManager.Register()` | `InteractiveSession, {name?,kind?,id?}` | `Promise<number>` (session ID) | rejects on error |
+| `register(session, target?, opts?)` | `SessionManager.Register()` | `InteractiveSession, {name?,kind?,id?}, {remainOnExit?}` | `Promise<number>` (session ID) | rejects on error |
 | `unregister(id)` | `SessionManager.Unregister()` | `number` | `Promise<void>` | rejects on error |
 | `activate(id)` | `SessionManager.Activate()` | `number` | `Promise<void>` | rejects on error |
 | `attach(handle)` | `Register() + Activate()` | `InteractiveSession\|StringIO\|map` | `Promise<number>` (session ID) | rejects on error |
 | `detach()` | `Unregister()` | — | `Promise<void>` | resolves when no active session or unregister completes |
+
+`register` captures `opts.remainOnExit` atomically with the new session. Omission
+inherits the manager default; an explicit `false` overrides a true default.
+This option changes only this registration, and later changes to the options
+object or the manager default do not alter it. With `true`, both silent and
+output-producing exits leave the session and its snapshot registered until
+the owner calls `unregister(id)`. EOF does not call the underlying `close` in
+that mode, so the owner can observe its first close result before releasing
+related resources such as a worktree. `unregister` detaches the session even
+if close fails and rejects with that failure; detachment alone is not proof
+of successful termination. Retained sessions are also closed at manager shutdown.
 
 ### State Queries
 

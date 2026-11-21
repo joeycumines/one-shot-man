@@ -24,8 +24,9 @@ func setProcAttr(cmd *osexec.Cmd) {
 
 // waitProcessBeforeReap waits for the direct child without reaping it. The
 // command handle held by os/exec keeps the process object alive while this
-// second handle waits, so the Job Object can be closed before Cmd.Wait drains
-// output pipes inherited by descendants.
+// second handle waits, so the Job Object can be closed before Cmd.Wait reaps
+// the child. The output pumps or collector drain the explicitly supplied file
+// pipes independently; Cmd.Wait does not drain those pipes.
 func waitProcessBeforeReap(cmd *osexec.Cmd) (bool, error) {
 	if cmd == nil || cmd.Process == nil {
 		return false, nil
@@ -103,7 +104,7 @@ func (t *windowsProcessTree) failAttach(err error) error {
 	t.mu.Unlock()
 	if job != 0 {
 		if closeErr := windows.CloseHandle(job); closeErr != nil {
-			return errors.Join(err, fmt.Errorf("close process job after attach failure: %w", closeErr))
+			return errors.Join(err, &processTreeCloseError{err: fmt.Errorf("close process job after attach failure: %w", closeErr)})
 		}
 	}
 	return err
@@ -224,7 +225,29 @@ func (t *windowsProcessTree) close(_ *osexec.Cmd) error {
 	return windows.CloseHandle(job)
 }
 
+// exitStatusUnclassified reports whether a recorded exit status cannot be
+// presented to JS as one.
+//
+// Never on Windows: a process exit code is a DWORD, and the reaper stores it as
+// `int(uint32)`, so every status the OS reports reads back non-negative on
+// 64-bit targets and — importantly — an NTSTATUS such as
+// 0xC0000142 (STATUS_DLL_INIT_FAILED) reads back NEGATIVE on 32-bit targets
+// (release.yml builds windows/386). Treating that negative value as an
+// unclassified failure would reject a perfectly ordinary ConPTY exit, so the
+// signed-code heuristic that Unix needs (where a signal makes the code -1) must
+// not be applied here.
+func exitStatusUnclassified(int, error) bool {
+	return false
+}
+
 func processExitSignal(error) string {
+	return ""
+}
+
+// processStateSignal is always empty on Windows: the platform reports an exit
+// code, never a POSIX signal, and the signed-code heuristic that Unix needs
+// does not apply (see exitStatusUnclassified above).
+func processStateSignal(*os.ProcessState) string {
 	return ""
 }
 

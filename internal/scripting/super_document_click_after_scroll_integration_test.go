@@ -157,7 +157,5 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 
 	// Quit
 	sendKey(t, cp, "q")
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	requireExpectExitCode(ctx, t, cp, 0)
 }

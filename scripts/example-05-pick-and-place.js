@@ -935,7 +935,17 @@ try {
                     }
                 }
             }
+            // An empty click also requests movement. If nothing was picked,
+            // keep that request alive until the destination has been reached.
+            if (state.manualPath.length > 0 && !isHolding && !clickedCube && actor.heldItem === null) {
+                return bt.running;
+            }
+            // A native async sequence can enter this leaf with a previously
+            // completed move result while the new click still has a path.
+            // Completion must retire that path before the next move callback.
             state.manualMoveTarget = null;
+            state.manualPath = [];
+            state.pathStuckTicks = 0;
             return bt.success;
         });
     }

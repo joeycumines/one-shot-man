@@ -108,97 +108,138 @@
     // --- heuristicFallback — standard heuristic split flow ---
 
     // Runs the standard heuristic split flow when Agent is unavailable.
-    async function heuristicFallback(analysis, config, report) {
-        // Late-bind cross-chunk dependencies (async versions for non-blocking).
-        var runtime = prSplit.runtime;
-        var applyStrategy = prSplit.applyStrategy;
-        var createSplitPlan = prSplit.createSplitPlanAsync;
-        var executeSplit = prSplit.executeSplitAsync;
-        var verifySplits = prSplit.verifySplitsAsync;
-        var verifyEquivalence = prSplit.verifyEquivalenceAsync;
-        var resolveConflicts = prSplit.resolveConflicts;
-        var state = prSplit._state;
+    async function heuristicFallback(analysis, config, report, pipelineOwner) {
+        var ownsPipelineLease = !prSplit._ownsPipeline(pipelineOwner);
+        if (ownsPipelineLease) pipelineOwner = prSplit._claimPipelineOwner();
+        if (!pipelineOwner) {
+            return {executionPending:true,
+                error:'The previous pipeline is still running; wait for its verification, repair, and cleanup to finish.',
+                report:report || {}};
+        }
+        try {
+            // Late-bind cross-chunk dependencies (async versions for non-blocking).
+            var runtime = prSplit.runtime;
+            var applyStrategy = prSplit.applyStrategy;
+            var createSplitPlan = prSplit.createSplitPlanAsync;
+            var executeSplit = prSplit.executeSplitAsync;
+            var verifySplits = prSplit.verifySplitsAsync;
+            var verifyEquivalence = prSplit.verifyEquivalenceAsync;
+            var resolveConflicts = prSplit.resolveConflicts;
+            var state = prSplit._state;
 
-        var strategy = config.strategy || runtime.strategy;
-        var groups = await applyStrategy(analysis.files, strategy, {
-            fileStatuses: analysis.fileStatuses,
-            maxFiles: runtime.maxFiles,
-            baseBranch: analysis.baseBranch,
-            dir: runtime.dir
-        });
-        state.groupsCache = groups;
-
-        var plan = await createSplitPlan(groups, {
-            baseBranch: analysis.baseBranch,
-            sourceBranch: analysis.currentBranch,
-            branchPrefix: runtime.branchPrefix,
-            maxFiles: runtime.maxFiles,
-            fileStatuses: analysis.fileStatuses,
-            fileRenames: analysis.fileRenames
-        });
-        state.planCache = plan;
-        report.plan = plan;
-
-        if (!runtime.dryRun) {
-            var execResult = await executeSplit(plan);
-            state.executionResultCache = execResult.results || [];
-            if (execResult.error) {
-                report.error = execResult.error;
-                return { error: report.error, report: report };
-            }
-            report.splits = execResult.results || [];
-
-            var verifyTimeoutMs = (config && typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0)
-                ? config.verifyTimeoutMs
-                : AUTOMATED_DEFAULTS.verifyTimeoutMs;
-            var verifyObj = await verifySplits(plan, { verifyTimeoutMs: verifyTimeoutMs });
-            if (verifyObj.error) {
-                report.error = verifyObj.error;
-            } else {
-                var failures = verifyObj.results.filter(function(r) {
-                    return !r.passed && !r.skipped && !r.preExisting;
+            function checkpointResourceFailure(result, rows) {
+                var blocked = prSplit._executionCleanupFailure(rows, result);
+                if (!blocked) return false;
+                // Keep committed branch rows as the resume prefix while recording
+                // the later verifier/repair owner independently and in full.
+                state.executionOutcomeCache = Object.assign({}, blocked.execution, {
+                    results:state.executionResultCache || [], resourceFailure:result
                 });
-                if (failures.length > 0) {
-                    var resolution = await resolveConflicts(plan, { verifyTimeoutMs: verifyTimeoutMs });
-                    if (resolution && resolution.cancelledByUser) {
-                        report.error = 'conflict resolution cancelled by user';
-                    } else if (resolution && resolution.errors && resolution.errors.length > 0) {
-                        report.error = resolution.errors.map(function(item) {
-                            return item.name + ': ' + item.error;
-                        }).join('; ');
-                    } else if (resolution && resolution.reSplitNeeded) {
-                        report.error = resolution.reSplitReason || 'verification remained failed after auto-fix';
-                    } else if (resolution) {
-                        var fixedNames = {};
-                        (resolution.fixed || []).forEach(function(item) {
-                            fixedNames[item.name] = true;
-                        });
-                        var unresolved = failures.filter(function(item) {
-                            return !fixedNames[item.branch || item.name];
-                        });
-                        if (unresolved.length > 0) {
-                            report.error = 'verification remained failed for: ' + unresolved.map(function(item) {
-                                return item.branch || item.name;
-                            }).join(', ');
+                report.resourceFailure = state.executionOutcomeCache;
+                report.error = result.error || blocked.error;
+                return true;
+            }
+
+            var strategy = config.strategy || runtime.strategy;
+            var groups = await applyStrategy(analysis.files, strategy, {
+                fileStatuses: analysis.fileStatuses,
+                maxFiles: runtime.maxFiles,
+                baseBranch: analysis.baseBranch,
+                dir: runtime.dir
+            });
+            state.groupsCache = groups;
+
+            var plan = await createSplitPlan(groups, {
+                baseBranch: analysis.baseBranch,
+                sourceBranch: analysis.currentBranch,
+                branchPrefix: runtime.branchPrefix,
+                maxFiles: runtime.maxFiles,
+                fileStatuses: analysis.fileStatuses,
+                fileRenames: analysis.fileRenames
+            });
+            state.planCache = plan;
+            report.plan = plan;
+
+            if (!runtime.dryRun) {
+                var execResult = await executeSplit(plan, {completedOutcome:state.executionOutcomeCache, pipelineOwner:pipelineOwner});
+                if (!execResult.executionPending) {
+                    state.executionResultCache = execResult.results || [];
+                    state.executionOutcomeCache = execResult;
+                }
+                report.execution = execResult;
+                if (execResult.error) {
+                    report.error = execResult.error;
+                    return { error: report.error, report: report };
+                }
+                report.splits = execResult.results || [];
+
+                var verifyTimeoutMs = (config && typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0)
+                    ? config.verifyTimeoutMs
+                    : AUTOMATED_DEFAULTS.verifyTimeoutMs;
+                var verifyObj = await verifySplits(plan, { verifyTimeoutMs: verifyTimeoutMs });
+                report.verification = verifyObj;
+                if (checkpointResourceFailure(verifyObj, verifyObj.results)) {
+                    return {error:report.error, report:report};
+                }
+                if (verifyObj.error) {
+                    report.error = verifyObj.error;
+                } else {
+                    var failures = verifyObj.results.filter(function(r) {
+                        return !r.passed && !r.skipped && !r.preExisting;
+                    });
+                    if (failures.length > 0) {
+                        var resolution = await resolveConflicts(plan, { verifyTimeoutMs: verifyTimeoutMs, pipelineOwner:pipelineOwner });
+                        report.resolution = resolution;
+                        if (resolution) {
+                            report.resolutionFailures = (report.resolutionFailures || []).concat(resolution.errors || resolution.unresolvedFailures || []);
+                            if (checkpointResourceFailure(resolution, resolution.errors || resolution.unresolvedFailures)) {
+                                return {error:report.error, report:report};
+                            }
                         }
+                        if (resolution && resolution.error) {
+                            report.error = resolution.error;
+                        } else if (resolution && resolution.cancelledByUser) {
+                            report.error = 'conflict resolution cancelled by user';
+                        } else if (resolution && resolution.errors && resolution.errors.length > 0) {
+                            report.error = resolution.errors.map(function(item) {
+                                return item.name + ': ' + item.error;
+                            }).join('; ');
+                        } else if (resolution && resolution.reSplitNeeded) {
+                            report.error = resolution.reSplitReason || 'verification remained failed after auto-fix';
+                        } else if (resolution) {
+                            var fixedNames = {};
+                            (resolution.fixed || []).forEach(function(item) {
+                                fixedNames[item.name] = true;
+                            });
+                            var unresolved = failures.filter(function(item) {
+                                return !fixedNames[item.branch || item.name];
+                            });
+                            if (unresolved.length > 0) {
+                                report.error = 'verification remained failed for: ' + unresolved.map(function(item) {
+                                    return item.branch || item.name;
+                                }).join(', ');
+                            }
+                        }
+                    }
+                }
+
+                if (!report.error) {
+                    var equiv = await verifyEquivalence(plan);
+                    // T121: Propagate equivalence result to report.
+                    report.equivalence = equiv;
+                    if (equiv.error || !equiv.equivalent) {
+                        report.error = equiv.error || 'tree hash mismatch after heuristic split';
                     }
                 }
             }
 
-            if (!report.error) {
-                var equiv = await verifyEquivalence(plan);
-                // T121: Propagate equivalence result to report.
-                report.equivalence = equiv;
-                if (equiv.error || !equiv.equivalent) {
-                    report.error = equiv.error || 'tree hash mismatch after heuristic split';
-                }
-            }
+            emitOutput('=== Heuristic Split Complete ===');
+            emitOutput('Splits: ' + plan.splits.length);
+
+            return { error: report.error, report: report };
+        } finally {
+            if (ownsPipelineLease) prSplit._releasePipelineOwner(pipelineOwner);
         }
-
-        emitOutput('=== Heuristic Split Complete ===');
-        emitOutput('Splits: ' + plan.splits.length);
-
-        return { error: report.error, report: report };
     }
 
     // --- resolveConflictsWithAgent — Agent-based conflict resolution ---
@@ -212,9 +253,6 @@
         var renderConflictPrompt = prSplit.renderConflictPrompt;
         var validateResolution = prSplit.validateResolution;
         var verifySplitAsync = prSplit.verifySplitAsync;
-        var gitExecAsync = prSplit._gitExecAsync;
-        var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
-        var shellExecAsync = prSplit._shellExecAsync;
         var shellQuote = prSplit._shellQuote;
         var applyResolutionPatches = prSplit._applyResolutionPatches;
         var runtime = prSplit.runtime;
@@ -359,65 +397,55 @@
                 // without touching the user's CWD.
                 var patchBranch = fail.branch || fail.name;
                 var patchWorktreeDir = prSplit._worktreeTmpPath('osm-resolve-');
-                var patchWtAdd = await gitExecAsync(dir, ['worktree', 'add', patchWorktreeDir, patchBranch]);
-                if (patchWtAdd.code !== 0) {
-                    log.printf('auto-split: failed to create worktree for %s: %s', patchBranch, patchWtAdd.stderr.trim());
-                    continue;
-                }
-
-                // Apply patches in worktree. The shared helper revalidates
-                // paths, awaits every write, and prevents partial commits.
-                var patchResult = await applyResolutionPatches(resolution, patchWorktreeDir);
-                if (patchResult.error) {
-                    log.printf('auto-split: patch application failed for %s: %s', patchBranch, patchResult.error);
-                    await gitExecAsync(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
-                    continue;
-                }
-                if (resolution.patches && resolution.patches.length > 0) {
-                    await gitAddChangedFilesAsync(patchWorktreeDir);
-                    var patchCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
-                    if (patchCommit.code !== 0) {
-                        log.printf('auto-split: patch commit failed for %s: %s', patchBranch, patchCommit.stderr.trim());
+                var patchOwner = prSplit._resolutionWorktree(dir, patchWorktreeDir, patchBranch);
+                var patchOutcome = {name:patchBranch};
+                try {
+                    await patchOwner.open();
+                    var patchResult = await applyResolutionPatches(resolution, patchWorktreeDir);
+                    if (patchResult.error) throw new Error('patch application failed: ' + patchResult.error);
+                    if (resolution.patches && resolution.patches.length > 0) {
+                        await patchOwner.stage(patchWorktreeDir);
+                        patchOwner.require(await patchOwner.git(patchWorktreeDir, ['commit', '--amend', '--no-edit']), 'patch commit failed');
                     }
-                }
-
-                // Run suggested commands in worktree (async — T109: does not block event loop).
-                // Each command has a per-command timeout (resolveCommandTimeoutMs).
-                if (resolution.commands && resolution.commands.length > 0) {
-                    var commandsAborted = false;
-                    for (var c = 0; c < resolution.commands.length; c++) {
-                        var cmdResult = await shellExecAsync(
-                            ((prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ') + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c],
-                            { timeoutMs: commandTimeoutMs }
-                        );
-                        if (cmdResult.message && cmdResult.message.indexOf('timed out') !== -1) {
-                            log.printf('auto-split: resolution command timed out for %s after %dms: %s',
-                                patchBranch, commandTimeoutMs, resolution.commands[c]);
-                            commandsAborted = true;
-                            break;
+                    if (resolution.commands && resolution.commands.length > 0) {
+                        for (var c = 0; c < resolution.commands.length; c++) {
+                            var cmdResult = await patchOwner.shell(
+                                ((prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ') + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c],
+                                { timeoutMs: commandTimeoutMs }
+                            );
+                            patchOwner.require(cmdResult, 'resolution command failed');
                         }
-                        if (cmdResult.code !== 0) {
-                            log.printf('auto-split: resolution command failed for %s: %s (exit %d)',
-                                patchBranch, (cmdResult.stderr || cmdResult.stdout || '').trim(), cmdResult.code);
-                        }
+                        await patchOwner.stage(patchWorktreeDir);
+                        patchOwner.require(await patchOwner.git(patchWorktreeDir, ['commit', '--amend', '--no-edit']), 'command commit failed');
                     }
-                    if (!commandsAborted) {
-                        await gitAddChangedFilesAsync(patchWorktreeDir);
-                        var cmdCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
-                        if (cmdCommit.code !== 0) {
-                            log.printf('auto-split: command commit failed for %s: %s', patchBranch, cmdCommit.stderr.trim());
-                        }
-                    }
+                } catch (error) {
+                    Object.assign(patchOutcome, patchOwner.failure(error));
+                } finally {
+                    await patchOwner.cleanup(patchOutcome);
                 }
-
-                // Cleanup resolution worktree before re-verify.
-                await gitExecAsync(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
+                if (patchOutcome.error) {
+                    report.resolutionFailures = report.resolutionFailures || [];
+                    report.resolutionFailures.push(patchOutcome);
+                    emitOutput('[auto-split] ' + patchBranch + ': ' + patchOutcome.error);
+                    return Object.assign({reSplitNeeded:false, reSplitReason:'', unresolvedFailures:[patchBranch]}, patchOutcome);
+                }
 
                 // Re-verify this branch (verifySplitAsync creates its own worktree).
                 var reVerify = await verifySplitAsync(fail.branch || fail.name, {
                     verifyCommand: runtime.verifyCommand,
                     verifyTimeoutMs: timeouts.verifyMs
                 });
+                if (reVerify.treeCleanupError || reVerify.cleanupFailed || reVerify.worktreeRetained ||
+                    reVerify.execFailed || reVerify.truncated || reVerify.cancelled) {
+                    var verificationFailure = Object.assign({}, reVerify, {
+                        reSplitNeeded:false, reSplitReason:'', unresolvedFailures:[patchBranch],
+                        error:reVerify.error || 'verification outcome is unknown'
+                    });
+                    report.resolutionFailures = report.resolutionFailures || [];
+                    report.resolutionFailures.push(verificationFailure);
+                    emitOutput('[auto-split] ' + patchBranch + ': ' + verificationFailure.error);
+                    return verificationFailure;
+                }
                 if (reVerify.passed) {
                     fixed = true;
                     emitOutput('[auto-split] Fixed: ' + (fail.branch || fail.name));

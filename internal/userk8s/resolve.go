@@ -73,7 +73,7 @@ func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration)
 	cmd.Stderr = stderr
 	cmd.WaitDelay = resolverWaitDelay
 
-	err := builtinexec.RunCommand(cmd)
+	err := builtinexec.RunCommand(ctx, cmd)
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return "", fmt.Errorf("resolver command %q timed out after %s: %w", argv[0], timeout, context.DeadlineExceeded)

@@ -13,17 +13,15 @@ import (
 // setProcAttr configures the command to create a new process group on Unix.
 // This allows process-tree cancellation to terminate descendants via the
 // negative process-group ID.
-func setProcAttr(cmd *osexec.Cmd) {
+func setProcAttr(cmd *osexec.Cmd, _ bool) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
-type unixProcessTree struct{}
-
 func newProcessTree() (processTree, error) {
-	return unixProcessTree{}, nil
+	return &unixProcessTree{}, nil
 }
 
-func (unixProcessTree) attach(*osexec.Cmd) error {
+func (*unixProcessTree) attach(*osexec.Cmd) error {
 	return nil
 }
 
@@ -40,12 +38,14 @@ func processGroupLeaderAlive(cmd *osexec.Cmd) (bool, error) {
 	return true, nil
 }
 
-func signalProcessGroup(cmd *osexec.Cmd, sig syscall.Signal) error {
+// signalProcessGroup runs only while the tree owner holds its signal gate.
+// The caller must prevent Cmd.Wait from beginning until this call returns.
+func signalProcessGroup(cmd *osexec.Cmd, sig syscall.Signal, kill func(int, syscall.Signal) error) error {
 	alive, err := processGroupLeaderAlive(cmd)
 	if err != nil || !alive {
 		return err
 	}
-	err = syscall.Kill(-cmd.Process.Pid, sig)
+	err = kill(-cmd.Process.Pid, sig)
 	if errors.Is(err, syscall.ESRCH) {
 		return nil
 	}
@@ -63,15 +63,15 @@ func signalProcessGroup(cmd *osexec.Cmd, sig syscall.Signal) error {
 	return err
 }
 
-func (unixProcessTree) kill(cmd *osexec.Cmd) error {
-	return signalProcessGroup(cmd, syscall.SIGKILL)
+func (t *unixProcessTree) kill(cmd *osexec.Cmd) error {
+	return t.signalGroup(cmd, syscall.SIGKILL, syscall.Kill)
 }
 
-func (unixProcessTree) close(cmd *osexec.Cmd) error {
-	return closeProcessGroup(cmd, syscall.Kill)
+func (t *unixProcessTree) close(cmd *osexec.Cmd) error {
+	return t.closeGroup(cmd, syscall.Kill)
 }
 
-func closeProcessGroup(cmd *osexec.Cmd, kill func(pid int, signal syscall.Signal) error) error {
+func killProcessGroup(cmd *osexec.Cmd, kill func(pid int, signal syscall.Signal) error) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil
 	}
@@ -155,8 +155,8 @@ func signalFromName(name string) os.Signal {
 	return nil
 }
 
-// signalProcess delivers the resolved signal to the child's process group,
-// mirroring the tree cancellation semantics.
-func signalProcess(cmd *osexec.Cmd, _ processTree, sig os.Signal) error {
-	return signalProcessGroup(cmd, sig.(syscall.Signal))
+// signal delivers the resolved signal under the same gate as cancellation
+// and reaping, so a former process-group ID cannot be signalled after Wait.
+func (t *unixProcessTree) signal(cmd *osexec.Cmd, sig os.Signal) error {
+	return t.signalGroup(cmd, sig.(syscall.Signal), syscall.Kill)
 }

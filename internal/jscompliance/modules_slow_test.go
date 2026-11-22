@@ -31,7 +31,7 @@ func jsStrings(parts []string) string {
 }
 
 // TestSlow_Exec_ExecvShape asserts execv returns the documented
-// {stdout, stderr, code, error, message} shape with code 0 on success.
+// {stdout, stderr, code, error, message, truncated} shape and complete success.
 func TestSlow_Exec_ExecvShape(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
@@ -46,13 +46,19 @@ func TestSlow_Exec_ExecvShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("execv resolved to %T, want object", v)
 	}
-	for _, k := range []string{"stdout", "stderr", "code", "error"} {
+	for _, k := range []string{"stdout", "stderr", "code", "error", "message", "truncated"} {
 		if _, has := m[k]; !has {
-			t.Errorf("execv result missing %q (documented shape {stdout,stderr,code,error,message})", k)
+			t.Errorf("execv result missing %q (documented shape {stdout,stderr,code,error,message,truncated})", k)
 		}
 	}
 	if code := m["code"]; code != int64(0) && code != float64(0) && code != 0 {
 		t.Errorf("execv code = %v, want 0", m["code"])
+	}
+	if m["error"] != false || m["truncated"] != false {
+		t.Errorf("execv did not capture a successful command completely: %v", m)
+	}
+	if treeError, _ := m["treeCleanupError"].(string); treeError != "" {
+		t.Errorf("execv tree cleanup failed: %s", treeError)
 	}
 	if out, _ := m["stdout"].(string); !strings.Contains(out, "jscompliance-exec-marker") {
 		t.Errorf("execv stdout = %q, want it to contain the marker", out)

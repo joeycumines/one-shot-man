@@ -179,11 +179,11 @@
             var readCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
             var result;
             if (readCmd === 'type') {
-                result = await exec.execv(['cmd.exe', '/C', 'type "' + goModPath + '"']);
+                result = await prSplit._shellSpawnSync('type "' + goModPath + '"');
             } else {
                 result = await exec.execv(['cat', goModPath]);
             }
-            if (result.code !== 0) {
+            if (prSplit._commandFailed(result)) {
                 return '';
             }
             content = result.stdout;
@@ -275,11 +275,11 @@
                 } else {
                     var catResult;
                     if (prSplit._isWindows && prSplit._isWindows()) {
-                        catResult = await exec.execv(['cmd.exe', '/C', 'type "' + resolveRepositoryPath(goFiles[i], repositoryDir) + '"']);
+                        catResult = await prSplit._shellSpawnSync('type "' + resolveRepositoryPath(goFiles[i], repositoryDir) + '"');
                     } else {
                         catResult = await exec.execv(['cat', resolveRepositoryPath(goFiles[i], repositoryDir)]);
                     }
-                    if (catResult.code !== 0) {
+                    if (prSplit._commandFailed(catResult)) {
                         continue;
                     }
                     fileContent = catResult.stdout;
@@ -532,7 +532,7 @@
                     // Last resort: sync exec (only if neither osmod nor spawn available).
                     var catCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
                     var catResult2 = await exec.execv([catCmd, resolveRepositoryPath(goFiles[i], repositoryDir)]);
-                    if (catResult2.code !== 0) { continue; }
+                    if (prSplit._commandFailed(catResult2)) { continue; }
                     fileContent = catResult2.stdout;
                 }
 

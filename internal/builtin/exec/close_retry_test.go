@@ -2,11 +2,68 @@ package exec
 
 import (
 	"errors"
+	"os"
 	osexec "os/exec"
 	"runtime"
 	"syscall"
 	"testing"
 )
+
+func TestCleanupFailedRunExec_RetriesEPERMAfterReap(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		retryErr error
+	}{
+		{name: "recovered"},
+		{name: "permission_failure", retryErr: syscall.EPERM},
+		{name: "observation_failure", retryErr: syscall.EIO},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			primary := errors.New("attach failed")
+			var reaped bool
+			closes := 0
+			var events []string
+			err := cleanupFailedRunExec(primary,
+				func() error { events = append(events, "kill"); return nil },
+				func() error {
+					events = append(events, "close-tree")
+					closes++
+					if closes == 1 {
+						return syscall.EPERM
+					}
+					if !reaped {
+						t.Fatal("retry ran before the child was reaped")
+					}
+					return tc.retryErr
+				},
+				func() { events = append(events, "begin-reap") },
+				func() error { events = append(events, "wait"); reaped = true; return nil },
+				func() error { events = append(events, "close-pipes"); return nil },
+			)
+			wantEvents := []string{"kill", "close-tree", "begin-reap", "wait", "close-tree", "close-pipes"}
+			if len(events) != len(wantEvents) {
+				t.Fatalf("cleanup events = %v, want %v", events, wantEvents)
+			}
+			for i := range wantEvents {
+				if events[i] != wantEvents[i] {
+					t.Fatalf("cleanup events = %v, want %v", events, wantEvents)
+				}
+			}
+			if !errors.Is(err, primary) {
+				t.Fatalf("primary failure was lost: %v", err)
+			}
+			if tc.retryErr == nil {
+				if errors.Is(err, syscall.EPERM) || treeCleanupErrorMessage(err) != "" {
+					t.Fatalf("successful retry kept a stale tree failure: %v", err)
+				}
+			} else if !errors.Is(err, syscall.EPERM) || !errors.Is(err, tc.retryErr) || treeCleanupErrorMessage(err) == "" {
+				t.Fatalf("failed retry lost original or final tree failure: %v", err)
+			}
+		})
+	}
+}
 
 // transientEPERMTree fails only its first close, modelling the Darwin case
 // where the group is not yet addressable at the moment of the post-wait close.
@@ -14,8 +71,10 @@ type transientEPERMTree struct {
 	closed int
 }
 
-func (*transientEPERMTree) attach(*osexec.Cmd) error { return nil }
-func (*transientEPERMTree) kill(*osexec.Cmd) error   { return nil }
+func (*transientEPERMTree) beginReap(bool)                      {}
+func (*transientEPERMTree) signal(*osexec.Cmd, os.Signal) error { return nil }
+func (*transientEPERMTree) attach(*osexec.Cmd) error            { return nil }
+func (*transientEPERMTree) kill(*osexec.Cmd) error              { return nil }
 func (t *transientEPERMTree) close(*osexec.Cmd) error {
 	t.closed++
 	if t.closed == 1 {
@@ -24,43 +83,40 @@ func (t *transientEPERMTree) close(*osexec.Cmd) error {
 	return nil
 }
 
-// TestWaitAndCloseProcessTree_ProbeErrorRetriesEPERM pins the contract that a
-// transient EPERM from a post-wait process-group close is retried on EVERY
-// branch, not only the pre-reap-close branch. The Darwin failure named in the
-// changelog takes the probe-error branch: the pre-reap observation fails, the
-// child is reaped first, and the group close can still return EPERM while the
-// only group member is the exited leader.
+// Failed observation triggers owned teardown before reap. A recovered EPERM
+// must disappear, while the independent observation failure remains visible.
 func TestWaitAndCloseProcessTree_ProbeErrorRetriesEPERM(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("process-group EPERM semantics are Unix-specific")
 	}
-	probe := func(*osexec.Cmd) (bool, error) {
-		return false, errors.New("probe unavailable")
-	}
+	probeErr := errors.New("probe unavailable")
+	probe := func(*osexec.Cmd) (bool, error) { return false, probeErr }
 
 	command, args := immediateExitCommand()
 	cmd := osexec.Command(command, args...)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start helper: %v", err)
 	}
-	// The first post-wait close returns EPERM; the retry succeeds.
+	// The first pre-reap close returns EPERM; the post-reap retry succeeds.
 	tree := &transientEPERMTree{}
 	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
-	if waitErr != nil {
-		t.Fatalf("waitErr = %v, want nil for an exit-0 command", waitErr)
+	var exitErr *osexec.ExitError
+	if waitErr != nil && !errors.As(waitErr, &exitErr) {
+		t.Fatal(waitErr)
 	}
-	if closeErr != nil {
-		t.Fatalf("closeErr = %v, want nil after a successful EPERM retry, got %v", closeErr, closeErr)
+	if !errors.Is(closeErr, probeErr) || errors.Is(closeErr, syscall.EPERM) {
+		t.Fatalf("closeErr = %v, want probe failure without recovered EPERM", closeErr)
 	}
 	if tree.closed != 2 {
 		t.Fatalf("tree closed %d times, want 2 (EPERM then retry)", tree.closed)
 	}
 }
 
-// TestWaitAndCloseProcessTree_NoSafeCloseRetriesEPERM covers the third branch:
-// the platform reports no safe pre-reap close point, so the close happens
-// after Wait and must still get the same transient-EPERM retry.
+// An unavailable observation uses the same pre-reap teardown and recovery,
+// preserving the lifecycle failure independently of a recovered close error.
 func TestWaitAndCloseProcessTree_NoSafeCloseRetriesEPERM(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("process-group EPERM semantics are Unix-specific")
 	}
@@ -73,8 +129,12 @@ func TestWaitAndCloseProcessTree_NoSafeCloseRetriesEPERM(t *testing.T) {
 	}
 	tree := &transientEPERMTree{}
 	waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, probe)
-	if waitErr != nil || closeErr != nil {
-		t.Fatalf("(wait, close) = (%v, %v), want both nil after EPERM retry", waitErr, closeErr)
+	var exitErr *osexec.ExitError
+	if waitErr != nil && !errors.As(waitErr, &exitErr) {
+		t.Fatal(waitErr)
+	}
+	if !errors.Is(closeErr, errProcessObservationUnavailable) || errors.Is(closeErr, syscall.EPERM) {
+		t.Fatalf("closeErr = %v, want unavailable observation without recovered EPERM", closeErr)
 	}
 	if tree.closed != 2 {
 		t.Fatalf("tree closed %d times, want 2 (EPERM then retry)", tree.closed)

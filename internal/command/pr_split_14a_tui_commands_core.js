@@ -11,6 +11,30 @@
     var st = prSplit._state;
     var buildReport = prSplit._buildReport;
 
+    function claimResourceCommand() {
+        var blocked = prSplit._executionCleanupFailure(st.executionResultCache, st.executionOutcomeCache);
+        if (blocked) { output.print(blocked.error); return null; }
+        var owner = prSplit._claimPipelineOwner();
+        if (!owner) output.print('A pipeline is still running; wait for verification, repair, and cleanup to finish.');
+        return owner;
+    }
+
+    function rememberResourceFailure(outcome) {
+        if (outcome && !outcome.error && outcome.message) {
+            outcome = Object.assign({}, outcome, {error:String(outcome.message)});
+        }
+        var details = outcome && (Array.isArray(outcome.results) ? outcome.results : outcome.errors);
+        var blocked = prSplit._executionCleanupFailure(details, outcome);
+        if (!blocked) return;
+        // Verification and repair own resources independently of committed
+        // branches. Preserve those branch facts while making unresolved native
+        // cleanup visible to reports, saved checkpoints, and later execution.
+        st.executionOutcomeCache = Object.assign({}, blocked.execution, {
+            results:(st.executionResultCache || []).slice(),
+            resourceFailure:outcome
+        });
+    }
+
     // --- buildCoreCommands ---
     function buildCoreCommands(tuiStateArg) {
         var style = prSplit._style;
@@ -272,6 +296,11 @@
                 description: 'Execute the split plan (creates branches)',
                 usage: 'execute',
                 handler: async function() {
+                    var pipelineOwner = prSplit._claimPipelineOwner();
+                    if (!pipelineOwner) {
+                        output.print('Execution is still running; wait for the current pipeline and cleanup to finish.');
+                        return;
+                    }
                     try {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
                     if (runtime.dryRun) {
@@ -279,9 +308,12 @@
                         return;
                     }
                     output.print('Executing split plan (' + st.planCache.splits.length + ' splits)...');
-                    var result = await prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache, {pipelineOwner:pipelineOwner, completedOutcome:st.executionOutcomeCache});
+                    if (!result.executionPending) {
+                        st.executionOutcomeCache = result;
+                        st.executionResultCache = result.results || [];
+                    }
                     if (result.error) { output.print('Error: ' + result.error); return; }
-                    st.executionResultCache = result.results;
                     output.print(style.success('✓') + ' Split completed successfully!');
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
@@ -302,6 +334,8 @@
                     } catch (e) {
                         output.print('Error in execute: ' + (e && e.message ? e.message : String(e)));
                         if (e && e.stack) { log.error('pr-split execute error stack: ' + e.stack); }
+                    } finally {
+                        prSplit._releasePipelineOwner(pipelineOwner);
                     }
                 }
             },
@@ -311,24 +345,35 @@
                 usage: 'verify',
                 handler: async function() {
                     if (!st.planCache) { output.print('Run "plan" first.'); return; }
-                    output.print('Verifying ' + st.planCache.splits.length + ' splits...');
-                    var verifyTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
-                        ? prSplit._effectiveVerifyTimeoutMs(
-                            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
-                        : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
-                    var result = await prSplit.verifySplits(st.planCache, { verifyTimeoutMs: verifyTimeoutMs });
-                    for (var i = 0; i < result.results.length; i++) {
-                        var r = result.results[i];
-                        var icon = r.passed ? style.success('\u2713') :
-                                   r.skipped ? style.warning('\u2298') :
-                                   r.preExisting ? style.dim('\u26a0') :
-                                   style.error('\u2717');
-                        output.print('  ' + icon + ' ' + r.name + (r.error ? ': ' + r.error : ''));
-                    }
-                    if (result.allPassed) {
-                        output.print(style.success('\u2705 All splits pass verification'));
-                    } else {
-                        output.print(style.error('\u274c Some splits failed'));
+                    var pipelineOwner = claimResourceCommand();
+                    if (!pipelineOwner) return;
+                    try {
+                        output.print('Verifying ' + st.planCache.splits.length + ' splits...');
+                        var verifyTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
+                            ? prSplit._effectiveVerifyTimeoutMs(
+                                (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
+                            : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
+                        var result = await prSplit.verifySplits(st.planCache, { verifyTimeoutMs: verifyTimeoutMs });
+                        rememberResourceFailure(result);
+                        if (result.error) output.print('Verification failed: ' + result.error);
+                        for (var i = 0; i < result.results.length; i++) {
+                            var r = result.results[i];
+                            var icon = r.passed ? style.success('\u2713') :
+                                       r.skipped ? style.warning('\u2298') :
+                                       r.preExisting ? style.dim('\u26a0') :
+                                       style.error('\u2717');
+                            output.print('  ' + icon + ' ' + r.name + (r.error ? ': ' + r.error : ''));
+                        }
+                        if (result.allPassed) {
+                            output.print(style.success('\u2705 All splits pass verification'));
+                        } else {
+                            output.print(style.error('\u274c Some splits failed'));
+                        }
+                    } catch (error) {
+                        rememberResourceFailure(error);
+                        throw error;
+                    } finally {
+                        prSplit._releasePipelineOwner(pipelineOwner);
                     }
                 }
             },
@@ -379,28 +424,44 @@
                 usage: 'fix',
                 handler: async function() {
                     if (!st.planCache) { output.print('No plan \u2014 run "plan" or "run" first.'); return; }
-                    output.print('Checking splits for verification failures...');
-                    var fixTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
-                        ? prSplit._effectiveVerifyTimeoutMs(
-                            (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
-                        : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
-                    var result = await prSplit.resolveConflicts(st.planCache, { verifyTimeoutMs: fixTimeoutMs });
-                    if (result.skipped) { output.print('Skipped: ' + result.skipped); return; }
-                    if (result.fixed.length > 0) {
-                        output.print(style.success('Fixed:'));
-                        for (var i = 0; i < result.fixed.length; i++) {
-                            output.print('  ' + style.success('\u2713') + ' ' + result.fixed[i].name +
-                                ' (' + style.dim(result.fixed[i].strategy) + ')');
+                    var pipelineOwner = claimResourceCommand();
+                    if (!pipelineOwner) return;
+                    try {
+                        output.print('Checking splits for verification failures...');
+                        var fixTimeoutMs = typeof prSplit._effectiveVerifyTimeoutMs === 'function'
+                            ? prSplit._effectiveVerifyTimeoutMs(
+                                (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0)
+                            : (prSplit.AUTOMATED_DEFAULTS || {}).verifyTimeoutMs;
+                        var result = await prSplit.resolveConflicts(st.planCache, {
+                            verifyTimeoutMs:fixTimeoutMs,
+                            pipelineOwner:pipelineOwner,
+                            completedResults:st.executionResultCache,
+                            completedOutcome:st.executionOutcomeCache
+                        });
+                        rememberResourceFailure(result);
+                        if (result.error) { output.print('Repair failed: ' + result.error); return; }
+                        if (result.skipped) { output.print('Skipped: ' + result.skipped); return; }
+                        if (result.fixed.length > 0) {
+                            output.print(style.success('Fixed:'));
+                            for (var i = 0; i < result.fixed.length; i++) {
+                                output.print('  ' + style.success('\u2713') + ' ' + result.fixed[i].name +
+                                    ' (' + style.dim(result.fixed[i].strategy) + ')');
+                            }
                         }
-                    }
-                    if (result.errors.length > 0) {
-                        output.print(style.error('Unresolved:'));
-                        for (var i = 0; i < result.errors.length; i++) {
-                            output.print('  ' + style.error('\u274c') + ' ' + result.errors[i].name + ': ' + result.errors[i].error);
+                        if (result.errors.length > 0) {
+                            output.print(style.error('Unresolved:'));
+                            for (var i = 0; i < result.errors.length; i++) {
+                                output.print('  ' + style.error('\u274c') + ' ' + result.errors[i].name + ': ' + result.errors[i].error);
+                            }
                         }
-                    }
-                    if (result.fixed.length === 0 && result.errors.length === 0) {
-                        output.print('All splits pass verification \u2014 no fixes needed.');
+                        if (result.fixed.length === 0 && result.errors.length === 0) {
+                            output.print('All splits pass verification \u2014 no fixes needed.');
+                        }
+                    } catch (error) {
+                        rememberResourceFailure(error);
+                        throw error;
+                    } finally {
+                        prSplit._releasePipelineOwner(pipelineOwner);
                     }
                 }
             },
@@ -529,6 +590,11 @@
                 description: 'Run full workflow: analyze \u2192 group \u2192 plan \u2192 execute',
                 usage: 'run [--mode auto|heuristic]',
                 handler: async function(args) {
+                    if (prSplit._pipelinePending()) {
+                        output.print('Execution is still running; wait for the current pipeline and cleanup to finish.');
+                        return;
+                    }
+                    var pipelineOwner = null;
                     try {
                     var useAuto = runtime.mode === 'auto';
                     if (args && args.length > 0) {
@@ -559,6 +625,11 @@
                             return;
                         }
                         output.print(style.warning('Agent not available \u2014 using heuristic mode.'));
+                    }
+                    pipelineOwner = prSplit._claimPipelineOwner();
+                    if (!pipelineOwner) {
+                        output.print('Execution is still running; wait for the current pipeline and cleanup to finish.');
+                        return;
                     }
                     var workflowStart = Date.now();
                     output.print(style.header('Running full PR split workflow...'));
@@ -608,9 +679,12 @@
                         return;
                     }
                     output.print(style.info('Executing ' + st.planCache.splits.length + ' splits...'));
-                    var result = await prSplit.executeSplit(st.planCache);
+                    var result = await prSplit.executeSplit(st.planCache, {pipelineOwner:pipelineOwner, completedOutcome:st.executionOutcomeCache});
+                    if (!result.executionPending) {
+                        st.executionOutcomeCache = result;
+                        st.executionResultCache = result.results || [];
+                    }
                     if (result.error) { output.print(style.error('Execution failed: ' + result.error)); return; }
-                    st.executionResultCache = result.results;
                     output.print(style.success('\u2713 Split executed: ' + result.results.length + ' branches created'));
 
                     // Step 5: Verify equivalence
@@ -631,6 +705,8 @@
                     } catch (e) {
                         output.print('Error in run workflow: ' + (e && e.message ? e.message : String(e)));
                         if (e && e.stack) log.error('pr-split run error stack: ' + e.stack);
+                    } finally {
+                        if (pipelineOwner) prSplit._releasePipelineOwner(pipelineOwner);
                     }
                 }
             },

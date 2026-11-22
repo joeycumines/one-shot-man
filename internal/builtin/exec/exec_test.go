@@ -204,7 +204,7 @@ func TestExecv_EdgeCases(t *testing.T) {
 		if err := runtime.ExportTo(val, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["error"] != true || m["message"].(string) == "" {
+		if m["error"] != true || m["execFailed"] != true || m["message"].(string) == "" {
 			t.Fatalf("expected error for null argv, got %#v", m)
 		}
 	})
@@ -221,7 +221,7 @@ func TestExecv_EdgeCases(t *testing.T) {
 		if err := runtime.ExportTo(val, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["error"] != true || m["message"].(string) == "" {
+		if m["error"] != true || m["execFailed"] != true || m["message"].(string) == "" {
 			t.Fatalf("expected error for undefined argv, got %#v", m)
 		}
 	})
@@ -238,7 +238,7 @@ func TestExecv_EdgeCases(t *testing.T) {
 		if err := runtime.ExportTo(val, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["error"] != true || m["message"].(string) == "" {
+		if m["error"] != true || m["execFailed"] != true || m["message"].(string) == "" {
 			t.Fatalf("expected error for no arguments, got %#v", m)
 		}
 	})
@@ -255,7 +255,7 @@ func TestExecv_EdgeCases(t *testing.T) {
 		if err := runtime.ExportTo(val, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["error"] != true || m["message"].(string) == "" {
+		if m["error"] != true || m["execFailed"] != true || m["message"].(string) == "" {
 			t.Fatalf("expected error for empty array, got %#v", m)
 		}
 	})
@@ -272,7 +272,7 @@ func TestExecv_EdgeCases(t *testing.T) {
 		if err := runtime.ExportTo(val, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["error"] != true || m["message"].(string) == "" {
+		if m["error"] != true || m["execFailed"] != true || m["message"].(string) == "" {
 			t.Fatalf("expected error for non-array, got %#v", m)
 		}
 	})
@@ -342,8 +342,8 @@ func TestExecv_CommandNotFound(t *testing.T) {
 	if err := runtime.ExportTo(val, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m["error"] != true {
-		t.Fatalf("expected error for non-existent command, got %#v", m)
+	if m["error"] != true || m["execFailed"] != true {
+		t.Fatalf("expected execution failure for non-existent command, got %#v", m)
 	}
 	if toInt64(m["code"]) != -1 {
 		t.Fatalf("expected code -1 for non-ExitError, got %d", toInt64(m["code"]))
@@ -366,7 +366,7 @@ func TestRunExec_NilContext(t *testing.T) {
 			t.Fatalf("unexpected panic %v", r)
 		}
 	}()
-	_ = runExec(nilCtx, "echo", "hello-nil-ctx")
+	_ = runExec(nilCtx, SpawnConfig{Command: "echo", Args: []string{"hello-nil-ctx"}})
 }
 
 func TestExec_TimeoutOptions(t *testing.T) {

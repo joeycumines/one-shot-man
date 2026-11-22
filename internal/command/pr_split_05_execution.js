@@ -5,11 +5,11 @@
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;
-    var gitExecAsync = prSplit._gitExecAsync;
     var resolveDir = prSplit._resolveDir;
     var validatePlan = prSplit.validatePlan;
     var worktreeTmpPath = prSplit._worktreeTmpPath;
     var execFailReason = prSplit._execFailReason;
+    var commandFailed = prSplit._commandFailed;
 
     function isCancelledHelper() {
         if (typeof isCancelled === 'function' && isCancelled()) return true;
@@ -101,389 +101,229 @@
         };
     }
 
-    // --- executeSplit — creates branches for each split in a plan ---
-    //
-    // Branch ops run in a temp worktree.
-    async function executeSplit(plan, options) {
+    // Both public entry points share worktree ownership and failure handling;
+    // only their process transport differs (captured execv or streaming spawn).
+    var executionPending = false;
+
+    async function executePlan(plan, options, runGit) {
         options = options || {};
-        var dir = resolveDir(plan.dir || '.');
-        var results = [];
-        var progressFn = options.progressFn || null;
-        var ignoredFiles = {};
-
-        var validation = validatePlan(plan);
-        if (!validation.valid) {
-            return { error: 'invalid plan: ' + validation.errors.join('; '), results: [] };
-        }
-
-        // fileStatuses determines checkout vs removal.
-        if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
+        if (executionPending) {
             return {
-                error: 'plan.fileStatuses is required — pass fileStatuses from analyzeDiff() to createSplitPlan()',
+                error: 'Execution is still running; wait for the current execution and worktree cleanup to finish.',
+                executionPending: true,
                 results: []
             };
         }
-        var fileStatuses = plan.fileStatuses;
-        var fileRenames = plan.fileRenames || {};
-
-        // Pre-validate: detect git-ignored files.
-        var allPlanFiles = [];
-        for (var pi = 0; pi < plan.splits.length; pi++) {
-            for (var pf = 0; pf < plan.splits[pi].files.length; pf++) {
-                allPlanFiles.push(plan.splits[pi].files[pf]);
-            }
+        var pipelineOwner = options.pipelineOwner;
+        var ownsPipelineLease = !prSplit._ownsPipeline(pipelineOwner);
+        if (ownsPipelineLease) pipelineOwner = prSplit._claimPipelineOwner();
+        if (!pipelineOwner) {
+            return {
+                error: 'The automated pipeline is still running; wait for verification, repair, and cleanup to finish.',
+                executionPending: true,
+                results: []
+            };
         }
-        if (allPlanFiles.length > 0) {
-            // --no-index checks .gitignore rules.
-            var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
-            var checkResult = await gitExec(dir, checkArgs);
-            // exit 0 = ignored; exit 1 = none; other = error.
-            if (checkResult.code !== 0 && checkResult.code !== 1) {
-                return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
+        executionPending = true;
+        try {
+            var blocked = prSplit._executionCleanupFailure(options.completedResults, options.completedOutcome);
+            if (blocked) return Object.assign({}, blocked.execution, {error:blocked.error, results:blocked.results});
+            var results = [];
+            var outcome = { error: null, results: results };
+            var validation = validatePlan(plan);
+            if (!validation.valid) {
+                outcome.error = 'invalid plan: ' + validation.errors.join('; ');
+                return outcome;
             }
-            if (checkResult.code === 0 && checkResult.stdout.trim()) {
-                var ignoreLines = checkResult.stdout.trim().split('\n');
-                for (var il = 0; il < ignoreLines.length; il++) {
-                    var ig = ignoreLines[il].trim();
-                    if (ig) {
-                        ignoredFiles[ig] = true;
+            var dir = resolveDir(plan.dir || '.');
+            var progressFn = options.progressFn || null;
+            var ignoredFiles = {};
+            var completedResults = Array.isArray(options.completedResults) ? options.completedResults : [];
+            var completedCount = completedResults.length;
+            if (completedCount > plan.splits.length) {
+                return { error: 'resume execution results exceed plan split count', results: [] };
+            }
+            for (var cr = 0; cr < completedCount; cr++) {
+                var completed = completedResults[cr];
+                if (!completed || completed.name !== plan.splits[cr].name || completed.error ||
+                    completed.cleanupFailed || completed.treeCleanupError || completed.worktreeRetained) {
+                    return { error: 'resume execution result does not match plan prefix at index ' + cr, results: [] };
+                }
+                results.push(Object.assign({}, completed));
+            }
+            if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
+                return {
+                    error: 'plan.fileStatuses is required — pass fileStatuses from analyzeDiff() to createSplitPlan()',
+                    results: []
+                };
+            }
+            var fileStatuses = plan.fileStatuses;
+            var fileRenames = plan.fileRenames || {};
+            var worktreePath = null;
+            var worktreeAttempted = false;
+            var treeCleanupError = '';
+            var activeResult = null;
+
+            function treeError(value) {
+                return value && typeof value.treeCleanupError === 'string' ? value.treeCleanupError : '';
+            }
+            function reason(value) {
+                return (value && (execFailReason(value) || value.message)) || String(value || 'no command result');
+            }
+            async function command(commandDir, args, label, acceptedCodes) {
+                var result;
+                try {
+                    result = await runGit(commandDir, args);
+                } catch (e) {
+                    treeCleanupError = treeError(e) || treeCleanupError;
+                    throw new Error(label + ': ' + reason(e));
+                }
+                treeCleanupError = treeError(result) || treeCleanupError;
+                if (commandFailed(result, acceptedCodes)) {
+                    throw new Error(label + ': ' + reason(result));
+                }
+                return result;
+            }
+            function recordCleanupFailure(message, retained, cleanupTreeError) {
+                outcome.cleanupFailed = true;
+                outcome.worktreeDir = worktreePath;
+                if (retained) outcome.worktreeRetained = true;
+                if (cleanupTreeError) outcome.treeCleanupError = cleanupTreeError;
+                outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + message;
+                // A completed branch is still a real commit. Preserve its SHA and
+                // command error, but reject this checkpoint on a later resume until
+                // its unresolved resource ownership has been dealt with.
+                if (activeResult) {
+                    activeResult.cleanupFailed = true;
+                    activeResult.worktreeDir = worktreePath;
+                    if (retained) activeResult.worktreeRetained = true;
+                    if (cleanupTreeError) activeResult.treeCleanupError = cleanupTreeError;
+                }
+            }
+
+            try {
+                if (completedCount < plan.splits.length) {
+                    var allPlanFiles = [];
+                    for (var pi = 0; pi < plan.splits.length; pi++) {
+                        for (var pf = 0; pf < plan.splits[pi].files.length; pf++) {
+                            allPlanFiles.push(plan.splits[pi].files[pf]);
+                        }
+                    }
+                    if (allPlanFiles.length > 0) {
+                        // check-ignore's ordinary exit 1 means no ignored files.
+                        // Capture/teardown errors remain failures at either code.
+                        var checkResult = await command(dir, ['check-ignore', '--no-index'].concat(allPlanFiles),
+                            'git check-ignore failed', [0, 1]);
+                        if (checkResult.code === 0 && checkResult.stdout.trim()) {
+                            var ignoreLines = checkResult.stdout.trim().split('\n');
+                            for (var il = 0; il < ignoreLines.length; il++) {
+                                var ignored = ignoreLines[il].trim();
+                                if (ignored) ignoredFiles[ignored] = true;
+                            }
+                            if (typeof log !== 'undefined' && log.warn) {
+                                var ignoredList = Object.keys(ignoredFiles);
+                                log.warn('pr-split: ' + ignoredList.length + ' file(s) in plan match .gitignore rules and will be skipped: ' + ignoredList.join(', '));
+                            }
+                        }
+                    }
+                    for (var k = completedCount; k < plan.splits.length; k++) {
+                        var existCheck = await command(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name],
+                            'check existing branch failed', [0, 1, 128]);
+                        if (existCheck.code === 0) {
+                            await command(dir, ['branch', '-D', plan.splits[k].name], 'delete existing branch failed');
+                        }
+                    }
+
+                    worktreePath = worktreeTmpPath('osm-worktree-');
+                    // Even a rejected/failed add may have created some resources.
+                    // The finally block owns them from the moment add is attempted.
+                    worktreeAttempted = true;
+                    await command(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch],
+                        'create worktree failed');
+
+                    var currentBase = completedCount > 0 ? plan.splits[completedCount - 1].name : plan.baseBranch;
+                    for (var i = completedCount; i < plan.splits.length; i++) {
+                        if (isCancelledHelper() || isForceCancelledHelper()) {
+                            throw new Error('cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches');
+                        }
+                        var split = plan.splits[i];
+                        activeResult = { name: split.name, files: split.files, sha: '', error: null, skippedFiles: [] };
+                        results.push(activeResult);
+                        if (progressFn) progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
+                        await command(worktreePath, ['checkout', '-b', split.name, currentBase],
+                            'create branch ' + split.name + ' from ' + currentBase + ' failed');
+                        var actions = collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, activeResult, progressFn);
+                        if (actions.error) throw new Error(actions.error);
+                        if (actions.removeFiles.length > 0) {
+                            await command(worktreePath, ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles),
+                                'git rm ' + actions.removeFiles.join(' '));
+                        }
+                        if (actions.checkoutFiles.length > 0) {
+                            await command(worktreePath, ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles),
+                                'checkout files for ' + split.name);
+                        }
+                        if (actions.addFiles.length > 0) {
+                            await command(worktreePath, ['add', '--'].concat(actions.addFiles), 'git add failed');
+                        }
+                        await command(worktreePath, ['commit', '-m', split.message || 'split: ' + split.name], 'git commit failed');
+                        var sha = await command(worktreePath, ['rev-parse', 'HEAD'], 'rev-parse HEAD after commit failed');
+                        if (!sha.stdout.trim()) throw new Error('rev-parse HEAD after commit failed: empty output');
+                        activeResult.sha = sha.stdout.trim();
+                        if (progressFn) progressFn('Branch ' + (i + 1) + '/' + plan.splits.length + ' created: ' + split.name);
+                        currentBase = split.name;
+                        activeResult = null;
                     }
                 }
-                if (typeof log !== 'undefined' && log.warn) {
-                    var ignoredList = Object.keys(ignoredFiles);
-                    log.warn('pr-split: ' + ignoredList.length + ' file(s) in plan match .gitignore rules and will be skipped: ' + ignoredList.join(', '));
+                var overallSkipped = [];
+                for (var oi = 0; oi < results.length; oi++) {
+                    overallSkipped = overallSkipped.concat(results[oi].skippedFiles || []);
+                }
+                outcome.overallSkippedFiles = overallSkipped;
+            } catch (e) {
+                outcome.error = String((e && e.message) || e);
+                if (activeResult) activeResult.error = outcome.error;
+                if (treeCleanupError) outcome.treeCleanupError = treeCleanupError;
+            } finally {
+                if (worktreeAttempted) {
+                    // A known tree failure withholds removal. A failed removal is
+                    // an attempted operation, and cannot prove the path still exists.
+                    if (!activeResult && results.length > 0) activeResult = results[results.length - 1];
+                    if (treeCleanupError) {
+                        recordCleanupFailure('process tree teardown failed: ' + treeCleanupError +
+                            '; worktree retained at ' + worktreePath, true, treeCleanupError);
+                    } else {
+                        var removal;
+                        var rejected = false;
+                        try {
+                            removal = await runGit(dir, ['worktree', 'remove', '--force', worktreePath]);
+                        } catch (e) {
+                            removal = e;
+                            rejected = true;
+                        }
+                        if (rejected || commandFailed(removal)) {
+                            recordCleanupFailure('worktree removal failed: ' + reason(removal) +
+                                '; worktree removal was attempted at ' + worktreePath, false, treeError(removal));
+                        }
+                    }
                 }
             }
+            return outcome;
+        } finally {
+            executionPending = false;
+            if (ownsPipelineLease) prSplit._releasePipelineOwner(pipelineOwner);
         }
-
-        // Pre-flight: delete pre-existing split branches.
-        for (var k = 0; k < plan.splits.length; k++) {
-            var existCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
-            if (existCheck.code === 0) {
-                await gitExec(dir, ['branch', '-D', plan.splits[k].name]);
-            }
-        }
-
-        // Create a temp worktree (T103).
-        var worktreePath = worktreeTmpPath('osm-worktree-');
-        var wtAdd = await gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
-        if (wtAdd.code !== 0) {
-            return { error: 'create worktree failed: ' + execFailReason(wtAdd), results: [] };
-        }
-
-        async function cleanupWorktree() {
-            await gitExec(dir, ['worktree', 'remove', '--force', worktreePath]);
-        }
-
-        // INVARIANT (T108): cumulative chain of splits.
-        var currentBase = plan.baseBranch;
-
-        for (var i = 0; i < plan.splits.length; i++) {
-            if (isCancelledHelper() || isForceCancelledHelper()) {  // T117: honor force-cancel
-                await cleanupWorktree();
-                return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
-            }
-
-            var split = plan.splits[i];
-            var splitResult = { name: split.name, files: split.files, sha: '', error: null, skippedFiles: [] };
-
-            if (progressFn) {
-                progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
-            }
-
-            var co = await gitExec(worktreePath, ['checkout', '-b', split.name, currentBase]);
-            if (co.code !== 0) {
-                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + execFailReason(co);
-                results.push(splitResult);
-                await cleanupWorktree();
-                return { error: splitResult.error, results: results };
-            }
-
-            var actions = collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, splitResult, progressFn);
-            if (actions.error) {
-                splitResult.error = actions.error;
-                results.push(splitResult);
-                await cleanupWorktree();
-                return { error: splitResult.error, results: results };
-            }
-
-            if (actions.removeFiles.length > 0) {
-                var remove = await gitExec(worktreePath,
-                    ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
-                if (remove.code !== 0) {
-                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + execFailReason(remove);
-                    results.push(splitResult);
-                    await cleanupWorktree();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            if (actions.checkoutFiles.length > 0) {
-                var checkout = await gitExec(worktreePath,
-                    ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
-                if (checkout.code !== 0) {
-                    splitResult.error = 'checkout files for ' + split.name + ': ' + execFailReason(checkout);
-                    results.push(splitResult);
-                    await cleanupWorktree();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            if (actions.addFiles.length > 0) {
-                var addArgs = ['add', '--'].concat(actions.addFiles);
-                var add = await gitExec(worktreePath, addArgs);
-                if (add.code !== 0) {
-                    splitResult.error = 'git add failed: ' + execFailReason(add);
-                    results.push(splitResult);
-                    await cleanupWorktree();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            var msg = split.message || 'split: ' + split.name;
-            var commit = await gitExec(worktreePath, ['commit', '-m', msg]);
-            if (commit.code !== 0) {
-                splitResult.error = 'git commit failed: ' + execFailReason(commit);
-                results.push(splitResult);
-                await cleanupWorktree();
-                return { error: splitResult.error, results: results };
-            }
-
-            var sha = await gitExec(worktreePath, ['rev-parse', 'HEAD']);
-            if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
-                // Failed/empty rev-parse after commit is an error.
-                splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
-                results.push(splitResult);
-                await cleanupWorktree();
-                return { error: splitResult.error, results: results };
-            }
-            splitResult.sha = sha.stdout.trim();
-
-            results.push(splitResult);
-
-            if (progressFn) {
-                progressFn('Branch ' + (i + 1) + '/' + plan.splits.length + ' created: ' + split.name);
-            }
-
-            currentBase = split.name;
-        }
-
-        await cleanupWorktree();
-
-        // T107: Collect all git-ignored files across all splits for top-level reporting.
-        var overallSkipped = [];
-        for (var oi = 0; oi < results.length; oi++) {
-            if (results[oi].skippedFiles && results[oi].skippedFiles.length > 0) {
-                overallSkipped = overallSkipped.concat(results[oi].skippedFiles);
-            }
-        }
-        return { error: null, results: results, overallSkippedFiles: overallSkipped };
     }
 
-    // executeSplitAsync: non-blocking version.
+    async function executeSplit(plan, options) {
+        return await executePlan(plan, options, gitExec);
+    }
+
     async function executeSplitAsync(plan, options) {
-        var gitExecAsync = prSplit._gitExecAsync;
-        options = options || {};
-        var dir = resolveDir(plan.dir || '.');
-        var results = [];
-        var progressFn = options.progressFn || null;
-        var ignoredFiles = {};
-        var completedResults = Array.isArray(options.completedResults) ? options.completedResults : [];
-        var completedCount = completedResults.length;
-
-        var validation = validatePlan(plan);
-        if (!validation.valid) {
-            return { error: 'invalid plan: ' + validation.errors.join('; '), results: [] };
-        }
-        if (completedCount > plan.splits.length) {
-            return { error: 'resume execution results exceed plan split count', results: [] };
-        }
-        for (var cr = 0; cr < completedCount; cr++) {
-            var completed = completedResults[cr];
-            if (!completed || completed.name !== plan.splits[cr].name || completed.error) {
-                return { error: 'resume execution result does not match plan prefix at index ' + cr, results: [] };
-            }
-            results.push(completed);
-        }
-
-        if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
-            return {
-                error: 'plan.fileStatuses is required — pass fileStatuses from analyzeDiff() to createSplitPlan()',
-                results: []
-            };
-        }
-        var fileStatuses = plan.fileStatuses;
-        var fileRenames = plan.fileRenames || {};
-
-        if (completedCount === plan.splits.length) {
-            var completedSkipped = [];
-            for (var completedIndex = 0; completedIndex < results.length; completedIndex++) {
-                if (results[completedIndex].skippedFiles) {
-                    completedSkipped = completedSkipped.concat(results[completedIndex].skippedFiles);
-                }
-            }
-            return { error: null, results: results, overallSkippedFiles: completedSkipped };
-        }
-
-        // Pre-validate: detect git-ignored files in the plan.
-        var allPlanFiles = [];
-        for (var pi = 0; pi < plan.splits.length; pi++) {
-            for (var pf = 0; pf < plan.splits[pi].files.length; pf++) {
-                allPlanFiles.push(plan.splits[pi].files[pf]);
-            }
-        }
-        if (allPlanFiles.length > 0) {
-            var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
-            var checkResult = await gitExecAsync(dir, checkArgs);
-            // exit 0 = ignored; exit 1 = none; other = error.
-            if (checkResult.code !== 0 && checkResult.code !== 1) {
-                return { error: 'git check-ignore failed: ' + execFailReason(checkResult), results: [] };
-            }
-            if (checkResult.code === 0 && checkResult.stdout.trim()) {
-                var ignoreLines = checkResult.stdout.trim().split('\n');
-                for (var il = 0; il < ignoreLines.length; il++) {
-                    var ig = ignoreLines[il].trim();
-                    if (ig) {
-                        ignoredFiles[ig] = true;
-                    }
-                }
-                if (typeof log !== 'undefined' && log.warn) {
-                    var ignoredList = Object.keys(ignoredFiles);
-                    log.warn('pr-split: ' + ignoredList.length + ' file(s) in plan match .gitignore rules and will be skipped: ' + ignoredList.join(', '));
-                }
-            }
-        }
-
-        // Pre-flight: delete branches without a valid checkpoint.
-        for (var k = 0; k < plan.splits.length; k++) {
-            if (k < completedCount) {
-                continue;
-            }
-            var existCheck = await gitExecAsync(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
-            if (existCheck.code === 0) {
-                await gitExecAsync(dir, ['branch', '-D', plan.splits[k].name]);
-            }
-        }
-
-        // Create a temp worktree (T103).
-        var worktreePath = worktreeTmpPath('osm-worktree-');
-        var wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
-        if (wtAdd.code !== 0) {
-            return { error: 'create worktree failed: ' + execFailReason(wtAdd), results: [] };
-        }
-
-        async function cleanupWorktreeAsync() {
-            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreePath]);
-        }
-
-        // INVARIANT (T108): cumulative chain of splits.
-        var currentBase = plan.baseBranch;
-
-        for (var i = 0; i < plan.splits.length; i++) {
-            if (isCancelledHelper() || isForceCancelledHelper()) {  // T117: honor force-cancel
-                await cleanupWorktreeAsync();
-                return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
-            }
-
-            if (i < completedCount) {
-                currentBase = plan.splits[i].name;
-                continue;
-            }
-
-            var split = plan.splits[i];
-            var splitResult = { name: split.name, files: split.files, sha: '', error: null, skippedFiles: [] };
-
-            if (progressFn) {
-                progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
-            }
-            var co = await gitExecAsync(worktreePath, ['checkout', '-b', split.name, currentBase]);
-            if (co.code !== 0) {
-                splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + execFailReason(co);
-                results.push(splitResult);
-                await cleanupWorktreeAsync();
-                return { error: splitResult.error, results: results };
-            }
-
-            var actions = collectSplitFileActions(split, fileStatuses, fileRenames, ignoredFiles, splitResult, progressFn);
-            if (actions.error) {
-                splitResult.error = actions.error;
-                results.push(splitResult);
-                await cleanupWorktreeAsync();
-                return { error: splitResult.error, results: results };
-            }
-
-            if (actions.removeFiles.length > 0) {
-                var rmRes = await gitExecAsync(worktreePath, ['rm', '--ignore-unmatch', '-f'].concat(actions.removeFiles));
-                if (rmRes.code !== 0) {
-                    splitResult.error = 'git rm ' + actions.removeFiles.join(' ') + ': ' + execFailReason(rmRes);
-                    results.push(splitResult);
-                    await cleanupWorktreeAsync();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            if (actions.checkoutFiles.length > 0) {
-                var checkoutRes = await gitExecAsync(worktreePath, ['checkout', plan.sourceBranch, '--'].concat(actions.checkoutFiles));
-                if (checkoutRes.code !== 0) {
-                    splitResult.error = 'checkout files failed: ' + execFailReason(checkoutRes);
-                    results.push(splitResult);
-                    await cleanupWorktreeAsync();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            if (actions.addFiles.length > 0) {
-                var addArgs = ['add', '--'].concat(actions.addFiles);
-                var add = await gitExecAsync(worktreePath, addArgs);
-                if (add.code !== 0) {
-                    splitResult.error = 'git add failed: ' + execFailReason(add);
-                    results.push(splitResult);
-                    await cleanupWorktreeAsync();
-                    return { error: splitResult.error, results: results };
-                }
-            }
-
-            var msg = split.message || 'split: ' + split.name;
-            var commit = await gitExecAsync(worktreePath, ['commit', '-m', msg]);
-            if (commit.code !== 0) {
-                splitResult.error = 'git commit failed: ' + execFailReason(commit);
-                results.push(splitResult);
-                await cleanupWorktreeAsync();
-                return { error: splitResult.error, results: results };
-            }
-
-            var sha = await gitExecAsync(worktreePath, ['rev-parse', 'HEAD']);
-            if (sha.code !== 0 || sha.error || sha.stdout.trim() === '') {
-                // Failed/empty rev-parse after commit is an error.
-                splitResult.error = 'rev-parse HEAD after commit failed: ' + execFailReason(sha);
-                results.push(splitResult);
-                await cleanupWorktreeAsync();
-                return { error: splitResult.error, results: results };
-            }
-            splitResult.sha = sha.stdout.trim();
-
-            results.push(splitResult);
-
-            if (progressFn) {
-                progressFn('Branch ' + (i + 1) + '/' + plan.splits.length + ' created: ' + split.name);
-            }
-
-            currentBase = split.name;
-        }
-
-        await cleanupWorktreeAsync();
-
-        // T107: Collect all git-ignored files across all splits for top-level reporting.
-        var overallSkipped = [];
-        for (var oi = 0; oi < results.length; oi++) {
-            if (results[oi].skippedFiles && results[oi].skippedFiles.length > 0) {
-                overallSkipped = overallSkipped.concat(results[oi].skippedFiles);
-            }
-        }
-        return { error: null, results: results, overallSkippedFiles: overallSkipped };
+        return await executePlan(plan, options, prSplit._gitExecAsync);
     }
 
     // --- Exports ---
+    prSplit._executionPending = function() { return executionPending; };
     prSplit.executeSplit = executeSplit;
     prSplit.executeSplitAsync = executeSplitAsync;
 })(globalThis.prSplit);

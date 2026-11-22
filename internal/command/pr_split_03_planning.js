@@ -46,7 +46,7 @@
         var sourceBranch = config.sourceBranch;
         if (!sourceBranch) {
             var result = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-            sourceBranch = result.code === 0 ? result.stdout.trim() : 'HEAD';
+            sourceBranch = !prSplit._commandFailed(result) ? result.stdout.trim() : 'HEAD';
         }
 
         var groupNames = Object.keys(groups).sort();
@@ -104,7 +104,7 @@
         var sourceBranch = config.sourceBranch;
         if (!sourceBranch) {
             var result = await gitExecAsync(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-            sourceBranch = result.code === 0 ? result.stdout.trim() : 'HEAD';
+            sourceBranch = !prSplit._commandFailed(result) ? result.stdout.trim() : 'HEAD';
         }
 
         var groupNames = Object.keys(groups).sort();
@@ -145,12 +145,16 @@
     // --- savePlan — persists plan + caches to a JSON file ---
     // An optional second argument specifies the lastCompletedStep name for
     // crash recovery.  When provided, the snapshot version is bumped to 2.
-    async function savePlan(path, lastCompletedStep) {
-        path = resolvePlanPath(path, state.planCache && state.planCache.dir);
+    var planSaveTail = Promise.resolve();
+
+    async function savePlan(path, lastCompletedStep, snapshotState) {
+        var savedState = snapshotState || state;
+        var savedRuntime = snapshotState && snapshotState.runtime || runtime;
+        path = resolvePlanPath(path, savedState.planCache && savedState.planCache.dir);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot persist plan' };
         }
-        if (!state.planCache) {
+        if (!savedState.planCache) {
             return { error: 'no plan to save — run "plan" or "run" first' };
         }
 
@@ -163,31 +167,40 @@
             version: lastCompletedStep ? 2 : 1,
             savedAt: new Date().toISOString(),
             runtime: {
-                baseBranch:    runtime.baseBranch,
-                strategy:      runtime.strategy,
-                maxFiles:      runtime.maxFiles,
-                branchPrefix:  runtime.branchPrefix,
-                verifyCommand: runtime.verifyCommand,
-                dryRun:        runtime.dryRun
+                baseBranch:    savedRuntime.baseBranch,
+                strategy:      savedRuntime.strategy,
+                maxFiles:      savedRuntime.maxFiles,
+                branchPrefix:  savedRuntime.branchPrefix,
+                verifyCommand: savedRuntime.verifyCommand,
+                dryRun:        savedRuntime.dryRun
             },
-            analysis: state.analysisCache ? {
-                files:          state.analysisCache.files,
-                fileStatuses:   state.analysisCache.fileStatuses,
-                fileRenames:    state.analysisCache.fileRenames || {},
-                baseBranch:     state.analysisCache.baseBranch,
-                currentBranch:  state.analysisCache.currentBranch
+            analysis: savedState.analysisCache ? {
+                files:          savedState.analysisCache.files,
+                fileStatuses:   savedState.analysisCache.fileStatuses,
+                fileRenames:    savedState.analysisCache.fileRenames || {},
+                baseBranch:     savedState.analysisCache.baseBranch,
+                currentBranch:  savedState.analysisCache.currentBranch
             } : null,
-            groups: state.groupsCache,
-            plan: state.planCache,
-            executed: state.executionResultCache || [],
-            conversations: getHistory()
+            groups: savedState.groupsCache,
+            plan: savedState.planCache,
+            executed: savedState.executionResultCache || [],
+            // A failure may own a worktree before any branch result exists.
+            // Preserve the whole execution outcome as well as its rows.
+            executionOutcome: savedState.executionOutcomeCache || null,
+            conversations: snapshotState ? (savedState.conversationHistory || []) : getHistory()
         };
         if (lastCompletedStep) {
             snapshot.lastCompletedStep = lastCompletedStep;
         }
 
         try {
-            await osmod.writeFile(path, JSON.stringify(snapshot, null, 2));
+            // Capture the requested state before yielding, then write in call
+            // order. An older pending write cannot overwrite a newer cleanup
+            // checkpoint, and one rejected write cannot poison the queue.
+            var content = JSON.stringify(snapshot, null, 2);
+            var pending = planSaveTail.then(function() { return osmod.writeFile(path, content); });
+            planSaveTail = pending.then(function() {}, function() {});
+            await pending;
             return { path: path, error: null };
         } catch (e) {
             return { error: 'failed to write plan: ' + String(e) };
@@ -241,6 +254,7 @@
         }
         state.planCache = snapshot.plan;
         state.executionResultCache = snapshot.executed || [];
+        state.executionOutcomeCache = snapshot.executionOutcome || null;
 
         // Restore conversation history if present (late-bound via chunk 11).
         // T101: Use idempotent replacement (slice) instead of append to prevent

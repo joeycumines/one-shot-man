@@ -861,14 +861,19 @@
                 s.errorDiscardPending = true;
                 prSplit._agentEvidence = null;
                 if (stt) stt.agentEvidence = null;
+                var verificationCleanup = prSplit._cancelOwnedWork(s);
+                var finishDiscard = function() {
+                    var ready = function() {
+                        s.errorDiscardPending = false;
+                        s.errorDiscardReady = true;
+                    };
+                    if (verificationCleanup) verificationCleanup.then(ready);
+                    else ready();
+                };
                 try {
                     if (typeof prSplit.cleanupExecutor !== 'function') {
                         throw new Error('cleanupExecutor missing');
                     }
-                    var finishDiscard = function() {
-                        s.errorDiscardPending = false;
-                        s.errorDiscardReady = true;
-                    };
                     var discardCleanup = paneClose.then(function() {
                         return prSplit.cleanupExecutor();
                     }).then(function() {
@@ -887,8 +892,7 @@
                     });
                 } catch (e) {
                     log.debug('error discard cleanup failed', { error: e.message || String(e) });
-                    s.errorDiscardPending = false;
-                    s.errorDiscardReady = true;
+                    finishDiscard();
                 }
                 return [s, tea.tick(C.TICK_INTERVAL_MS, 'error-discard-quit')];
             }
@@ -1870,8 +1874,8 @@
                 return [s, tea.tick(nextPaneCleanupDelay(s), 'wizard-quit')];
             }
             if (s.wizardQuitting) {
-                // Only the agent-pane quit path is gated on the pane close
-                // alone; confirmCancel publishes its own four-gate result via
+                // The ordinary quit helper publishes pane/verification
+                // readiness; confirmCancel publishes its complete result via
                 // wizardQuitSent and must not be short-circuited here.
                 if (s.wizardQuitPaneGated === true && s.wizardQuitPaneReady && !s.wizardQuitSent) {
                     s.wizardQuitSent = true;

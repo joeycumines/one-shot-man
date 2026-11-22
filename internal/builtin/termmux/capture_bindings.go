@@ -112,7 +112,7 @@ func trackOrdered(ctx context.Context, adapter *gojaeventloop.Adapter, runtime *
 //
 // JS signature:
 //
-//	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env?, envReplace? }?)
+//	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env?, envReplace?, windowsVerbatimArguments? }?)
 func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 {
 		panic(runtime.NewTypeError("newCaptureSession: command argument is required"))
@@ -171,6 +171,9 @@ func newCaptureSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 		}
 		if v := optObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			cfg.EnvReplace = v.ToBoolean()
+		}
+		if v := optObj.Get("windowsVerbatimArguments"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			cfg.WindowsVerbatimArguments = v.ToBoolean()
 		}
 	}
 

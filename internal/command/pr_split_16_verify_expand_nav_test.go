@@ -125,6 +125,7 @@ func TestChunk16_VerifyFallback_PollCompleted(t *testing.T) {
 // TestChunk16_VerifyFallback_AsyncHappyPath exercises the full fallback
 // verification chain: verify-branch → verify-fallback-poll → complete.
 func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -148,7 +149,7 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 		};
 
 		try {
-			var s = initState('EXECUTING');
+			var s = initState('BRANCH_BUILDING');
 			s.isProcessing = true;
 			s.verificationResults = [];
 			s.verifyingIdx = 0;
@@ -160,14 +161,20 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 			s = r[0];
 			if (!s.verifyFallbackRunning) return 'FAIL: should be running after verify-branch';
 
-			// Let microtasks resolve.
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+			// Await the actual owner rather than assuming a fixed number
+			// of microtasks completes reporting. A following event-loop
+			// turn lets the outer fallback continuation publish its result
+			// and clear verifyFallbackRunning before the poll consumes it.
+			var jobs = (s._resourceJobs || []).slice();
+			if (jobs.length !== 1 || jobs[0].branchName !== 'split/api') return 'FAIL: fallback ownership was not recorded';
+			await Promise.all(jobs.map(function(job) { return job.promise.catch(function() {}); }));
+			await new Promise(function(resolve) { setTimeout(resolve, 0); });
 
 			// Poll — should be complete.
 			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
 			s = r[0];
+
+			if ((s._resourceJobs || []).length !== 0) return 'FAIL: settled fallback owner was not released';
 
 			if (s.verifyFallbackRunning) return 'FAIL: should not be running after poll';
 			if (s.verificationResults.length !== 1) {
@@ -196,6 +203,7 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 // TestChunk16_VerifyFallback_AsyncError exercises the error path when
 // verifySplitAsync returns a failure result.
 func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -217,21 +225,29 @@ func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 		};
 
 		try {
-			var s = initState('EXECUTING');
+			var s = initState('BRANCH_BUILDING');
 			s.isProcessing = true;
 			s.verificationResults = [];
 			s.verifyingIdx = 0;
 			s.verifyOutput = {};
+			s._baselineVerifyStarted = true; // This case isolates fallback completion.
 
 			var r = update({type: 'Tick', id: 'verify-branch'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+			// Await the actual owner rather than assuming a fixed number
+			// of microtasks completes reporting. A following event-loop
+			// turn lets the outer fallback continuation publish its result
+			// and clear verifyFallbackRunning before the poll consumes it.
+			var jobs = (s._resourceJobs || []).slice();
+			if (jobs.length !== 1 || jobs[0].branchName !== 'split/api') return 'FAIL: fallback ownership was not recorded';
+			await Promise.all(jobs.map(function(job) { return job.promise.catch(function() {}); }));
+			await new Promise(function(resolve) { setTimeout(resolve, 0); });
 
 			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
 			s = r[0];
+
+			if ((s._resourceJobs || []).length !== 0) return 'FAIL: settled fallback owner was not released';
 
 			if (s.verificationResults.length !== 1) {
 				return 'FAIL: expected 1 result, got: ' + s.verificationResults.length;
@@ -258,6 +274,7 @@ func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 // TestChunk16_VerifyFallback_AsyncThrows exercises the path where
 // verifySplitAsync throws an unexpected exception.
 func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -279,21 +296,29 @@ func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
 		};
 
 		try {
-			var s = initState('EXECUTING');
+			var s = initState('BRANCH_BUILDING');
 			s.isProcessing = true;
 			s.verificationResults = [];
 			s.verifyingIdx = 0;
 			s.verifyOutput = {};
+			s._baselineVerifyStarted = true; // This case isolates fallback completion.
 
 			var r = update({type: 'Tick', id: 'verify-branch'}, s);
 			s = r[0];
 
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+			// Await the actual owner rather than assuming a fixed number
+			// of microtasks completes reporting. A following event-loop
+			// turn lets the outer fallback continuation publish its result
+			// and clear verifyFallbackRunning before the poll consumes it.
+			var jobs = (s._resourceJobs || []).slice();
+			if (jobs.length !== 1 || jobs[0].branchName !== 'split/api') return 'FAIL: fallback ownership was not recorded';
+			await Promise.all(jobs.map(function(job) { return job.promise.catch(function() {}); }));
+			await new Promise(function(resolve) { setTimeout(resolve, 0); });
 
 			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
 			s = r[0];
+
+			if ((s._resourceJobs || []).length !== 0) return 'FAIL: settled fallback owner was not released';
 
 			if (s.verifyFallbackRunning) return 'FAIL: should not be running';
 			if (!s.verifyFallbackError && s.verificationResults.length === 0) {
@@ -308,6 +333,7 @@ func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
 		}

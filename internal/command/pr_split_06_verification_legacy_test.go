@@ -2759,6 +2759,7 @@ func parseVerifySplitSingleResult(t *testing.T, raw any) verifySplitSingleResult
 }
 
 func TestVerifySplitAsync_MockedPipeline(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2928,16 +2929,27 @@ func TestVerifySplitAsync_MockedPipeline(t *testing.T) {
 		}
 	})
 
-	t.Run("timeout_exit_code_124", func(t *testing.T) {
+	t.Run("timeout_at_configured_deadline", func(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// Simulate the GNU 'timeout' command returning exit code 124.
+		// Model elapsed verification time at the native command boundary.
+		// Exit status 124 alone does not prove that the deadline expired.
 		if _, err := evalJS(`
-			_gitResponses['!sh'] = {stdout: 'partial output\n', stderr: '', code: 124, error: true, message: 'timeout'};
+			globalThis.__legacyTimeoutOriginalNow = Date.now;
+			_gitResponses['!sh'] = function() {
+				var finishedMs = Date.now() + 5000;
+				Date.now = function() { return finishedMs; };
+				return {stdout: 'partial output\n', stderr: '', code: 124, error: true, message: 'timeout'};
+			};
 		`); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			if _, err := evalJS(`Date.now = __legacyTimeoutOriginalNow;`); err != nil {
+				t.Logf("restore verification clock: %v", err)
+			}
+		})
 
 		raw, err := evalJS(`await JSON.stringify(await globalThis.prSplit.verifySplitAsync('slow/branch', {
 			dir: '/tmp/repo',

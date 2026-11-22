@@ -624,7 +624,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			stderrChunks:  `[{done: true}]`,
 			waitResult:    `{code: 0, signal: null}`,
 			wantStdout:    "parent-done\n",
-			wantCode:      -1,
+			wantCode:      0,
 			wantError:     true,
 			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
 			wantTruncated: true,
@@ -635,7 +635,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			stderrChunks:  `[{done: true}]`,
 			waitResult:    `{code: 0, signal: null}`,
 			wantStdout:    "partial",
-			wantCode:      -1,
+			wantCode:      0,
 			wantError:     true,
 			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
 			wantTruncated: true,
@@ -647,7 +647,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			waitResult:    `{code: 0, signal: null}`,
 			wantStdout:    "all of stdout\n",
 			wantStderr:    "warn",
-			wantCode:      -1,
+			wantCode:      0,
 			wantError:     true,
 			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
 			wantTruncated: true,
@@ -656,9 +656,9 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			name:          "cut with a non-zero exit status",
 			stdoutChunks:  `[{done: false, value: 'partial'}, {done: true, truncated: true}]`,
 			stderrChunks:  `[{done: true}]`,
-			waitResult:    `{code: 3, signal: null}`,
+			waitResult:    `{code: 7, signal: null}`,
 			wantStdout:    "partial",
-			wantCode:      -1,
+			wantCode:      7,
 			wantError:     true,
 			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
 			wantTruncated: true,
@@ -704,7 +704,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			stderrChunks:  `[{done: true}]`,
 			waitResult:    `{code: 0, signal: null}`,
 			wantStdout:    "partial\n",
-			wantCode:      -1,
+			wantCode:      0,
 			wantError:     true,
 			wantMessage:   "command output capture was cut short before EOF: the output is incomplete",
 			wantTruncated: true,
@@ -743,6 +743,7 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			}() + `
 					};
 					return prSplit._collectSpawnOutput(child, null).then(function(collected) {
+						collected.commandFailed = prSplit._commandFailed(collected);
 						return JSON.stringify(collected);
 					});
 				})()
@@ -752,12 +753,13 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			}
 
 			var collected struct {
-				Stdout    string  `json:"stdout"`
-				Stderr    string  `json:"stderr"`
-				Code      float64 `json:"code"`
-				Error     bool    `json:"error"`
-				Message   string  `json:"message"`
-				Truncated bool    `json:"truncated"`
+				Stdout        string  `json:"stdout"`
+				Stderr        string  `json:"stderr"`
+				Code          float64 `json:"code"`
+				Error         bool    `json:"error"`
+				Message       string  `json:"message"`
+				Truncated     bool    `json:"truncated"`
+				CommandFailed bool    `json:"commandFailed"`
 			}
 			if err := json.Unmarshal([]byte(result.(string)), &collected); err != nil {
 				t.Fatalf("unmarshal %v: %v", result, err)
@@ -770,6 +772,9 @@ func TestChunk00_CollectSpawnOutputReportsTruncatedCapture(t *testing.T) {
 			}
 			if collected.Code != test.wantCode {
 				t.Errorf("code = %v, want %v", collected.Code, test.wantCode)
+			}
+			if collected.CommandFailed != test.wantError {
+				t.Errorf("commandFailed = %v, want %v: known status must not hide capture failure", collected.CommandFailed, test.wantError)
 			}
 			if collected.Error != test.wantError {
 				t.Errorf("error = %v, want %v", collected.Error, test.wantError)
@@ -968,6 +973,7 @@ func TestChunk00_ShellExecAsyncReportsTimeoutBeforeTruncation(t *testing.T) {
 // exec-layer message (e.g. an aborted-capture diagnostic) survives even when
 // stderr is non-empty, and is not duplicated when stderr already carries it.
 func TestChunk00_ExecFailReasonKeepsMessage(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
@@ -1000,6 +1006,21 @@ func TestChunk00_ExecFailReasonKeepsMessage(t *testing.T) {
 			name:   "neither",
 			result: `{stderr: '', message: ''}`,
 			want:   "",
+		},
+		{
+			name:   "missing result",
+			result: `null`,
+			want:   "no command result",
+		},
+		{
+			name:   "tree error without message",
+			result: `{code: 0, treeCleanupError: 'close denied'}`,
+			want:   "close denied",
+		},
+		{
+			name:   "capture failure without message",
+			result: `{code: 7, truncated: true}`,
+			want:   "output capture was incomplete",
 		},
 	}
 

@@ -46,6 +46,8 @@ type PersistedSession struct {
 	Args    []string          `json:"args,omitempty"`
 	Dir     string            `json:"dir,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	// WindowsVerbatimArguments preserves the parsing mode of Args on restart.
+	WindowsVerbatimArguments bool `json:"windowsVerbatimArguments,omitempty"`
 }
 
 // PersistedManagerState is the top-level structure written to disk by
@@ -108,6 +110,7 @@ func (m *SessionManager) ExportState() (*PersistedManagerState, error) {
 //	    cs := termmux.NewCaptureSession(termmux.CaptureConfig{
 //	        Command: ps.Command,
 //	        Args:    ps.Args,
+//	        WindowsVerbatimArguments: ps.WindowsVerbatimArguments,
 //	        Dir:     ps.Dir,
 //	        Env:     ps.Env,
 //	        Rows:    ps.Rows,
@@ -175,6 +178,7 @@ func (m *SessionManager) handleExportState() response {
 			cfg := cp.ExportConfig()
 			ps.Command = cfg.Command
 			ps.Args = cfg.Args
+			ps.WindowsVerbatimArguments = cfg.WindowsVerbatimArguments
 			ps.Dir = cfg.Dir
 			ps.Env = cfg.Env
 		}

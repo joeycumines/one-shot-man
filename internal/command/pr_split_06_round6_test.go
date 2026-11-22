@@ -88,6 +88,7 @@ function installBaselineExecFailureMock(sourceBranch, scenario) {
 // reject, the same unknown verdict additionally retains its worktree and must
 // enter ERROR before any dependent branch starts.
 func TestChunk16_BaselineExecFailureIsNotBaselineFailure(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	for _, scenario := range baselineExecFailureScenarios {
 		t.Run(scenario, func(t *testing.T) {
@@ -135,7 +136,11 @@ func TestChunk16_BaselineExecFailureIsNotBaselineFailure(t *testing.T) {
 					var baseline = s._baselineVerifyResult;
 					var debug = JSON.stringify({baseline:baseline, rows:s.verificationResults, fixture:fixture, wizard:s.wizard.current});
 					if (s._baselineVerifyStarted !== true || !baseline) return 'FAIL: baseline never settled: ' + debug;
-					if (baseline.failed !== false || baseline.passed || !baseline.execFailed || baseline.exitCode !== -1) return 'FAIL: baseline must be an unknown exec failure: ' + debug;
+					// A successful cleanup wait records the real exit status;
+					// it cannot erase the earlier wait failure or forgive a split.
+					var expectedExitCode = scenario === 'initial_wait_rejection_confirmed_cleanup' ? 0 : -1;
+					if (baseline.failed !== false || baseline.passed || !baseline.execFailed || baseline.exitCode !== expectedExitCode) return 'FAIL: baseline must retain its unknown verdict and observed status: ' + debug;
+					if (scenario !== 'spawn_rejection' && (!baseline.error || baseline.error.indexOf('wait failed') < 0)) return 'FAIL: baseline lost its initial wait failure: ' + debug;
 					if (baseline.treeCleanupError) return 'FAIL: a rejected wait must not invent a tree cleanup error: ' + debug;
 					var wantsWait = scenario !== 'spawn_rejection';
 					if (fixture.baselineWaits !== (wantsWait ? 2 : 0) || fixture.baselineKills !== (wantsWait ? 1 : 0)) return 'FAIL: cleanup wait/kill path was not exercised: ' + debug;
@@ -263,6 +268,7 @@ func TestChunk16_BaselineTruncatedIsNotBaselineFailure(t *testing.T) {
 // also holds, the returned result must keep truncated:true so the batch
 // classifier treats it as an unknown capture, not a deterministic timeout.
 func TestVerifySplitAsync_TimeoutKeepsTruncatedFlag(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
@@ -270,7 +276,10 @@ func TestVerifySplitAsync_TimeoutKeepsTruncatedFlag(t *testing.T) {
 	}
 	if _, err := evalJS(`
 		globalThis.__origSpawn06t = globalThis.prSplit._modules.exec.spawn;
+		globalThis.__origNow06t = Date.now;
 		globalThis.prSplit._modules.exec.spawn = function() {
+			var finishedMs = Date.now() + 1;
+			Date.now = function() { return finishedMs; };
 			function rejectingStream() {
 				return { read: function() { return Promise.reject(new Error('read: context deadline exceeded')); } };
 			}
@@ -287,7 +296,7 @@ func TestVerifySplitAsync_TimeoutKeepsTruncatedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn06t; globalThis.__origSpawn06t = undefined;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._modules.exec.spawn = globalThis.__origSpawn06t; globalThis.__origSpawn06t = undefined; Date.now = globalThis.__origNow06t; globalThis.__origNow06t = undefined;`); err != nil {
 			t.Logf("restore spawn mock: %v", err)
 		}
 	})

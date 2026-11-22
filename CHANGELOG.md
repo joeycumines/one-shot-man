@@ -7,20 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- `osm:exec` output queues wait for capacity without spinning after child exit, retain an ordered prefix on abort, and report incomplete capture whenever bytes cannot be retained or a read fails before EOF. Output completion no longer reads `Cmd.ProcessState` concurrently with the reaper or infers EOF from process exit.
-- `osm:exec` cancellation continues to bound output draining after reap; `kill()` also aborts pending drains for an already-reaped child. Completed streams keep their recorded completion result.
-- `osm:exec` enforces small `maxBufferedOutputBytes` limits without truncating configuration values on 32-bit platforms, and decodes JavaScript stream text incrementally across UTF-8 byte boundaries.
-- `osm:exec` exposes known process-tree teardown failures as `treeCleanupError` separately from exit status and output completeness, including failures after a child starts but before `spawn()` returns its handle. PR-split verification withholds worktree removal when setup or verification reports this error, preserves cleanup diagnostics through CLI/TUI results, and blocks dependent verification. A failure in the removal command itself is reported as an attempted removal.
-- Interactive PR-split verification preserves worktree ownership across asynchronous preparation, shell startup, rollback, and reset. Failed session shutdown retains the worktree and marks its verification result failed; stale cleanup reports its original path without changing a replacement run. `SessionManager.Unregister` and the verify-session proxy propagate native close errors while preserving registry detachment and events.
-- PR-split verification reports ordinary failed worktree removal through the public helpers, CLI, and TUI without replacing the command's exit/capture facts or claiming that an attempted removal was withheld. Cleanup duration no longer contributes to the synchronous command's timeout classification.
-- Verification registrations retain their exited native session until explicit cleanup observes its first close result. The optional per-registration `remainOnExit` policy preserves other registrations' defaults; stale registration callbacks dispose of their own IDs without changing a replacement run.
-- `osm:bubbletea` gates rendering, paste-mode, and toggle-screen escapes on output-terminal detection independently of stdin. Redirected output stays free of terminal sequences while terminal stdin preserves raw mode and terminal handoff.
-- `osm pr-split` async timeout results include `timedOut: true` independently of `truncated`, preserving timeout attribution and unknown-verdict dependency guards.
-- Script runtime termination cancels dependent BubbleTea programs, bootstrap work, and native bindings so worker joins can complete. Engine and runtime shutdown interrupt active JavaScript, preserve caller cancellation and real callback errors, and read final script exit status from the adapter instead of a mutable JavaScript exit listener.
-- CI runs the native Go tests with race detection on Linux, macOS, and Windows.
-
-## [v0.9.1] - 2026-11-20
+### Added
+- `osm:exec` and capture-session options accept `windowsVerbatimArguments`, allowing callers to supply the command-line syntax required by Windows programs such as `cmd.exe`.
 
 ### Changed
 - `osm:exec` `execv` result objects now include a boolean `truncated` field across all return paths (including pre-child validation errors) to distinguish incomplete output capture structurally from normal exit codes.
@@ -29,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `internal/termmux` `CaptureSession.Resize` serializes concurrent resizes without holding the session mutex across the PTY ioctl and propagates PTY resize errors (including `ErrClosed` and `ErrNotSupported`) while leaving stored dimensions unchanged on failure.
 
 ### Fixed
+- `osm:exec` `execv` exposes optional `execFailed: true` for execution-layer failures independently of ordinary nonzero exits, so PR-split query statuses cannot hide post-EOF pipe-close errors.
+- The pick-and-place example retires a completed manual interaction’s remaining movement path, so asynchronous behavior-tree callbacks cannot move the actor after pickup or change the starting point of the next key press.
+- PR-split execution and conflict resolution check output and process-tree failures independently of exit status, stop further mutations on failure, and retain worktrees when termination cannot be confirmed. Cleanup errors preserve the primary failure and the original worktree path. Reports and saved checkpoints retain unresolved resource ownership, including failures before the first branch result, so resume and re-splitting cannot discard it.
+- PR-split admits one branch-building execution at a time through the end of worktree cleanup. Agent restart and direct callers cannot start overlapping runs or replace the pending owner's checkpoint.
+- Verification cleanup failures override a user's skipped verdict. Manual and automatic baseline and fallback verification retain ownership across resets; quitting waits for bounded cleanup and prints retained or unconfirmed worktree diagnostics after terminal restoration.
+- `osm:exec` marks capture incomplete on startup failures after a child has started, including writer-close and tree-attachment failures. Recorded child exit status, including zero, survives incomplete capture and startup rollback; PR-split capture adapters preserve it while checking failure metadata independently.
+- Unix process-tree ownership serializes group signals with the start of reaping, including cancellation and observation-error paths, so no signal addresses a potentially reused group ID. Post-reap cleanup observes disappearance; transient zombie-only `EPERM` results on macOS can settle, while a live or unconfirmed group remains a cleanup failure.
+- PR-split Windows shell commands preserve quoted paths and shell operators through `cmd.exe /d /s /c` in both captured and streaming execution.
+- `osm:bubbletea` suppresses framework-generated color, cursor, terminal and clipboard queries and controls on redirected output. Headless operation with neither stream attached to a terminal preserves explicit raw data and child-process output.
+- `osm:exec` output queues wait for capacity without spinning after child exit, retain an ordered prefix on abort, and report incomplete capture whenever bytes cannot be retained or a read fails before EOF. Output completion no longer reads `Cmd.ProcessState` concurrently with the reaper or infers EOF from process exit.
+- `osm:exec` cancellation continues to bound output draining after reap; `kill()` also aborts pending drains for an already-reaped child. Completed streams keep their recorded completion result.
+- `osm:exec` enforces small `maxBufferedOutputBytes` limits without truncating configuration values on 32-bit platforms, and decodes JavaScript stream text incrementally across UTF-8 byte boundaries.
+- `osm:exec` exposes known process-tree teardown failures as `treeCleanupError` separately from exit status and output completeness, including failures after a child starts but before `spawn()` returns its handle. PR-split verification withholds worktree removal when setup or verification reports this error, preserves cleanup diagnostics through CLI/TUI results, and blocks dependent verification. A failure in the removal command itself is reported as an attempted removal.
+- Interactive PR-split verification preserves worktree ownership across asynchronous preparation, shell startup, rollback, and reset. Failed session shutdown retains the worktree and marks its verification result failed; stale cleanup reports its original path without changing a replacement run. `SessionManager.Unregister` and the verify-session proxy propagate native close errors while preserving registry detachment and events.
+- PR-split verification reports ordinary failed worktree removal through the public helpers, CLI, and TUI without replacing the command's exit/capture facts or claiming that an attempted removal was withheld. Cleanup duration no longer contributes to the synchronous command's timeout classification.
+- Verification registrations retain their exited native session until explicit cleanup observes its first close result. The optional per-registration `remainOnExit` policy preserves other registrations' defaults; stale registration callbacks dispose of their own IDs without changing a replacement run.
+- `osm:bubbletea` gates rendering, paste-mode, and toggle-screen escapes on output-terminal detection independently of stdin. Redirected output suppresses framework-generated terminal controls while terminal stdin preserves raw mode and terminal handoff.
+- `osm pr-split` async timeout results include `timedOut: true` independently of `truncated`, preserving timeout attribution and unknown-verdict dependency guards.
+- Script runtime termination cancels dependent BubbleTea programs, bootstrap work, and native bindings so worker joins can complete. Engine and runtime shutdown interrupt active JavaScript, preserve caller cancellation and real callback errors, and read final script exit status from the adapter instead of a mutable JavaScript exit listener.
+- CI runs native Go tests with race detection on Linux, macOS, and Windows, with bounded make, package, and test concurrency to avoid runner memory exhaustion.
 - `osm:exec` `child.wait()` reports the child's exit status even when tearing down its process tree failed, including a clean `exit 0`; `runExecCommand` reads `ProcessState` directly so post-reap context cancellation or post-EOF pipe-close errors preserve the real exit code instead of degrading to `-1`.
 - `osm pr-split` classifies unknown baseline and split verdicts (`execFailed`, `truncated`, `cancelled`) as "no information" in both CLI and TUI verification paths so failing splits are never forgiven as pre-existing and dependency guards stay intact; sync and async timeout results preserve both `truncated: true` and timeout attribution (`timedOut: true`).
 - `osm pr-split` `verifySplitAsync` computes its cleanup budget in `finally` (decoupled from `verifyTimeoutMs`, clearing all bounded-await timers), captures abnormal-exit errors in `catch` before `finally` so `cleanupFailed`, `worktreeRetained`, `worktreeDir`, and cleanup diagnostics always attach, and awaits bounded kill + child exit before removing the worktree (retaining it if termination is unconfirmed).
@@ -37,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `internal/termmux` and `internal/termmux/pty` test reliability: `TestProcess_Close_CustomGracePeriod` now uses `testing/synctest` for exact fake-clock verification of grace-period timing; `TestSessionManager_Pipeline_EOFTransition` and sibling event tests wait on the event channel with a deadline and verify post-exit state; ConPTY smoke output deadline raised to 60s.
 - `osm sync load` strips YAML frontmatter from files with CRLF line endings and no longer truncates an entry whose frontmatter value contains `---`; `osm sync --help` lists `config-push`/`config-pull`.
 - CI pins `actions/checkout` and `actions/setup-go` by commit SHA, installs the exact Go patch from `go.mod` with `GOTOOLCHAIN=local` so the compiler stays aligned with pinned `staticcheck`, and `NewEngine` cancels its derived context on initialization errors.
-- `osm pr-split` test harness pins prompt-ready knobs via `_setNumberKnob`, keeps a 2-minute default `EvalTimeout` with a 10-minute opt-in for the 10,000-file grouping tests, and verifies the TUI palette's WCAG AA contrast ratios.
+- `osm pr-split` test harness pins prompt-ready knobs via `_setNumberKnob`, uses a 10-minute default `EvalTimeout`, matching the pipeline harness and the 10,000-file grouping evaluations, and verifies the TUI palette's WCAG AA contrast ratios.
 
 ## [v0.9.0] - 2026-11-15
 
@@ -223,8 +231,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Config file loading rejects symlinks to prevent path traversal attacks
 
-[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.9.1...HEAD
-[v0.9.1]: https://github.com/joeycumines/one-shot-man/compare/v0.9.0...v0.9.1
+[Unreleased]: https://github.com/joeycumines/one-shot-man/compare/v0.9.0...HEAD
 [v0.9.0]: https://github.com/joeycumines/one-shot-man/compare/v0.8.0...v0.9.0
 [v0.8.0]: https://github.com/joeycumines/one-shot-man/compare/v0.7.1...v0.8.0
 [v0.7.1]: https://github.com/joeycumines/one-shot-man/compare/v0.7.0...v0.7.1

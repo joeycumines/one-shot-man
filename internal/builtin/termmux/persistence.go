@@ -142,6 +142,9 @@ func registerPersistenceMethods(obj *goja.Object, s *muxState) {
 			if v := sessObj.Get("command"); v != nil && !goja.IsUndefined(v) {
 				ps.Command = v.String()
 			}
+			if v := sessObj.Get("windowsVerbatimArguments"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				ps.WindowsVerbatimArguments = v.ToBoolean()
+			}
 			if v := sessObj.Get("args"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
 				argsObj := v.ToObject(s.runtime)
 				if lenVal := argsObj.Get("length"); lenVal != nil && !goja.IsUndefined(lenVal) {
@@ -186,11 +189,12 @@ func registerPersistenceMethods(obj *goja.Object, s *muxState) {
 		return s.managerPromise(func() (any, error) {
 			result, err := s.mgr.RestoreFromState(state, func(ps parent.PersistedSession) (parent.InteractiveSession, error) {
 				cfg := parent.CaptureConfig{
-					Command: ps.Command,
-					Args:    ps.Args,
-					Dir:     ps.Dir,
-					Rows:    ps.Rows,
-					Cols:    ps.Cols,
+					Command:                  ps.Command,
+					Args:                     ps.Args,
+					WindowsVerbatimArguments: ps.WindowsVerbatimArguments,
+					Dir:                      ps.Dir,
+					Rows:                     ps.Rows,
+					Cols:                     ps.Cols,
 				}
 				for k, v := range ps.Env {
 					if cfg.Env == nil {
@@ -292,6 +296,9 @@ func persistedStateToJS(state *parent.PersistedManagerState) map[string]any {
 		}
 		if len(s.Args) > 0 {
 			sess["args"] = s.Args
+		}
+		if s.WindowsVerbatimArguments {
+			sess["windowsVerbatimArguments"] = true
 		}
 		if s.Dir != "" {
 			sess["dir"] = s.Dir

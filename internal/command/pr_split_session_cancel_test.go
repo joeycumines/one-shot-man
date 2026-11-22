@@ -17,22 +17,30 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	// Keep both the engine default and the requested checkpoint inside this
+	// test's directory. Planning captures the original osmod during loading,
+	// so replacing the global module afterward does not intercept file I/O.
+	planDir := t.TempDir()
+	planPath := filepath.Join(planDir, "conversation-plan.json")
+	defaultPlanPath := filepath.Join(planDir, ".pr-split-plan.json")
+	const defaultPlan = `{"version":1,"plan":{"splits":[{"name":"existing-default"}]},"conversations":[]}`
+	if err := os.WriteFile(defaultPlanPath, []byte(defaultPlan), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Registered before engine cleanup so this also observes any late writes.
+	t.Cleanup(func() {
+		data, err := os.ReadFile(defaultPlanPath)
+		if err != nil {
+			t.Errorf("read default plan sentinel: %v", err)
+		} else if string(data) != defaultPlan {
+			t.Errorf("default plan changed while saving an explicit checkpoint: %s", data)
+		}
+	})
 
-	// Mock osmod with in-memory file store so savePlan/loadPlan work
-	// without a real filesystem.  Also set up minimal runtime + planCache
-	// so savePlan() doesn't bail early.
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{"dir": planDir})
+
+	// Set up minimal runtime + planCache so savePlan() does not bail early.
 	_, err := evalJS(`(function() {
-		var _store = {};
-		osmod = {
-			writeFile: function(path, data) { _store[path] = data; },
-			readFile: function(path) {
-				if (_store[path] !== undefined) {
-					return { content: _store[path], error: null };
-				}
-				return { content: '', error: 'file not found: ' + path };
-			}
-		};
 		runtime.baseBranch    = 'main';
 		runtime.strategy      = 'directory';
 		runtime.maxFiles      = 10;
@@ -66,7 +74,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Save plan (includes conversations in snapshot).
-	val, err = evalJS(`JSON.stringify(await savePlan())`)
+	val, err = evalJS(fmt.Sprintf(`JSON.stringify(await savePlan(%q))`, planPath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +87,22 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 	if saveResult.Error != nil {
 		t.Fatalf("savePlan failed: %s", *saveResult.Error)
+	}
+	if saveResult.Path != planPath {
+		t.Fatalf("saved path = %q, want explicit checkpoint %q", saveResult.Path, planPath)
+	}
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("read saved checkpoint: %v", err)
+	}
+	var saved struct {
+		Conversations []json.RawMessage `json:"conversations"`
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("parse saved checkpoint: %v", err)
+	}
+	if len(saved.Conversations) != 3 {
+		t.Fatalf("saved checkpoint has %d conversations, want 3", len(saved.Conversations))
 	}
 
 	// Clear conversation history.
@@ -101,7 +125,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 	}
 
 	// Load plan (should restore conversations).
-	val, err = evalJS(`JSON.stringify(await loadPlan())`)
+	val, err = evalJS(fmt.Sprintf(`JSON.stringify(await loadPlan(%q))`, planPath))
 	if err != nil {
 		t.Fatal(err)
 	}

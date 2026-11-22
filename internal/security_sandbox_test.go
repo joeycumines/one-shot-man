@@ -439,8 +439,13 @@ func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 					}
 					execmod.execv([]).then(function(errResult) {
 						var errKeys = Object.keys(errResult).sort();
-						if (JSON.stringify(errKeys) !== JSON.stringify(expectedKeys)) {
+						var expectedErrorKeys = expectedKeys.concat('execFailed').sort();
+						if (JSON.stringify(errKeys) !== JSON.stringify(expectedErrorKeys)) {
 							__testErr('Unexpected exec error result keys: ' + JSON.stringify(errKeys));
+							return;
+						}
+						if (errResult.execFailed !== true) {
+							__testErr('Expected execFailed:true on execv error result, got ' + errResult.execFailed);
 							return;
 						}
 						if (errResult.truncated !== false) {

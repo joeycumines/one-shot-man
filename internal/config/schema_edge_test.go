@@ -34,18 +34,20 @@ func TestValidateType_IntNegativeIsValid(t *testing.T) {
 
 func TestValidateType_IntMaxInt64(t *testing.T) {
 	t.Parallel()
-	// max int64 as string — strconv.Atoi handles it on 64-bit platforms.
+	// TypeInt accepts the native int range, so int64 extrema overflow on 32-bit.
 	maxStr := strconv.FormatInt(math.MaxInt64, 10)
-	if err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, maxStr); err != nil {
-		t.Fatalf("expected max int64 to be valid, got: %v", err)
+	err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, maxStr)
+	if valid := err == nil; valid != (strconv.IntSize == 64) {
+		t.Fatalf("max int64 validity on %d-bit platform = %v, error: %v", strconv.IntSize, valid, err)
 	}
 }
 
 func TestValidateType_IntMinInt64(t *testing.T) {
 	t.Parallel()
 	minStr := strconv.FormatInt(math.MinInt64, 10)
-	if err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, minStr); err != nil {
-		t.Fatalf("expected min int64 to be valid, got: %v", err)
+	err := ValidateConfigOption(&ConfigOption{Type: TypeInt}, minStr)
+	if valid := err == nil; valid != (strconv.IntSize == 64) {
+		t.Fatalf("min int64 validity on %d-bit platform = %v, error: %v", strconv.IntSize, valid, err)
 	}
 }
 
@@ -90,8 +92,10 @@ func TestValidateConfig_BoundaryIntValues(t *testing.T) {
 	}{
 		{"zero", "0", true},
 		{"negative", "-42", true},
-		{"max_int64", strconv.FormatInt(math.MaxInt64, 10), true},
-		{"min_int64", strconv.FormatInt(math.MinInt64, 10), true},
+		{"max_int", strconv.Itoa(math.MaxInt), true},
+		{"min_int", strconv.Itoa(math.MinInt), true},
+		{"max_int64", strconv.FormatInt(math.MaxInt64, 10), strconv.IntSize == 64},
+		{"min_int64", strconv.FormatInt(math.MinInt64, 10), strconv.IntSize == 64},
 		{"overflow", "99999999999999999999", false},
 		{"negative_overflow", "-99999999999999999999", false},
 		{"float", "3.14", false},
@@ -609,13 +613,26 @@ func TestGetInt_Boundaries(t *testing.T) {
 	c := NewConfig()
 	c.SetGlobalOption("max", strconv.FormatInt(math.MaxInt64, 10))
 	c.SetGlobalOption("min", strconv.FormatInt(math.MinInt64, 10))
+	c.SetGlobalOption("native_max", strconv.Itoa(math.MaxInt))
+	c.SetGlobalOption("native_min", strconv.Itoa(math.MinInt))
 	c.SetGlobalOption("overflow", "99999999999999999999")
 
-	if got := c.GetInt("max"); got != math.MaxInt64 {
-		t.Errorf("expected MaxInt64, got %d", got)
+	wantMax, wantMin := int64(math.MaxInt64), int64(math.MinInt64)
+	if strconv.IntSize == 32 {
+		// These explicit int64 inputs cannot be parsed as a native int.
+		wantMax, wantMin = 0, 0
 	}
-	if got := c.GetInt("min"); got != math.MinInt64 {
-		t.Errorf("expected MinInt64, got %d", got)
+	if got := c.GetInt("max"); int64(got) != wantMax {
+		t.Errorf("max int64 input: expected %d on %d-bit platform, got %d", wantMax, strconv.IntSize, got)
+	}
+	if got := c.GetInt("min"); int64(got) != wantMin {
+		t.Errorf("min int64 input: expected %d on %d-bit platform, got %d", wantMin, strconv.IntSize, got)
+	}
+	if got := c.GetInt("native_max"); got != math.MaxInt {
+		t.Errorf("expected native MaxInt, got %d", got)
+	}
+	if got := c.GetInt("native_min"); got != math.MinInt {
+		t.Errorf("expected native MinInt, got %d", got)
 	}
 	// Overflow returns 0 (parse error)
 	if got := c.GetInt("overflow"); got != 0 {

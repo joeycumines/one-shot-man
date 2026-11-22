@@ -270,6 +270,9 @@ func GitMockSetupJS() string {
     // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
     // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
     // Cross-platform normalization is handled by execv, so no remapping needed here.
+    // execv exposes aggregate capture completeness. Preserve it on terminal
+    // reads, and preserve tree-close failures in wait(), so an exit-0 fixture
+    // cannot become a successful async command after losing its other facts.
     execMod.spawn = function(cmd, args) {
         var fullArgv = [cmd].concat(args || []);
         var r = execMod.execv(fullArgv);
@@ -283,7 +286,7 @@ func GitMockSetupJS() string {
                         // Read stdout: first access only.
                         if (r.stdout) return Promise.resolve({done: false, value: r.stdout});
                     }
-                    return Promise.resolve({done: true});
+                    return Promise.resolve({done: true, truncated: r.truncated === true});
                 }
             },
             stderr: {
@@ -293,10 +296,10 @@ func GitMockSetupJS() string {
                         // Read stderr: first access only.
                         if (r.stderr) return Promise.resolve({done: false, value: r.stderr});
                     }
-                    return Promise.resolve({done: true});
+                    return Promise.resolve({done: true, truncated: r.truncated === true});
                 }
             },
-            wait: function() { return Promise.resolve({code: r.code}); },
+            wait: function() { return Promise.resolve({code: r.code, treeCleanupError: r.treeCleanupError}); },
             kill: function() {},
             isAlive: function() { return false; },
             close: function() {}

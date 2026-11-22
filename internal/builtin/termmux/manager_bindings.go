@@ -108,7 +108,7 @@ func rollbackBoundedSession(mgr *parent.SessionManager, sid parent.SessionID, ow
 //
 // JS signature:
 //
-//	termmux.newBoundedSession({ cmd, args?, dir?, rows?, cols?, env?, envReplace?, name?, kind?, remainOnExit? })
+//	termmux.newBoundedSession({ cmd, args?, dir?, rows?, cols?, env?, envReplace?, windowsVerbatimArguments?, name?, kind?, remainOnExit? })
 //
 // remainOnExit, when present, is applied to this session's manager BEFORE
 // registration: a session's state captures the manager default at register
@@ -177,6 +177,9 @@ func newBoundedSession(ctx context.Context, adapter *gojaeventloop.Adapter, loop
 	}
 	if v := cfgObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 		captureCfg.EnvReplace = v.ToBoolean()
+	}
+	if v := cfgObj.Get("windowsVerbatimArguments"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		captureCfg.WindowsVerbatimArguments = v.ToBoolean()
 	}
 
 	var name string

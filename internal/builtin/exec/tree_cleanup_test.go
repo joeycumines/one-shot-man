@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	osexec "os/exec"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,9 @@ import (
 )
 
 // cleanupFaultTree injects teardown failures without leaking native owners.
-// A real backend is closed once; retries observe only the injected outcome.
+// Once the real backend closes successfully, retries observe only the
+// injected outcome. A native close error must be retried too, so an unreaped
+// Darwin leader's transient EPERM does not become a permanent fake failure.
 // A nil backend is used only with an already-reaped, single-process fixture.
 type cleanupFaultTree struct {
 	processTree
@@ -27,7 +30,7 @@ type cleanupFaultTree struct {
 	closeInAttach  bool
 	closedInAttach bool
 	beforeClose    func()
-	nativeClose    sync.Once
+	nativeClosed   bool
 	nativeCloseErr error
 	closeCalls     atomic.Int32
 	killCalls      atomic.Int32
@@ -58,6 +61,19 @@ func (t *cleanupFaultTree) attach(cmd *osexec.Cmd) error {
 	return t.attachErr
 }
 
+func (t *cleanupFaultTree) beginReap(observedExit bool) {
+	if t.processTree != nil {
+		t.processTree.beginReap(observedExit)
+	}
+}
+
+func (t *cleanupFaultTree) signal(cmd *osexec.Cmd, signal os.Signal) error {
+	if t.processTree != nil {
+		return t.processTree.signal(cmd, signal)
+	}
+	return nil
+}
+
 func (t *cleanupFaultTree) kill(cmd *osexec.Cmd) error {
 	t.killCalls.Add(1)
 	if t.processTree != nil {
@@ -72,11 +88,10 @@ func (t *cleanupFaultTree) close(cmd *osexec.Cmd) error {
 		return nil
 	}
 	attempt := t.closeCalls.Add(1)
-	t.nativeClose.Do(func() {
-		if t.processTree != nil {
-			t.nativeCloseErr = t.processTree.close(cmd)
-		}
-	})
+	if !t.nativeClosed && t.processTree != nil {
+		t.nativeCloseErr = t.processTree.close(cmd)
+		t.nativeClosed = t.nativeCloseErr == nil
+	}
 	if t.beforeClose != nil {
 		t.beforeClose()
 	}
@@ -127,9 +142,7 @@ func TestChildWait_TreeCleanupErrorPreservesStatus(t *testing.T) {
 					tree.closeErr = syscall.EPERM
 					tree.transient = mode == "retry_recovered"
 				}
-				waitErr, closeErr := waitAndCloseProcessTreeWithProbe(cmd, tree, func(*osexec.Cmd) (bool, error) {
-					return false, nil
-				})
+				waitErr, closeErr := waitAndCloseProcessTree(cmd, tree)
 				if cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != code {
 					t.Fatalf("real process state=%v, want exit %d", cmd.ProcessState, code)
 				}
@@ -230,7 +243,7 @@ func TestRunExec_TreeCleanupErrorKeepsCodeAndCapture(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				command, args := exitCodeCommand(code)
-				result := runExecCommand(ctx, command, args, newPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
+				result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, newPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
 				if result["code"] != code || result["truncated"] != false {
 					t.Fatalf("observed code/EOF changed: %v", result)
 				}
@@ -269,7 +282,7 @@ func TestRunExec_TreeCleanupErrorOnStartupFailure(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			command, args := immediateExitCommand()
-			result := runExecCommand(ctx, command, args, newPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
+			result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, newPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
 			if result["error"] != true || tree.cmd == nil || tree.cmd.ProcessState == nil {
 				t.Fatalf("fixture did not reap the started child: result=%v, cmd=%v", result, tree.cmd)
 			}
@@ -336,8 +349,8 @@ func TestRunExec_PreStartCleanupErrorHasNoTreeMetadata(t *testing.T) {
 	skipSlow(t)
 	tree := &cleanupFaultTree{closeErr: syscall.EPERM}
 	command := filepath.Join(t.TempDir(), "missing-executable")
-	result := runExecCommand(context.Background(), command, nil, newCommandPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
-	if result["error"] != true || result["code"] != -1 {
+	result := runExecCommand(context.Background(), SpawnConfig{Command: command}, newCommandPipe, cleanupTreeFactory(t, tree), outputEOFCeiling)
+	if result["error"] != true || result["code"] != -1 || result["truncated"] != false {
 		t.Fatalf("pre-start failure=%v", result)
 	}
 	requireCleanupMetadata(t, result, false)

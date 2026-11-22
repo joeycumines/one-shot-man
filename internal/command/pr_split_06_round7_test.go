@@ -420,6 +420,7 @@ func TestVerifySplitAsync_ThrowingOutputFnSurfacesCleanupDiagnostics(t *testing.
 // truncated capture, the result must preserve BOTH truncated:true (unknown
 // verdict) AND timedOut:true with a timeout diagnostic.
 func TestVerifySplit_SyncTimeoutPreservesTimedOutAlongsideTruncated(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
@@ -430,6 +431,8 @@ func TestVerifySplit_SyncTimeoutPreservesTimedOutAlongsideTruncated(t *testing.T
 	}
 	if _, err := evalJS(`
 		_gitResponses['!sh'] = function() {
+			var finishedMs = Date.now() + 500;
+			Date.now = function() { return finishedMs; };
 			return {stdout: 'partial', stderr: '', code: 124, error: true, truncated: true, message: 'command output capture aborted before EOF'};
 		};
 	`); err != nil {

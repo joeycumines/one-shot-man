@@ -203,7 +203,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → Promise<{content, error, message}>`, `fileExists(path) → Promise<{exists: bool}>`, `writeFile(path, content, options?) → Promise<undefined>` (options: `{mode?: number, createDirs?: boolean}`), `writeFileScoped(root, relativePath, content, options?) → Promise<undefined>` (confined to `root`; same options), `appendFile(path, content, options?) → Promise<undefined>` (same options), `openEditor(nameHint, initialContent) → Promise<string>`, `clipboardCopy(text) → Promise<void>` (supports `OSM_CLIPBOARD` override), `clipboardPaste() → Promise<string>`, `getenv(key) → string`, `isAbsolute(path) → bool`, `join(...paths) → string`, `platform() → string` |
-| `osm:exec` | Process execution | `execv(argv[], opts?) → Promise<{stdout, stderr, code, error, message, truncated, treeCleanupError?}>`, `spawn(cmd, args[], opts?) → Promise<ChildHandle>`; see [process execution](#process-execution) for stream, cancellation, and buffering contracts. |
+| `osm:exec` | Process execution | `execv(argv[], opts?) → Promise<{stdout, stderr, code, error, message, truncated, execFailed?, treeCleanupError?}>`, `spawn(cmd, args[], opts?) → Promise<ChildHandle>`; see [process execution](#process-execution) for stream, cancellation, and buffering contracts. |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
 | `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → Promise<{matches, error}>` (async; all others sync), `separator`, `listSeparator` |
 | `osm:regexp` | Go RE2 regular expressions | `match(pattern, str) → bool`, `find(pattern, str) → string\|null`, `findAll(pattern, str, n?) → string[]`, `findSubmatch(pattern, str) → string[]\|null`, `findAllSubmatch(pattern, str, n?) → string[][]`, `replace(pattern, str, repl) → string`, `replaceAll(pattern, str, repl) → string`, `split(pattern, str, n?) → string[]`, `compile(pattern) → RegexpObject` (with same methods bound). [Reference →](reference/regexp.md) |
@@ -224,11 +224,27 @@ means the child exited successfully and both output streams were captured
 completely. A failed command, an execution or cleanup error, or incomplete
 capture sets `error: true`. `truncated` specifically identifies incomplete
 capture; an error closing a pipe after EOF does not make its capture incomplete.
+`execFailed: true` additionally identifies an execution-layer failure, including
+invalid arguments, failure to start or wait, capture failure, or cleanup failure.
+The optional field is omitted for successful commands and ordinary nonzero
+exits. Callers accepting a nonzero status as a valid query answer must still
+reject `execFailed: true`. A pipe-close failure after EOF sets this field while
+preserving the observed `code` and `truncated: false`; it does not imply failed
+process-tree cleanup and does not set `treeCleanupError` by itself.
+If startup fails after the child has begun running and its output has not been
+drained, `truncated` is true even when the returned output strings are empty.
 `execv` has no output byte cap. The remaining drain after process-tree teardown
 is bounded by 30 seconds and by `opts.timeoutMs` when configured.
 
-`spawn(cmd, args, opts?)` supports `cwd`, `env`, `envReplace`, `timeoutMs`, and
-`maxBufferedOutputBytes`. Its child handle provides:
+`spawn(cmd, args, opts?)` supports `cwd`, `env`, `envReplace`, `timeoutMs`,
+`maxBufferedOutputBytes`, and `windowsVerbatimArguments`. Both `spawn` and
+`execv` accept `windowsVerbatimArguments` (default false). On Windows, true
+preserves the supplied argument text instead of applying Go's normal argument
+quoting; the executable name is still quoted. On Unix this option has no effect.
+Callers using it supply the syntax required by their target program. For
+example, a `cmd.exe` shell invocation uses `['/d', '/s', '/c', '"' + command + '"']`
+with this option true. PR-split constructs these shell invocations centrally,
+including capture sessions. The child handle provides:
 
 | Method | Result and completion boundary |
 |--------|--------------------------------|
@@ -239,6 +255,9 @@ is bounded by 30 seconds and by `opts.timeoutMs` when configured.
 | `signal(name)` | Sends the named signal; on Windows this terminates the process tree. |
 
 Exit status, output completeness, and process-tree cleanup are separate facts.
+`execv().code` preserves every recorded child exit status, including zero when
+capture or startup rollback fails. A missing exit status is reported as `-1`;
+callers must check `error` and `truncated` rather than infer success from zero.
 When teardown of a started child's process tree fails, `execv()` results and
 resolved `wait()` results include a nonempty `treeCleanupError` diagnostic string.
 Relevant `spawn()` or `wait()` rejections carry the same property on their error
@@ -249,6 +268,16 @@ means no tree-close failure was recorded, not that descendants which escaped
 the managed process group or job have been ruled out. Calling `kill()` after
 reap aborts pending output draining without signaling the former process again
 and does not erase a recorded tree-cleanup failure.
+
+On Unix, the process-tree owner finishes admitted group signals before reaping
+can release the leader's identity. Once reaping begins, it sends no further
+signals to the child or its group, except non-destructive signal-0 probes. If
+observing exit before reap fails, the owner attempts group and direct-child
+termination before waiting and reports the observation failure. Signals reject
+while that fallback is reaping. A permission-denied group close is rechecked
+after reap for up to one second; a remaining or unconfirmed group is a tree
+cleanup failure. If the operating system refuses termination or cannot complete
+it, waiting for the child to be reaped is not guaranteed to finish within a bound.
 
 The queue payload limit is **per stream**. `maxBufferedOutputBytes` defaults to
 65,536 bytes (`DefaultChanSize × DefaultBufSize`); zero or a negative value uses
@@ -437,12 +466,14 @@ Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbrac
 - `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Options: `{toggleKey, onToggle}` for termmux passthrough integration. Terminal features (`altScreen`, `mouseMode`, `reportFocus`, `windowTitle`) are NO-OP as run() options in v2 — set them via the declarative `view()` return object instead.
 - `tea.isTTY() → bool` — Check whether either input or output is a terminal.
 
-Rendering and terminal escape sequences require terminal output. Redirected
-output receives no renderer, paste-mode, or toggle-screen sequences, even when
-stdin is a terminal. Terminal stdin keeps its raw-mode and release/restore
-lifecycle; explicitly provided piped input is still consumed. When neither
-stream is a terminal, the renderer is disabled and input defaulted from `nil`
-is dropped.
+Rendering and framework-generated terminal controls require terminal output.
+Redirected output receives no renderer, paste-mode, toggle-screen, color-query,
+cursor-query, terminal-query, or clipboard-control sequences, even when stdin
+is a terminal. Terminal stdin keeps its raw-mode and release/restore lifecycle;
+explicitly provided piped input is still consumed. When neither stream is a
+terminal, the renderer is disabled and input defaulted from `nil` is dropped.
+In that headless mode, explicit raw output and output from an executed child
+remain application data and are not filtered or rewritten.
 
 **View return contract**: The `view()` function can return a string or a declarative object:
 

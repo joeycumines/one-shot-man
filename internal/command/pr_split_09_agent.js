@@ -27,7 +27,7 @@
     async function runAsync(exec, argv) {
         var child = await exec.spawn(argv[0], argv.slice(1));
         var collected = await prSplit._collectSpawnOutput(child, null);
-        // Cut capture: code -1, error true.
+        // Keep the observed status; error also reports incomplete capture or cleanup.
         return {
             stdout: collected.stdout,
             stderr: collected.stderr,

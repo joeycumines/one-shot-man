@@ -88,11 +88,11 @@ func TestVerifySplit_FinalRemovalFailurePreservesVerdict(t *testing.T) {
 			{name: "exit_zero"},
 			{name: "nonzero_rejected_removal", setup: `__treeCode=7;`, code: 7, rejected: true},
 			{name: "truncated", setup: `__treeCode=7;__treeTruncated=true;`, code: 7, truncated: true},
-			{name: "timeout_truncated", setup: `__treeCode=143;__treeTruncated=true;`, code: 143, truncated: true, timedOut: true},
+			{name: "timeout_truncated", setup: `__treeCode=143;__treeTruncated=true;__treeBodyElapsedMs=5000;`, code: 143, truncated: true, timedOut: true},
 			{name: "callback_throw", setup: `__treeCode=7;__treeWaitStyle='after_kill';`, extra: `, outputFn:function(){throw new Error('output callback exploded');}`, code: 7, rejected: true, callback: true},
 			{name: "spawn_throw", setup: `__treeThrow=true;`, code: -1, rejected: true, noChild: true},
 			{name: "clean_control", clean: true},
-			{name: "cancelled_with_capture_and_timeout", setup: `__treeCode=143;__treeTruncated=true;__treeWaitHook=function(){__treeCancelled=true;};`, extra: `, isCancelled:function(){return __treeCancelled;}`, code: 143, truncated: true, timedOut: true, cancelled: true},
+			{name: "cancelled_with_capture_and_timeout", setup: `__treeCode=143;__treeTruncated=true;__treeBodyElapsedMs=5000;__treeWaitHook=function(){__treeCancelled=true;};`, extra: `, isCancelled:function(){return __treeCancelled;}`, code: 143, truncated: true, timedOut: true, cancelled: true},
 		} {
 			if tc.cancelled && method != "verifySplitAsync" {
 				continue

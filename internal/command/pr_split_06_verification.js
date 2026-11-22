@@ -37,6 +37,20 @@
             ? result.treeCleanupError : '';
     }
 
+    function commandUncertain(result) {
+        return !result || typeof result.code !== 'number' || result.code < 0 ||
+            prSplit._commandFailed(result, [result.code]);
+    }
+
+    async function gitQuery(runGit, dir, args) {
+        try { return await runGit(dir, args); }
+        catch (error) {
+            return Object.assign({}, error, {
+                code:-1, error:true, message:String(error && error.message || error)
+            });
+        }
+    }
+
     function reportTreeCleanupFailure(outcome, reason, worktreeDir, retained) {
         outcome.passed = false;
         outcome.execFailed = true;
@@ -64,8 +78,7 @@
             rejected = true;
         }
         var treeError = getTreeCleanupError(result);
-        if (!rejected && result && result.code === 0 && result.error !== true &&
-            result.truncated !== true && !treeError) return;
+        if (!rejected && !prSplit._commandFailed(result)) return;
 
         var reason = rejected ? String((result && result.message) || result)
             : (result ? execFailReason(result) : '');
@@ -115,7 +128,30 @@
                 execFailed: true,
                 error: 'create worktree failed: ' + execFailReason(result)
             };
+            ['truncated', 'timedOut', 'cancelled'].forEach(function(field) {
+                if (result[field] !== undefined) outcome[field] = result[field];
+            });
             reportTreeCleanupFailure(outcome, reason, worktreeDir, retained);
+            return outcome;
+        }
+        async function executionFailure(result, removing) {
+            var outcome = {
+                name:branchName, passed:false, output:'', execFailed:true,
+                exitCode:result && result.code !== undefined ? result.code : -1,
+                error:'create worktree failed: ' + execFailReason(result || {})
+            };
+            ['truncated', 'timedOut', 'cancelled'].forEach(function(field) {
+                if (result && result[field] !== undefined) outcome[field] = result[field];
+            });
+            if (removing) {
+                applyRemovalFailure(outcome, {
+                    worktreeDir:worktreeDir,
+                    error:'worktree removal failed: ' + execFailReason(result || {}) +
+                        '; worktree removal was attempted at ' + worktreeDir
+                });
+            } else {
+                applyRemovalFailure(outcome, await removeVerificationWorktree(runGit, dir, worktreeDir));
+            }
             return outcome;
         }
         var removing = false;
@@ -123,31 +159,24 @@
             var added = await runGit(dir, ['worktree', 'add', worktreeDir, branchName]);
             var failure = treeFailure(added, true);
             if (failure) return failure;
+            if (commandUncertain(added)) return await executionFailure(added, false);
             if (added.code !== 0) {
                 removing = true;
                 var removed = await runGit(dir, ['worktree', 'remove', '--force', worktreeDir]);
                 failure = treeFailure(removed, false);
                 if (failure) return failure;
+                if (commandUncertain(removed)) return await executionFailure(removed, true);
                 removing = false;
                 added = await runGit(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
                 failure = treeFailure(added, true);
                 if (failure) return failure;
-                if (added.code !== 0) {
-                    return {
-                        name: branchName,
-                        passed: false,
-                        output: '',
-                        exitCode: added.code,
-                        execFailed: true,
-                        error: 'create worktree failed: ' + execFailReason(added)
-                    };
-                }
+                if (prSplit._commandFailed(added)) return await executionFailure(added, false);
             }
             return null;
         } catch (e) {
             var failure = treeFailure(e, !removing);
             if (failure) return failure;
-            throw e;
+            return await executionFailure(e, removing);
         }
     }
 
@@ -255,9 +284,10 @@
         }
         var captureCutShort = !!(result && (result.truncated === true ||
             (result.error === true && /cut short|aborted before EOF|incomplete/.test(String(result.message || '')))));
-        var execLayerFailed = result && !captureCutShort && result.error === true && result.code === -1;
-        var timedOut = !!(result && timeoutMs > 0 &&
-            (result.code === 124 || result.code === 137 || result.code === 143 || elapsedMs >= timeoutMs));
+        var execLayerFailed = !captureCutShort && commandUncertain(result);
+        // Exit codes are command facts, not deadline signals. Commands may
+        // legitimately return 124, 137 or 143 before the budget expires.
+        var timedOut = !!(result && timeoutMs > 0 && elapsedMs >= timeoutMs);
         var outcome;
 
         if (bodyFailed) {
@@ -292,6 +322,7 @@
                 output: stdoutBuf,
                 exitCode: result.code,
                 execFailed: true,
+                timedOut: timedOut || undefined,
                 error: 'verify exec-layer failure: ' + execFailReason(result)
             };
         } else if (timedOut) {
@@ -457,8 +488,8 @@
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
 
-        var splitTreeResult = await gitExec(dir, ['rev-parse', lastSplit + '^{tree}']);
-        if (splitTreeResult.code !== 0) {
+        var splitTreeResult = await gitQuery(gitExec, dir, ['rev-parse', lastSplit + '^{tree}']);
+        if (prSplit._commandFailed(splitTreeResult)) {
             return {
                 equivalent: false,
                 splitTree: '',
@@ -468,8 +499,8 @@
         }
         var splitTree = splitTreeResult.stdout.trim();
 
-        var sourceTreeResult = await gitExec(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
-        if (sourceTreeResult.code !== 0) {
+        var sourceTreeResult = await gitQuery(gitExec, dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
+        if (prSplit._commandFailed(sourceTreeResult)) {
             return {
                 equivalent: false,
                 splitTree: splitTree,
@@ -502,22 +533,22 @@
         }
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
-        var diffResult = await gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
-        if (diffResult.code === 0) {
+        var diffResult = await gitQuery(gitExec, dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+        if (!prSplit._commandFailed(diffResult)) {
             base.diffSummary = diffResult.stdout.trim();
         } else {
             // Failed diff: report reason.
             base.diffError = execFailReason(diffResult);
         }
 
-        var diffNamesResult = await gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
-        if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
+        var diffNamesResult = await gitQuery(gitExec, dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+        if (!prSplit._commandFailed(diffNamesResult) && diffNamesResult.stdout.trim() !== '') {
             base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
                 return f !== '';
             });
         } else {
             base.diffFiles = [];
-            if (diffNamesResult.code !== 0 && !base.diffError) {
+            if (prSplit._commandFailed(diffNamesResult) && !base.diffError) {
                 base.diffError = execFailReason(diffNamesResult);
             }
         }
@@ -526,32 +557,53 @@
     }
 
     // --- cleanupBranches — deletes split branches ---
-    async function cleanupBranches(plan) {
+    async function cleanupBranchesInner(plan, runGit) {
         if (!plan || !plan.splits) {
             return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
         }
         var dir = resolveDir(plan.dir || '.');
-        var deleted = [];
-        var errors = [];
-
-        // Try to checkout baseBranch; fall back to detaching HEAD so
-        // branch -D can still succeed.
-        var coRes = await gitExec(dir, ['checkout', plan.baseBranch]);
-        if (coRes.code !== 0) {
-            await gitExec(dir, ['checkout', '--detach', 'HEAD']);
-        }
-
-        for (var i = 0; i < plan.splits.length; i++) {
-            var name = plan.splits[i].name;
-            var result = await gitExec(dir, ['branch', '-D', name]);
-            if (result.code === 0) {
-                deleted.push(name);
-            } else {
-                errors.push(name + ': ' + execFailReason(result));
+        var outcome = {deleted:[], errors:[]};
+        function recordFailure(label, result) {
+            outcome.errors.push(label + ': ' + execFailReason(result || {}));
+            if (getTreeCleanupError(result)) {
+                outcome.treeCleanupError = getTreeCleanupError(result);
+                outcome.cleanupFailed = true;
             }
+            if (result && result.truncated) outcome.truncated = true;
         }
+        var label = 'checkout base branch failed';
+        try {
+            var coRes = await runGit(dir, ['checkout', plan.baseBranch]);
+            if (commandUncertain(coRes)) {
+                recordFailure(label, coRes);
+                return outcome;
+            }
+            if (prSplit._commandFailed(coRes)) {
+                label = 'detach HEAD failed';
+                coRes = await runGit(dir, ['checkout', '--detach', 'HEAD']);
+                if (prSplit._commandFailed(coRes)) {
+                    recordFailure(label, coRes);
+                    return outcome;
+                }
+            }
+            for (var i = 0; i < plan.splits.length; i++) {
+                var name = plan.splits[i].name;
+                label = name;
+                var result = await runGit(dir, ['branch', '-D', name]);
+                if (!prSplit._commandFailed(result)) outcome.deleted.push(name);
+                else {
+                    recordFailure(name, result);
+                    if (commandUncertain(result)) break;
+                }
+            }
+        } catch (error) {
+            recordFailure(label, error);
+        }
+        return outcome;
+    }
 
-        return { deleted: deleted, errors: errors };
+    async function cleanupBranches(plan) {
+        return await cleanupBranchesInner(plan, gitExec);
     }
 
     // --- prepareVerifyWorktree — create worktree ---
@@ -616,9 +668,9 @@
 
         var session = null;
         try {
-            var captureShell = isWindows() ? 'cmd.exe' : 'sh';
-            var captureArgs = isWindows() ? ['/C', command] : ['-c', command];
-            session = termmux.newCaptureSession(captureShell, captureArgs, {
+            var invocation = prSplit._shellInvocation(command);
+            session = termmux.newCaptureSession(invocation.argv[0], invocation.argv.slice(1), {
+                windowsVerbatimArguments: invocation.options.windowsVerbatimArguments === true,
                 dir: worktreeDir,
                 rows: rows,
                 cols: cols
@@ -748,6 +800,12 @@
         }
 
         var worktreeDir = worktreeTmpPath('osm-verify-');
+        // Notify the internal lifetime owner before Git can create anything.
+        // Await the callback so a throw or rejection cannot orphan a worktree.
+        if (typeof config.worktreeFn === 'function') await config.worktreeFn(worktreeDir);
+        if (isCancelledNow()) {
+            return { name: branchName, passed: false, output: '', error: 'verification cancelled by user', cancelled: true };
+        }
 
         var setupFailure = await setupVerificationWorktree(gitExecAsync, dir, worktreeDir, branchName);
         if (setupFailure) return setupFailure;
@@ -782,6 +840,10 @@
 
         var worktreeReady = true;
         try {
+            if (isCancelledNow()) {
+                outcome = { name: branchName, passed: false, output: '', error: 'verification cancelled by user', cancelled: true };
+                return outcome;
+            }
             var startMs = Date.now();
         var shellCmd;
         if (isWindows()) {
@@ -946,7 +1008,7 @@
                 truncated: streamsTruncated || undefined,
                 error: 'verify wait failed after ' + elapsedMs + 'ms with no exit status: ' + String((waitError && waitError.message) || waitError)
             };
-        } else if (timeoutMs > 0 && (exitCode === 124 || exitCode === 137 || exitCode === 143 || elapsedMs >= timeoutMs)) {
+        } else if (timeoutMs > 0 && elapsedMs >= timeoutMs) {
             // Timeout attribution and capture completeness are independent.
             // Keep both flags when output is incomplete so the batch
             // classifier cannot forgive an unknown verdict as pre-existing.
@@ -994,6 +1056,11 @@
             // worktreeDir, cleanupNotes) are always attached rather than
             // discarded when outcome is null.
             treeCleanupError = getTreeCleanupError(e) || treeCleanupError;
+            // An observer can throw before the normal duration sample. Take
+            // it now so cleanup cannot turn that failure into a timeout.
+            if (typeof elapsedMs !== 'number' && typeof startMs === 'number') {
+                elapsedMs = Date.now() - startMs;
+            }
             outcome = {
                 name: branchName,
                 passed: false,
@@ -1092,20 +1159,22 @@
                 var note = cleanupNotes.join('; ');
                 outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + note;
             }
-            if (outcome !== null && (treeCleanupError || removalFailure || outcome.cleanupFailed)) {
-                // A cleanup failure does not erase the verification command's
-                // status. Preserve it and all independently known
-                // capture, timeout and cancellation facts, including when an
-                // output callback threw before the first wait completed.
+            if (outcome !== null) {
+                // Preserve independently known command facts after every exit,
+                // including an observer failure followed by successful cleanup.
+                // A fulfilled cleanup wait can establish a status that the body
+                // had not observed; it does not erase the original failure.
                 if (waitResult && waitResult.code !== undefined) {
                     outcome.exitCode = waitResult.code;
-                    if (timeoutMs > 0 && (waitResult.code === 124 || waitResult.code === 137 ||
-                        waitResult.code === 143 || (typeof elapsedMs === 'number' && elapsedMs >= timeoutMs))) {
+                    if (timeoutMs > 0 && typeof elapsedMs === 'number' && elapsedMs >= timeoutMs) {
                         outcome.timedOut = true;
                     }
                 }
                 if (streamsTruncated) outcome.truncated = true;
-                if (cancelled || isCancelledNow()) outcome.cancelled = true;
+                // Do not reopen a completed successful verification when
+                // cancellation is first observed during worktree removal.
+                if ((treeCleanupError || removalFailure || outcome.cleanupFailed) &&
+                    (cancelled || isCancelledNow())) outcome.cancelled = true;
             }
             if (outcome !== null && treeCleanupError) {
                 reportTreeCleanupFailure(outcome, treeCleanupError, worktreeDir, true);
@@ -1272,8 +1341,8 @@
 
         var lastSplit = plan.splits[plan.splits.length - 1].name;
 
-        var splitTreeResult = await gitExecAsync(dir, ['rev-parse', lastSplit + '^{tree}']);
-        if (splitTreeResult.code !== 0) {
+        var splitTreeResult = await gitQuery(gitExecAsync, dir, ['rev-parse', lastSplit + '^{tree}']);
+        if (prSplit._commandFailed(splitTreeResult)) {
             return {
                 equivalent: false,
                 splitTree: '',
@@ -1283,8 +1352,8 @@
         }
         var splitTree = splitTreeResult.stdout.trim();
 
-        var sourceTreeResult = await gitExecAsync(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
-        if (sourceTreeResult.code !== 0) {
+        var sourceTreeResult = await gitQuery(gitExecAsync, dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
+        if (prSplit._commandFailed(sourceTreeResult)) {
             return {
                 equivalent: false,
                 splitTree: splitTree,
@@ -1317,19 +1386,19 @@
         var dir = resolveDir((plan && plan.dir) || '.');
         var lastSplit = plan.splits[plan.splits.length - 1].name;
 
-        var diffStatResult = await gitExecAsync(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
-        if (diffStatResult.code === 0) {
+        var diffStatResult = await gitQuery(gitExecAsync, dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+        if (!prSplit._commandFailed(diffStatResult)) {
             base.diffSummary = diffStatResult.stdout.trim();
         } else {
             base.diffError = execFailReason(diffStatResult);
         }
 
-        var diffNamesResult = await gitExecAsync(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
-        if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
+        var diffNamesResult = await gitQuery(gitExecAsync, dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+        if (!prSplit._commandFailed(diffNamesResult) && diffNamesResult.stdout.trim() !== '') {
             base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
                 return f !== '';
             });
-        } else if (diffNamesResult.code !== 0 && !base.diffError) {
+        } else if (prSplit._commandFailed(diffNamesResult) && !base.diffError) {
             base.diffError = execFailReason(diffNamesResult);
         }
 
@@ -1338,30 +1407,7 @@
 
     // cleanupBranchesAsync is the non-blocking version of cleanupBranches.
     async function cleanupBranchesAsync(plan) {
-        var gitExecAsync = prSplit._gitExecAsync;
-        if (!plan || !plan.splits) {
-            return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
-        }
-        var dir = resolveDir(plan.dir || '.');
-        var deleted = [];
-        var errors = [];
-
-        var coRes = await gitExecAsync(dir, ['checkout', plan.baseBranch]);
-        if (coRes.code !== 0) {
-            await gitExecAsync(dir, ['checkout', '--detach', 'HEAD']);
-        }
-
-        for (var i = 0; i < plan.splits.length; i++) {
-            var name = plan.splits[i].name;
-            var result = await gitExecAsync(dir, ['branch', '-D', name]);
-            if (result.code === 0) {
-                deleted.push(name);
-            } else {
-                errors.push(name + ': ' + execFailReason(result));
-            }
-        }
-
-        return { deleted: deleted, errors: errors };
+        return await cleanupBranchesInner(plan, prSplit._gitExecAsync);
     }
 
     // --- Exports ---

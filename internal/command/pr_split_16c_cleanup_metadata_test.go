@@ -49,6 +49,10 @@ func TestChunk16c_CleanupMetadata(t *testing.T) {
 			}
 			got, err := eval(fmt.Sprintf(`(async function() {
 				var cfg = %s;
+				var cleanupWarnings = [];
+				log.warn = function(message, fields) {
+					if (message === 'verify cleanup failed') cleanupWarnings.push(fields);
+				};
 				setupPlanCache();
 				var plan = prSplit._state.planCache;
 				plan.sourceBranch = 'source-branch';
@@ -111,6 +115,8 @@ func TestChunk16c_CleanupMetadata(t *testing.T) {
 				if (cfg.Stale) {
 					if (s.verificationResults.length !== 0) return 'stale result changed rows: ' + JSON.stringify(s.verificationResults);
 					if (cfg.Baseline && s._baselineVerifyResult !== null) return 'stale baseline changed cache';
+					if (cleanupWarnings.length !== 1 || cleanupWarnings[0].worktreeDir !== cleanup.worktreeDir ||
+						cleanupWarnings[0].branch !== (cfg.Baseline ? plan.sourceBranch : 'split/1')) return 'stale result lost cleanup ownership diagnostic';
 					return 'OK';
 				}
 				var baseline = s._baselineVerifyResult;

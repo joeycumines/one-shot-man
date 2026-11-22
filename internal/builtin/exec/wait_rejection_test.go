@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	osexec "os/exec"
 	"runtime"
 	"syscall"
@@ -216,8 +217,10 @@ type failingCloseTree struct {
 	err error
 }
 
-func (*failingCloseTree) attach(*osexec.Cmd) error { return nil }
-func (*failingCloseTree) kill(*osexec.Cmd) error   { return nil }
+func (*failingCloseTree) beginReap(bool)                      {}
+func (*failingCloseTree) signal(*osexec.Cmd, os.Signal) error { return nil }
+func (*failingCloseTree) attach(*osexec.Cmd) error            { return nil }
+func (*failingCloseTree) kill(*osexec.Cmd) error              { return nil }
 func (f *failingCloseTree) close(*osexec.Cmd) error {
 	return f.err
 }

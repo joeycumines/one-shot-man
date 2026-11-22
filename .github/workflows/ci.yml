@@ -22,8 +22,13 @@ jobs:
       # Prevent Go from silently upgrading past the go.mod toolchain installed
       # below (which breaks pinned staticcheck export-data compatibility).
       GOTOOLCHAIN: local
+      # Bound Go package and test concurrency as well as make's scheduler.
+      # Race instrumentation and concurrent Goja engines otherwise exhaust
+      # runner memory and delay unrelated tests past their deadlines.
+      GOMAXPROCS: '2'
+      GOFLAGS: -p=1
       # Exercise native process and pipe concurrency on every supported OS.
-      GO_TEST_FLAGS: -race -count=1 -timeout=40m
+      GO_TEST_FLAGS: -race -count=1 -timeout=40m -parallel=2
     steps:
     - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
     # Derive the toolchain from go.mod rather than tracking `stable`. CI also
@@ -42,22 +47,10 @@ jobs:
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
       with:
         go-version-file: go.mod
-    - name: Detect CPU count and run tests (Unix)
+    - name: Run all checks (Unix)
       if: runner.os != 'Windows'
-      run: |
-        if [ "$(uname)" = "Darwin" ]; then
-          v="$(sysctl -n hw.logicalcpu)"
-        else
-          v="$(nproc)"
-        fi
-        [ -n "$v" ] && make -j "$v"
-    - name: Detect CPU count and run tests (Windows)
+      run: make -j1
+    - name: Run all checks (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
-      run: |
-        $cpuCount = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
-        if ($cpuCount -gt 0) {
-          make -j $cpuCount
-        } else {
-          make
-        }
+      run: make -j1

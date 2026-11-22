@@ -25,7 +25,7 @@ func TestRunExec_ContextDeadline(t *testing.T) {
 	defer cancel()
 	command, args := hangingCommand()
 	start := time.Now()
-	result := runExec(ctx, command, args...)
+	result := runExec(ctx, SpawnConfig{Command: command, Args: args})
 	elapsed := time.Since(start)
 
 	if elapsed > 2*time.Second {
@@ -97,7 +97,7 @@ func TestRunExec_DoesNotWaitForDescendantPipes(t *testing.T) {
 	}
 
 	start := time.Now()
-	result := runExec(context.Background(), "sh", "-c", "(sleep 2) & echo parent-done")
+	result := runExec(context.Background(), SpawnConfig{Command: "sh", Args: []string{"-c", "(sleep 2) & echo parent-done"}})
 	elapsed := time.Since(start)
 	if elapsed > time.Second {
 		t.Fatalf("runExec waited for descendant-held pipes: %s", elapsed)
@@ -147,7 +147,7 @@ func TestRunExec_TimeoutKeepsInGroupWritersOutput(t *testing.T) {
 	defer cancel()
 	command, args := hangingCommand()
 	start := time.Now()
-	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, newPipe, newProcessTree, outputEOFCeiling)
 	elapsed := time.Since(start)
 
 	if elapsed > 5*time.Second {

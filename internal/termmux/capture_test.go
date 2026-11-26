@@ -1373,3 +1373,34 @@ func TestCaptureSession_SkipDrain_DefaultIsFalse(t *testing.T) {
 		t.Fatal("expected SkipDrain to be false by default")
 	}
 }
+
+// TestCaptureSession_ResizeAfterCloseFailsAndKeepsDims pins the post-close
+// Resize contract: a Resize on a closed session must return an error
+// (ErrClosed) and must NOT update the stored dimensions.
+func TestCaptureSession_ResizeAfterCloseFailsAndKeepsDims(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: buildEchoProgram(t, "bye"),
+		Rows:    24,
+		Cols:    80,
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if err := cs.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	err := cs.Resize(48, 120)
+	if err == nil {
+		t.Fatal("Resize after Close must return an error, got nil")
+	}
+	cs.mu.Lock()
+	rows, cols := cs.rows, cs.cols
+	cs.mu.Unlock()
+	if rows != 24 || cols != 80 {
+		t.Fatalf("dims after failed post-close resize = %dx%d, want the original 24x80", rows, cols)
+	}
+}

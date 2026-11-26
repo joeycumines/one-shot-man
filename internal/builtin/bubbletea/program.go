@@ -3,6 +3,7 @@ package bubbletea
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"runtime/debug"
 	"sync"
@@ -16,15 +17,25 @@ import (
 // callers observe the same completion result. Returns nil if no program has
 // been started. This keeps callers alive after non-blocking tea.run() without
 // consuming a one-shot completion notification.
+//
+// If the manager's context is cancelled while waiting (engine shutdown or the
+// unlistened-signal force-cancel), WaitForProgram returns the context error
+// instead of blocking forever on a program that teardown is in the process of
+// ending — the program itself observes the same cancellation via
+// tea.WithContext and exits, completing the record for any later caller.
 func (m *Manager) WaitForProgram() error {
 	m.mu.Lock()
 	completion := m.programDone
+	ctx := m.ctx
 	m.mu.Unlock()
 
 	if completion == nil {
 		return nil
 	}
 
+	if ctx != nil {
+		return completion.waitCtx(ctx)
+	}
 	return completion.wait()
 }
 
@@ -72,15 +83,6 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		return fmt.Errorf("runProgram: manager.ctx is nil")
 	}
 
-	// Enable bracketed paste mode so \x1b[200~...\x1b[201~ sequences are
-	// recognized as paste events (tea.PasteStartMsg/PasteEndMsg/PasteMsg).
-	// We send this to the terminal here, before BubbleTea's read loop starts.
-	// Note: bracketed paste mode is always enabled; the jsModel-level field was
-	// removed as it was dead code (never read, only written).
-	if m.output != nil {
-		_, _ = m.output.Write([]byte("\x1b[?2004h"))
-	}
-
 	ctx, cancel := context.WithCancelCause(m.ctx)
 	defer cancel(nil)
 
@@ -92,7 +94,9 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	signalNotify := m.signalNotify
 	signalStop := m.signalStop
 	isTTY := m.isTTY
+	outputTTY := m.outputTTY
 	ttyFd := m.ttyFd
+	inputDefaulted := m.inputDefaulted
 	if m.program != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("runProgram: program is already running")
@@ -121,8 +125,8 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// restoreTerminal restores the terminal state and disables bracketed paste mode.
 	restoreTerminal := func() {
 		// Disable bracketed paste mode (DECRST 200)
-		if m.output != nil {
-			_, _ = m.output.Write([]byte("\x1b[?2004l"))
+		if output != nil && outputTTY {
+			_, _ = output.Write([]byte("\x1b[?2004l"))
 		}
 		if origState != nil && ttyFd >= 0 {
 			_ = term.Restore(ttyFd, origState)
@@ -155,6 +159,13 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		}
 	}()
 
+	// Terminal input and terminal output are independent capabilities. Only
+	// the output descriptor authorizes paste-mode sequences or rendering.
+	// Install restoration before enabling paste mode, including on panic.
+	if output != nil && outputTTY {
+		_, _ = output.Write([]byte("\x1b[?2004h"))
+	}
+
 	// Configure input/output.
 	// In v2, BubbleTea opens /dev/tty for input when no explicit input is provided
 	// via WithInput.  We need to pass the real *os.File so BubbleTea can detect
@@ -164,15 +175,32 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// but wrap one.  We check for the UnwrapFile() interface to recover the
 	// underlying file in those cases.
 	var opts []tea.ProgramOption
-	if f := unwrapOSFile(input); f != nil {
+	// Preserve the input contract independently of rendering: explicit readers
+	// and terminal input remain usable with redirected output. Drop defaulted
+	// stdin only when neither stream is a terminal. File-backed wrappers are
+	// unwrapped so piped input bypasses console-only Windows readers.
+	if inputDefaulted && !isTTY {
+		opts = append(opts, tea.WithInput(nil))
+	} else if f := unwrapOSFile(input); f != nil {
 		opts = append(opts, tea.WithInput(f))
 	} else if input != nil {
 		opts = append(opts, tea.WithInput(input))
 	}
-	if f := unwrapOSFile(output); f != nil {
+	renderOutput := output
+	if !outputTTY {
+		if isTTY {
+			// BubbleTea v2's WithoutRenderer also skips raw-input setup.
+			// Keep its terminal ownership for terminal stdin, including
+			// ReleaseTerminal/RestoreTerminal, while discarding rendering.
+			renderOutput = io.Discard
+		} else {
+			opts = append(opts, tea.WithoutRenderer())
+		}
+	}
+	if f := unwrapOSFile(renderOutput); f != nil {
 		opts = append(opts, tea.WithOutput(f))
-	} else if output != nil {
-		opts = append(opts, tea.WithOutput(output))
+	} else if renderOutput != nil {
+		opts = append(opts, tea.WithOutput(renderOutput))
 	}
 	// Signal ownership belongs to the embedding runtime, not the program:
 	// bubbletea's own handler turns SIGTERM into QuitMsg and SIGINT into
@@ -182,6 +210,11 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	// that does not is still covered because the engine cancels the runtime,
 	// which lands on the ctx.Done() arm of the watchdog goroutine below.
 	opts = append(opts, tea.WithoutSignalHandler())
+	// Tie the program's lifecycle to the manager context: when the engine
+	// force-cancels (unlistened signal, shutdown), the event loop's p.ctx
+	// closes and eventLoop returns immediately, so p.Run() cannot stay
+	// parked waiting for input that will never arrive.
+	opts = append(opts, tea.WithContext(ctx))
 
 	p := tea.NewProgram(model, opts...)
 
@@ -202,6 +235,10 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	if tm, ok := model.(*toggleModel); ok {
 		tm.mu.Lock()
 		tm.program = p
+		tm.output = nil
+		if outputTTY {
+			tm.output = output
+		}
 		tm.mu.Unlock()
 		actualModel = tm.inner
 		defer func() {

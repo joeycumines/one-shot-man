@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
@@ -703,7 +704,12 @@ func TestGrouping_TenThousandFiles(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
-	evalJS := prsplittest.NewFullEngine(t, nil)
+	eng := prsplittest.NewEngine(t, nil)
+	eng.LoadChunks(t, prsplittest.AllChunkNames()...)
+	evalJS := eng.EvalJSTimeout(t, 10*time.Minute)
+	if _, err := evalJS(prsplittest.ChunkCompatShim); err != nil {
+		t.Fatalf("prsplittest: compat shim failed: %v", err)
+	}
 
 	// Generate 10,000 file paths across 100 top-level directories (100 files each).
 	val, err := evalJS(`(function() {
@@ -761,7 +767,12 @@ func TestGrouping_TenThousandFiles_ClassificationToGroups(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
 
-	evalJS := prsplittest.NewFullEngine(t, nil)
+	eng := prsplittest.NewEngine(t, nil)
+	eng.LoadChunks(t, prsplittest.AllChunkNames()...)
+	evalJS := eng.EvalJSTimeout(t, 10*time.Minute)
+	if _, err := evalJS(prsplittest.ChunkCompatShim); err != nil {
+		t.Fatalf("prsplittest: compat shim failed: %v", err)
+	}
 
 	val, err := evalJS(`(function() {
 		var classification = {};

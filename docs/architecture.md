@@ -304,9 +304,9 @@ Source: [internal/storage/registry.go](../internal/storage/registry.go)
 
 ### Cleanup
 
-`storage.Cleaner` enforces retention policies: max age, max count, max total size. The `scriptCommandBase.PrepareEngine` starts a background scheduler when `sessions.auto-cleanup-enabled` is true.
+`storage.Cleaner` enforces retention policies: max age (`MaxAgeDays`), max count (`MaxCount`), and max total size (`MaxSizeMB`). `maybeStartCleanupScheduler` in `internal/command/cleanup_helper.go` starts a background scheduler when the config's `AutoCleanupEnabled` (`autoCleanupEnabled`) is true; `scriptCommandBase.PrepareEngine` calls it for the commands that create sessions.
 
-Source: [internal/storage/cleaner.go](../internal/storage/cleaner.go)
+Source: [internal/storage/cleanup.go](../internal/storage/cleanup.go), [internal/storage/cleanup_scheduler.go](../internal/storage/cleanup_scheduler.go), [internal/command/cleanup_helper.go](../internal/command/cleanup_helper.go)
 
 ---
 
@@ -520,11 +520,3 @@ Source: [internal/builtin/termmux/](../internal/builtin/termmux/)
 
 - [docs/visuals/architecture.md](visuals/architecture.md)
 - [docs/visuals/workflows.md](visuals/workflows.md)
-
-## Architecture Decision Records
-
-- [ADR 001: PR-Split Chunked Architecture](adr/001-pr-split-chunked-architecture.md)
-
-## Related Design Docs
-
-- [PR-Split Chunk Architecture (detailed)](architecture-pr-split-chunks.md)

@@ -10,8 +10,22 @@ import (
 const escaperHelperEnv = "OSM_EXEC_ESCAPER_HELPER"
 
 func TestMain(m *testing.M) {
+	if mode := os.Getenv(outputLifecycleHelperEnv); mode != "" {
+		runOutputLifecycleHelper(mode)
+	}
 	if os.Getenv(escaperHelperEnv) == "1" {
 		runEscaperHelper()
+	}
+	if os.Getenv(highVolumeWriterEnv) == "1" {
+		// Infinite stdout writer re-executed by highVolumeWriterCommand.
+		// Runs before m.Run so the helper never enters the test framework;
+		// the write loop exits 0 when the pipe reader goes away.
+		line := []byte("01234567890123456789012345678901234567890123456789012345678901234567890123456789\n")
+		for {
+			if _, err := os.Stdout.Write(line); err != nil {
+				os.Exit(0)
+			}
+		}
 	}
 	os.Exit(m.Run())
 }

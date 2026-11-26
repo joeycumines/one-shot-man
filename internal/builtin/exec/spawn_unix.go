@@ -81,12 +81,38 @@ func closeProcessGroup(cmd *osexec.Cmd, kill func(pid int, signal syscall.Signal
 	return nil
 }
 
+// exitStatusUnclassified reports whether a recorded exit status cannot be
+// presented to JS as one.
+//
+// A signalled child's ExitCode is -1, so a negative code on its own means
+// nothing; only a negative code with no signal is genuinely unclassified, and
+// that must reject rather than masquerade as the command's own status.
+func exitStatusUnclassified(code int, waitErr error) bool {
+	return code < 0 && processExitSignal(waitErr) == ""
+}
+
 func processExitSignal(err error) string {
 	var exitErr *osexec.ExitError
 	if !errors.As(err, &exitErr) {
 		return ""
 	}
-	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if exitErr.ProcessState == nil {
+		// Defensive: a synthesized ExitError has no process state to read a
+		// signal from. No signal is reported for it, and callers treat the
+		// child as having no signal.
+		return ""
+	}
+	return processStateSignal(exitErr.ProcessState)
+}
+
+// processStateSignal names the signal that terminated a reaped child, or ""
+// when it exited normally. Reading it at reap time keeps the name available
+// even when cmd.Wait returned a context error whose chain hides the ExitError.
+func processStateSignal(ps *os.ProcessState) string {
+	if ps == nil {
+		return ""
+	}
+	status, ok := ps.Sys().(syscall.WaitStatus)
 	if !ok || !status.Signaled() {
 		return ""
 	}

@@ -412,7 +412,7 @@ func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 			var execmod = require('osm:exec');
 			execmod.execv(['echo', 'test']).then(function(result) {
 				var resultKeys = Object.keys(result).sort();
-				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout'];
+				var expectedKeys = ['code', 'error', 'message', 'stderr', 'stdout', 'truncated'];
 				if (JSON.stringify(resultKeys) !== JSON.stringify(expectedKeys)) {
 					__testErr('Unexpected exec result keys: ' + JSON.stringify(resultKeys));
 					return;
@@ -437,7 +437,18 @@ func TestSandbox_ReturnedObjectsDontExposeGoMethods(t *testing.T) {
 						__testErr('Unexpected readFile result keys: ' + JSON.stringify(fileKeys));
 						return;
 					}
-					__testOK();
+					execmod.execv([]).then(function(errResult) {
+						var errKeys = Object.keys(errResult).sort();
+						if (JSON.stringify(errKeys) !== JSON.stringify(expectedKeys)) {
+							__testErr('Unexpected exec error result keys: ' + JSON.stringify(errKeys));
+							return;
+						}
+						if (errResult.truncated !== false) {
+							__testErr('Expected truncated:false on execv error result, got ' + errResult.truncated);
+							return;
+						}
+						__testOK();
+					}).catch(function(e) { __testErr(e.message); });
 				}).catch(function(e) { __testErr(e.message); });
 			}).catch(function(e) { __testErr(e.message); });
 		`)

@@ -8,7 +8,8 @@
 // Dependencies: chunk 00 (prSplit._gitExec, prSplit.runtime)
 // Go-injected globals: none (uses chunk 00's modules only)
 //
-// See docs/architecture-pr-split-chunks.md for the full chunk contract.
+// The chunk contract (load order, late binding, export manifest) lives in
+// pr_split_manifest.json, executed by loadChunkedScript in pr_split.go.
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;

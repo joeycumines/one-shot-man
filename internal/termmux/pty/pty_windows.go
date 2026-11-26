@@ -363,7 +363,8 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 }
 
 // platformResize resizes the ConPTY using ResizePseudoConsole.
-// Must be called with p.mu held.
+// Must be called with p.mu held; Process.Resize enforces p.closed before
+// calling platformResize, so a closed process already returns ErrClosed.
 func (p *Process) platformResize(rows, cols uint16) error {
 	h, ok := p.cmd.(*windowsProcessHandle)
 	if !ok {

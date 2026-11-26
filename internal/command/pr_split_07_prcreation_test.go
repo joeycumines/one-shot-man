@@ -377,7 +377,7 @@ func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
 }
 
 // TestChunk07_CreatePRs_LsRemoteFailureIsNotMissingBranch pins the distinction:
-// an ls-remote transport/exec failure (error true, or a code other than 0/2)
+// an ls-remote transport/exec failure (including a nonzero exit status)
 // must be reported as an ls-remote failure with the exec reason, not as "base
 // branch not found on remote".
 func TestChunk07_CreatePRs_LsRemoteFailureIsNotMissingBranch(t *testing.T) {

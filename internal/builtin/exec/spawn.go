@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"os"
 	osexec "os/exec"
@@ -45,6 +44,10 @@ type SpawnConfig struct {
 	Env     map[string]string // merged with os.Environ()
 	// EnvReplace, when true, makes cmd.Env exactly Env (no os.Environ merge).
 	EnvReplace bool
+	// WindowsVerbatimArguments joins Args without quoting or escaping on
+	// Windows. The caller supplies the command-line syntax required by its
+	// program (for example cmd.exe). Unix argument handling is unchanged.
+	WindowsVerbatimArguments bool
 	// MaxBufferedOutputBytes caps the bytes a single output queue (stdout or
 	// stderr) retains before the pump blocks on it, propagating backpressure
 	// to the child. Zero or negative means DefaultQueueCapBytes.
@@ -55,22 +58,24 @@ type SpawnConfig struct {
 type processTree interface {
 	attach(*osexec.Cmd) error
 	kill(*osexec.Cmd) error
+	signal(*osexec.Cmd, os.Signal) error
 	close(*osexec.Cmd) error
+	// beginReap excludes all in-flight group signals and permanently prevents
+	// new ones before the caller enters Cmd.Wait. It must not hold a lock
+	// across Wait, which can join the command cancellation callback.
+	beginReap(observedExit bool)
 }
 
 type processTreeFactory func() (processTree, error)
 
-// retryProcessGroupClose retries one transient EPERM from a post-wait close.
-// BSD/Darwin kernels can reject a process-group signal while its only member is
-// the exited, unreaped leader; reaping first makes the group addressable again
-// (a live descendant) or returns ESRCH (an empty group, already closed) on the
-// retry. The retry belongs to every post-wait close path, not just the
-// pre-reap-close branch: the Darwin probe-failure path closes after Wait too.
-func retryProcessGroupClose(tree processTree, cmd *osexec.Cmd, closeErr error) error {
+// retryProcessGroupClose gives the tree owner one post-reap retry for EPERM.
+// The Unix owner only observes group disappearance after reap; it never
+// signals the former group ID again. A real permission failure stays an error.
+func retryProcessGroupClose(closeTree func() error, closeErr error) error {
 	if !errors.Is(closeErr, syscall.EPERM) {
 		return closeErr
 	}
-	if retryErr := tree.close(cmd); retryErr == nil {
+	if retryErr := closeTree(); retryErr == nil {
 		return nil
 	} else {
 		return errors.Join(closeErr, retryErr)
@@ -81,24 +86,37 @@ func waitAndCloseProcessTree(cmd *osexec.Cmd, tree processTree) (waitErr, closeE
 	return waitAndCloseProcessTreeWithProbe(cmd, tree, waitProcessBeforeReap)
 }
 
+// errProcessObservationUnavailable marks a platform that cannot establish a
+// pre-reap exit boundary. Such a run must stop before entering Cmd.Wait.
+var errProcessObservationUnavailable = errors.New("pre-reap process observation is unavailable")
+
 func waitAndCloseProcessTreeWithProbe(cmd *osexec.Cmd, tree processTree, probe func(*osexec.Cmd) (bool, error)) (waitErr, closeErr error) {
+	closeTree := func() error { return tree.close(cmd) }
 	preClose, probeErr := probe(cmd)
-	if probeErr != nil {
-		waitErr = cmd.Wait()
+	if preClose && probeErr == nil {
 		closeErr = tree.close(cmd)
-		slog.Debug("pre-reap process observation failed, closing tree after wait",
-			"error", probeErr)
-		return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
-	}
-	if preClose {
-		closeErr = tree.close(cmd)
+		tree.beginReap(true)
 		waitErr = cmd.Wait()
-		return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
+		return waitErr, retryProcessGroupClose(closeTree, closeErr)
 	}
-	// The platform reports no safe pre-reap close point.
-	waitErr = cmd.Wait()
+	// Without an exit observation, a concurrent Cmd.Wait can recycle even the
+	// positive PID used by os.Process.Kill on Darwin. Stop the owned group and
+	// direct child while the unreaped leader still pins both IDs, then forbid
+	// every future signal before entering Wait. A failed observation is a
+	// lifecycle failure, not an ordinary successful command completion.
+	if probeErr == nil {
+		probeErr = errProcessObservationUnavailable
+	}
 	closeErr = tree.close(cmd)
-	return waitErr, retryProcessGroupClose(tree, cmd, closeErr)
+	killErr := cmd.Process.Kill()
+	tree.beginReap(false)
+	waitErr = cmd.Wait()
+	closeErr = retryProcessGroupClose(closeTree, closeErr)
+	return waitErr, errors.Join(
+		fmt.Errorf("process exit observation failed; teardown attempted before reap: %w", probeErr),
+		closeErr,
+		nonBenignRunExecCleanupError(killErr),
+	)
 }
 
 // ChildProcess represents a running child process with piped I/O.
@@ -327,13 +345,7 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	return spawnChild(ctx, cfg, newProcessTree)
 }
 
-func spawnChild(ctx context.Context, cfg SpawnConfig, newTree processTreeFactory) (*ChildProcess, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("spawn %s: %w", cfg.Command, &SpawnContextError{Err: err})
-	}
+func newCommand(ctx context.Context, cfg SpawnConfig) *osexec.Cmd {
 	cmd := osexec.CommandContext(ctx, cfg.Command, cfg.Args...)
 
 	if cfg.Cwd != "" {
@@ -378,7 +390,18 @@ func spawnChild(ctx context.Context, cfg SpawnConfig, newTree processTreeFactory
 		cmd.Env = env
 	}
 
-	setProcAttr(cmd)
+	setProcAttr(cmd, cfg.WindowsVerbatimArguments)
+	return cmd
+}
+
+func spawnChild(ctx context.Context, cfg SpawnConfig, newTree processTreeFactory) (*ChildProcess, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("spawn %s: %w", cfg.Command, &SpawnContextError{Err: err})
+	}
+	cmd := newCommand(ctx, cfg)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -431,8 +454,10 @@ func spawnChild(ctx context.Context, cfg SpawnConfig, newTree processTreeFactory
 	}
 	if err := tree.attach(cmd); err != nil {
 		killErr := cmd.Process.Kill()
-		waitErr := cmd.Wait()
 		closeErr := tree.close(cmd)
+		tree.beginReap(false)
+		waitErr := cmd.Wait()
+		closeErr = retryProcessGroupClose(func() error { return tree.close(cmd) }, closeErr)
 		if closeErr != nil {
 			closeErr = &processTreeCloseError{err: closeErr}
 		}
@@ -827,5 +852,5 @@ func (c *ChildProcess) Signal(name string) error {
 		return nil
 	default:
 	}
-	return signalProcess(c.cmd, c.tree, sig)
+	return c.tree.signal(c.cmd, sig)
 }

@@ -10,6 +10,115 @@
 
 (function(prSplit) {
 
+    function commandError(result, label) {
+        var error = new Error(label + ': ' + repairFailureReason(result));
+        error.commandResult = result;
+        if (result && result.treeCleanupError) error.treeCleanupError = result.treeCleanupError;
+        return error;
+    }
+
+    function repairFailureReason(result) {
+        return prSplit._execFailReason(result || {}) || String(result && result.error || 'command outcome unavailable');
+    }
+
+    async function repairCommand(fn, args, observe) {
+        var result;
+        try { result = await fn.apply(null, args); }
+        catch (error) {
+            if (observe) observe(error, true);
+            throw error;
+        }
+        if (observe) observe(result);
+        if (!result || typeof result.code !== 'number' || result.code < 0 ||
+            prSplit._commandFailed(result, [result.code])) {
+            throw commandError(result, 'repair command execution failed');
+        }
+        return result;
+    }
+
+    // Repair commands share one resource owner. Structural execution failures
+    // stop every later mutation, including commands nested inside strategies.
+    function resolutionWorktree(dir, path, branch, isCancelled) {
+        var runGit = prSplit._gitExecAsync, runShell = prSplit._shellExecAsync;
+        var attempted = false, treeCleanupError = '', stopped = null;
+        function observe(value, rejected) {
+            if (value && value.treeCleanupError) treeCleanupError = value.treeCleanupError;
+            if (rejected || !value || typeof value.code !== 'number' || value.code < 0 ||
+                prSplit._commandFailed(value, [value.code])) {
+                stopped = value || {message:'repair command outcome unavailable'};
+            }
+        }
+        function checkCancellation() {
+            if (!stopped && isCancelled && isCancelled()) stopped = {cancelled:true, message:'repair cancelled'};
+            if (stopped) throw commandError(stopped, 'repair stopped after execution failure');
+        }
+        function run(fn, args) {
+            try { checkCancellation(); }
+            catch (error) { return Promise.reject(error); }
+            return repairCommand(fn, args, observe);
+        }
+        var owner = {
+            git: function() { return run(runGit, arguments); },
+            shell: function() { return run(runShell, arguments); },
+            require: function(result, label) {
+                observe(result);
+                if (prSplit._commandFailed(result)) throw commandError(result, label);
+                return result;
+            },
+            open: async function() {
+                checkCancellation();
+                attempted = true;
+                owner.require(await owner.git(dir, ['worktree', 'add', path, branch]), 'create worktree failed');
+            },
+            stage: function(worktreeDir) { return prSplit._gitAddChangedFilesAsync(worktreeDir, owner.git); },
+            failure: function(error) {
+                observe(error);
+                var result = error && (error.commandResult || error.cause) || error;
+                observe(result);
+                var failure = {name:branch, error:String(error && (error.message || error.error) || error), execFailed:true};
+                if (result && result.code !== undefined) failure.exitCode = result.code;
+                for (var key of ['truncated', 'timedOut', 'cancelled']) {
+                    if (result && result[key] !== undefined) failure[key] = result[key];
+                }
+                return failure;
+            },
+            cleanup: async function(outcome) {
+                if (!attempted) return outcome;
+                var message = '', cleanupTreeError = treeCleanupError;
+                if (treeCleanupError) {
+                    outcome.worktreeRetained = true;
+                    message = 'process tree teardown failed: ' + treeCleanupError + '; worktree retained at ' + path;
+                } else {
+                    var removed, rejected = false;
+                    try { removed = await runGit(dir, ['worktree', 'remove', '--force', path]); }
+                    catch (error) { removed = error; rejected = true; }
+                    if (rejected || prSplit._commandFailed(removed)) {
+                        cleanupTreeError = removed && removed.treeCleanupError;
+                        message = 'worktree removal failed: ' + repairFailureReason(removed) +
+                            '; worktree removal was attempted at ' + path;
+                    }
+                }
+                if (message) {
+                    outcome.cleanupFailed = true;
+                    outcome.execFailed = true;
+                    outcome.worktreeDir = path;
+                    if (cleanupTreeError) outcome.treeCleanupError = cleanupTreeError;
+                    outcome.error = (outcome.error ? outcome.error + '; ' : '') + 'cleanup: ' + message;
+                }
+                return outcome;
+            }
+        };
+        return owner;
+    }
+
+    function strategyCommands(options) {
+        return options && options.commands || {
+            git: function() { return repairCommand(prSplit._gitExecAsync, arguments); },
+            shell: function() { return repairCommand(prSplit._shellExecAsync, arguments); },
+            stage: prSplit._gitAddChangedFilesAsync
+        };
+    }
+
     function shellExecOptions(timeoutMs) {
         if (!(typeof timeoutMs === 'number' && timeoutMs > 0) &&
             typeof prSplitConfig !== 'undefined' &&
@@ -48,8 +157,8 @@
                 return await fileExistsSync(path);
             },
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var shellExecAsync = prSplit._shellExecAsync;
-                var gitExecAsync = prSplit._gitExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
+                var gitExecAsync = strategyCommands(options).git;
                 var shellQuote = prSplit._shellQuote;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var tidyResult = await shellExecAsync(
@@ -79,8 +188,8 @@
                 return await fileExistsSync(path);
             },
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var shellExecAsync = prSplit._shellExecAsync;
-                var gitExecAsync = prSplit._gitExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
+                var gitExecAsync = strategyCommands(options).git;
                 var shellQuote = prSplit._shellQuote;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var dlResult = await shellExecAsync(
@@ -112,10 +221,10 @@
                        verifyOutput.indexOf('could not import') >= 0;
             },
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var shellExecAsync = prSplit._shellExecAsync;
-                var gitExecAsync = prSplit._gitExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
+                var gitExecAsync = strategyCommands(options).git;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+                var gitAddChangedFilesAsync = strategyCommands(options).stage;
                 var lookupBinaryAsync = prSplit._lookupBinaryAsync;
                 var goimportsLookup = await lookupBinaryAsync('goimports');
                 if (goimportsLookup.found) {
@@ -153,10 +262,10 @@
                 return fileExistsSync(path);
             },
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var shellExecAsync = prSplit._shellExecAsync;
-                var gitExecAsync = prSplit._gitExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
+                var gitExecAsync = strategyCommands(options).git;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+                var gitAddChangedFilesAsync = strategyCommands(options).stage;
                 var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
                 var result = await shellExecAsync(
                     cdCmd + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1', shellExecOptions(options && options.verifyTimeoutMs));
@@ -177,11 +286,11 @@
         },
         {
             name: 'make-generate',
-            detect: async function(dir) {
+            detect: async function(dir, verifyOutput, options) {
                 var osmod = prSplit._modules.osmod;
                 var shellQuote = prSplit._shellQuote;
                 var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
-                var hasMakefile = fileExistsSync(makPath);
+                var hasMakefile = await fileExistsSync(makPath);
                 if (hasMakefile) {
                     // Check if the Makefile has a 'generate:' target.
                     // Prefer osmod.readFile to avoid shell-dependent grep.
@@ -198,7 +307,7 @@
                     } else {
                         // Fallback: use platform shell to check Makefile contents.
                         var exec = prSplit._modules.exec;
-                        var shellSpawnSync = prSplit._shellSpawnSync;
+                        var shellSpawnSync = strategyCommands(options).shell;
                         var isWindows = prSplit._isWindows;
                         if (shellSpawnSync) {
                             var cdFallback = (isWindows && isWindows()) ? 'cd /d ' : 'cd ';
@@ -215,7 +324,7 @@
                     // Use osmod to scan for go:generate (avoids grep -rl).
                     // Simple heuristic: check top-level .go files only.
                     try {
-                        var entries = osmod.readDir(dir === '.' ? '.' : dir);
+                        var entries = await osmod.readDir(dir === '.' ? '.' : dir);
                         for (var i = 0; i < entries.length; i++) {
                             if (entries[i].match && entries[i].match(/\.go$/)) {
                                 var goPath = (dir !== '.' ? dir + '/' : '') + entries[i];
@@ -229,27 +338,23 @@
                     return false;
                 }
                 // Last resort: use platform shell to scan for go:generate.
-                // Use exec.execv (not shellSpawnSync) because we need stdout
-                // capture — execStream only fires callbacks.
                 var execMod = prSplit._modules.exec;
                 var isWindows2 = prSplit._isWindows;
                 if (execMod) {
                     var scanCmd = (isWindows2 && isWindows2())
                         ? 'findstr /s /m "go:generate" *.go'
                         : 'grep -rl "//go:generate" --include="*.go" . 2>/dev/null | head -1';
-                    var shellArgs = (isWindows2 && isWindows2())
-                        ? ['cmd.exe', '/C', 'cd /d ' + shellQuote(dir) + ' && ' + scanCmd]
-                        : ['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + scanCmd];
-                    var goGen = await execMod.execv(shellArgs);
+                    var cdPrefix = (isWindows2 && isWindows2()) ? 'cd /d ' : 'cd ';
+                    var goGen = await strategyCommands(options).shell(cdPrefix + shellQuote(dir) + ' && ' + scanCmd);
                     return goGen.code === 0 && (goGen.stdout || '').trim() !== '';
                 }
                 return false;
             },
             fix: async function(dir, failedBranch, plan, verifyOutput, options) {
-                var shellExecAsync = prSplit._shellExecAsync;
-                var gitExecAsync = prSplit._gitExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
+                var gitExecAsync = strategyCommands(options).git;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+                var gitAddChangedFilesAsync = strategyCommands(options).stage;
                 var osmod = prSplit._modules.osmod;
                 var cdPrefix = (prSplit._isWindows && prSplit._isWindows())
                     ? 'cd /d ' + shellQuote(dir) + ' && '
@@ -299,9 +404,9 @@
                        verifyOutput.indexOf('cannot find') >= 0 ||
                        verifyOutput.indexOf('file not found') >= 0;
             },
-            fix: async function(dir, failedBranch, plan) {
-                var gitExecAsync = prSplit._gitExecAsync;
-                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+            fix: async function(dir, failedBranch, plan, verifyOutput, options) {
+                var gitExecAsync = strategyCommands(options).git;
+                var gitAddChangedFilesAsync = strategyCommands(options).stage;
                 if (!plan || !plan.sourceBranch) {
                     return { fixed: false, error: 'no source branch to pull files from' };
                 }
@@ -367,10 +472,10 @@
                 var waitForLogged = prSplit.waitForLogged;
                 var mcpCallbackObj = prSplit._mcpCallbackObj;
                 var validateResolution = prSplit.validateResolution;
-                var gitExecAsync = prSplit._gitExecAsync;
-                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+                var gitExecAsync = strategyCommands(options).git;
+                var gitAddChangedFilesAsync = strategyCommands(options).stage;
                 var shellQuote = prSplit._shellQuote;
-                var shellExecAsync = prSplit._shellExecAsync;
+                var shellExecAsync = strategyCommands(options).shell;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
                 if (!agentExecutor || !agentExecutor.handle) {
@@ -437,179 +542,191 @@
     // For each split: checkout → verify → if fails, try strategies with retry budget.
     // Returns: {fixed: [], errors: [], totalRetries, branchRetries, reSplitNeeded, reSplitFiles, reSplitReason}
     prSplit.resolveConflicts = async function resolveConflicts(plan, options) {
-        var gitExecAsync = prSplit._gitExecAsync;
-        var shellExecAsync = prSplit._shellExecAsync;
-        var resolveDir = prSplit._resolveDir;
-        var shellQuote = prSplit._shellQuote;
-        var isCancelled = prSplit.isCancelled;
-        var isForceCancelled = prSplit.isForceCancelled;  // T117: honor force-cancel
-        var runtime = prSplit.runtime;
-        var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
-
-        if (!plan || !plan.splits) {
-            return { fixed: [], errors: [{ name: '(plan)', error: 'invalid plan: missing splits' }], reSplitNeeded: false, totalRetries: 0, reSplitFiles: [], reSplitReason: '' };
-        }
         options = options || {};
-        var dir = resolveDir(plan.dir || '.');
-        var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
-        var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
-        var perBranchRetryBudget = typeof options.perBranchRetryBudget === 'number' ? options.perBranchRetryBudget : 2;
-        var strategies = options.strategies || AUTO_FIX_STRATEGIES;
-        var totalRetries = 0;
-        var branchRetries = {};
-
-        var verifyTimeoutMs = (typeof options.verifyTimeoutMs === 'number' && options.verifyTimeoutMs > 0)
-            ? options.verifyTimeoutMs
-            : AUTOMATED_DEFAULTS.verifyTimeoutMs;
-        var strategyOptions = {
-            verifyTimeoutMs: verifyTimeoutMs,
-            resolveTimeoutMs: options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
-            pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs,
-            aliveCheckFn: typeof options.aliveCheckFn === 'function' ? options.aliveCheckFn : null
-        };
-
-        var wallClockTimeoutMs = typeof options.wallClockTimeoutMs === 'number'
-            ? options.wallClockTimeoutMs
-            : (AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs || 300000);
-        var deadline = Date.now() + wallClockTimeoutMs;
-
-        if (!verifyCommand || verifyCommand === 'true') {
-            return { fixed: [], skipped: 'no verify command configured', errors: [], reSplitNeeded: false };
+        var pipelineOwner = options.pipelineOwner;
+        var ownsPipelineLease = !prSplit._ownsPipeline(pipelineOwner);
+        if (ownsPipelineLease) pipelineOwner = prSplit._claimPipelineOwner();
+        if (!pipelineOwner) {
+            return {fixed:[], errors:[], reSplitNeeded:false, totalRetries:0, reSplitFiles:[], reSplitReason:'',
+                error:'A pipeline is still running; wait for verification, repair, and cleanup to finish.', executionPending:true};
         }
+        try {
+            var blocked = prSplit._executionCleanupFailure(options.completedResults, options.completedOutcome);
+            if (blocked) return Object.assign({}, blocked.execution, {
+                fixed:[], errors:[{name:'(cleanup)', error:blocked.error}], reSplitNeeded:false,
+                totalRetries:0, reSplitFiles:[], reSplitReason:'', error:blocked.error
+            });
+            var resolveDir = prSplit._resolveDir;
+            var shellQuote = prSplit._shellQuote;
+            var isCancelled = function() {
+                return prSplit.isCancelled() || prSplit.isForceCancelled() ||
+                    (typeof options.isCancelled === 'function' && options.isCancelled());
+            };
+            var runtime = prSplit.runtime;
+            var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
-        var fixed = [];
-        var errorsOut = [];
-        var reSplitNeeded = false;
-        var reSplitFiles = [];
+            if (!plan || !plan.splits) {
+                return { fixed: [], errors: [{ name: '(plan)', error: 'invalid plan: missing splits' }], reSplitNeeded: false, totalRetries: 0, reSplitFiles: [], reSplitReason: '' };
+            }
+            var dir = resolveDir(plan.dir || '.');
+            var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
+            var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
+            var perBranchRetryBudget = typeof options.perBranchRetryBudget === 'number' ? options.perBranchRetryBudget : 2;
+            var strategies = options.strategies || AUTO_FIX_STRATEGIES;
+            var totalRetries = 0;
+            var branchRetries = {};
 
-        for (var i = 0; i < plan.splits.length; i++) {
-            if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
-                return {
-                    fixed: fixed, errors: errorsOut,
-                    totalRetries: totalRetries, branchRetries: branchRetries,
-                    reSplitNeeded: reSplitNeeded, reSplitFiles: reSplitFiles,
-                    reSplitReason: '', cancelledByUser: true
-                };
+            var verifyTimeoutMs = (typeof options.verifyTimeoutMs === 'number' && options.verifyTimeoutMs > 0)
+                ? options.verifyTimeoutMs
+                : AUTOMATED_DEFAULTS.verifyTimeoutMs;
+            var strategyOptions = {
+                verifyTimeoutMs: verifyTimeoutMs,
+                resolveTimeoutMs: options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
+                pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs,
+                aliveCheckFn: typeof options.aliveCheckFn === 'function' ? options.aliveCheckFn : null
+            };
+
+            var wallClockTimeoutMs = typeof options.wallClockTimeoutMs === 'number'
+                ? options.wallClockTimeoutMs
+                : (AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs || 300000);
+            var deadline = Date.now() + wallClockTimeoutMs;
+
+            if (!verifyCommand || verifyCommand === 'true') {
+                return { fixed: [], skipped: 'no verify command configured', errors: [], reSplitNeeded: false };
             }
 
-            if (Date.now() >= deadline) {
-                var elapsed = Date.now() - (deadline - wallClockTimeoutMs);
-                errorsOut.push({ name: plan.splits[i].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
-                for (var remaining = i + 1; remaining < plan.splits.length; remaining++) {
-                    errorsOut.push({ name: plan.splits[remaining].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
+            var fixed = [];
+            var errorsOut = [];
+            var reSplitNeeded = false;
+            var reSplitFiles = [];
+
+            for (var i = 0; i < plan.splits.length; i++) {
+                if (isCancelled()) {
+                    return {
+                        fixed: fixed, errors: errorsOut,
+                        totalRetries: totalRetries, branchRetries: branchRetries,
+                        reSplitNeeded: reSplitNeeded, reSplitFiles: reSplitFiles,
+                        reSplitReason: '', cancelledByUser: true, cancelled: true
+                    };
                 }
-                break;
-            }
 
-            if (totalRetries >= retryBudget) {
-                errorsOut.push({ name: plan.splits[i].name, error: 'global retry budget exhausted (' + retryBudget + ')' });
-                continue;
-            }
-
-            var split = plan.splits[i];
-            branchRetries[split.name] = branchRetries[split.name] || 0;
-            if (branchRetries[split.name] >= perBranchRetryBudget) {
-                errorsOut.push({ name: split.name, error: 'per-branch retry budget exhausted (' + perBranchRetryBudget + ')' });
-                continue;
-            }
-
-            // Create a temporary worktree for this branch so the user's CWD
-            // remains untouched during fix attempts.
-            var worktreeDir = prSplit._worktreeTmpPath('osm-fix-');
-            var wtAdd = await gitExecAsync(dir, ['worktree', 'add', worktreeDir, split.name]);
-            if (wtAdd.code !== 0) {
-                errorsOut.push({ name: split.name, error: 'create worktree failed: ' + wtAdd.stderr.trim() });
-                continue;
-            }
-
-            var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
-            var verifyResult = await shellExecAsync(
-                cdCmd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
-                shellExecOptions(verifyTimeoutMs)
-            );
-            if (verifyResult.code === 0) {
-                await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
-                continue;
-            }
-
-            var verifyOutput = (verifyResult.stdout || '') + '\n' + (verifyResult.stderr || '');
-
-            var resolved = false;
-            while (branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget && !resolved) {
                 if (Date.now() >= deadline) {
+                    var elapsed = Date.now() - (deadline - wallClockTimeoutMs);
+                    errorsOut.push({ name: plan.splits[i].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
+                    for (var remaining = i + 1; remaining < plan.splits.length; remaining++) {
+                        errorsOut.push({ name: plan.splits[remaining].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
+                    }
                     break;
                 }
-                if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
-                    break;
+
+                if (totalRetries >= retryBudget) {
+                    errorsOut.push({ name: plan.splits[i].name, error: 'global retry budget exhausted (' + retryBudget + ')' });
+                    continue;
                 }
 
-                var madeProgress = false;
-                for (var s = 0; s < strategies.length && branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget; s++) {
-                    if (Date.now() >= deadline) {
-                        break;
-                    }
-                    if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
-                        break;
-                    }
-                    var strategy = strategies[s];
-                    if (!(await strategy.detect(worktreeDir, verifyOutput))) {
-                        continue;
-                    }
+                var split = plan.splits[i];
+                branchRetries[split.name] = branchRetries[split.name] || 0;
+                if (branchRetries[split.name] >= perBranchRetryBudget) {
+                    errorsOut.push({ name: split.name, error: 'per-branch retry budget exhausted (' + perBranchRetryBudget + ')' });
+                    continue;
+                }
 
-                    totalRetries++;
-                    branchRetries[split.name]++;
-                    madeProgress = true;
-                    var fixResult = await strategy.fix(worktreeDir, split.name, plan, verifyOutput, strategyOptions);
-                    if (!fixResult.fixed) {
-                        log.warn('strategy ' + strategy.name + ' failed for ' + split.name +
-                                 (fixResult.error ? ': ' + fixResult.error : ''));
-                        continue;
-                    }
-
-                    var reVerifyCd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
-                    var reVerify = await shellExecAsync(
-                        reVerifyCd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
+                // Create a temporary worktree for this branch so the user's CWD
+                // remains untouched during fix attempts.
+                var worktreeDir = prSplit._worktreeTmpPath('osm-fix-');
+                var owner = resolutionWorktree(dir, worktreeDir, split.name, isCancelled);
+                var branchOutcome = {name:split.name};
+                var fixedStrategy = null;
+                try {
+                    if (typeof options.worktreeFn === 'function') await options.worktreeFn(worktreeDir, split.name);
+                    await owner.open();
+                    var cdCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ';
+                    var verifyResult = await owner.shell(
+                        cdCmd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
                         shellExecOptions(verifyTimeoutMs)
                     );
-                    if (reVerify.code === 0) {
-                        fixed.push({ name: split.name, strategy: strategy.name });
-                        resolved = true;
-                        break;
+                    branchOutcome.exitCode = verifyResult.code;
+                    if (verifyResult.code !== 0) {
+                        var verifyOutput = (verifyResult.stdout || '') + '\n' + (verifyResult.stderr || '');
+                        var resolved = false;
+                        var ownedStrategyOptions = Object.assign({}, strategyOptions, {commands:owner});
+                        while (branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget && !resolved) {
+                            if (Date.now() >= deadline || isCancelled()) break;
+                            var madeProgress = false;
+                            for (var strategyIndex = 0; strategyIndex < strategies.length && branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget; strategyIndex++) {
+                                if (Date.now() >= deadline || isCancelled()) break;
+                                var strategy = strategies[strategyIndex];
+                                if (!(await strategy.detect(worktreeDir, verifyOutput, ownedStrategyOptions))) continue;
+                                if (isCancelled()) break;
+                                totalRetries++;
+                                branchRetries[split.name]++;
+                                madeProgress = true;
+                                var fixResult = await strategy.fix(worktreeDir, split.name, plan, verifyOutput, ownedStrategyOptions);
+                                if (fixResult && (fixResult.treeCleanupError || fixResult.truncated || fixResult.execFailed)) {
+                                    throw Object.assign(new Error(fixResult.error || 'repair execution failed'), fixResult);
+                                }
+                                if (!fixResult.fixed) {
+                                    log.warn('repair strategy failed', {strategy:strategy.name, branch:split.name, error:fixResult.error});
+                                    continue;
+                                }
+                                var reVerify = await owner.shell(
+                                    cdCmd + shellQuote(worktreeDir) + ' && ' + verifyCommand,
+                                    shellExecOptions(verifyTimeoutMs)
+                                );
+                                branchOutcome.exitCode = reVerify.code;
+                                if (reVerify.code === 0) {
+                                    fixedStrategy = strategy.name;
+                                    resolved = true;
+                                    break;
+                                }
+                                verifyOutput = (reVerify.stdout || '') + '\n' + (reVerify.stderr || '');
+                                break;
+                            }
+                            if (!madeProgress) break;
+                        }
+                        if (!resolved) {
+                            branchOutcome.error = 'verification failed after all auto-fix strategies';
+                            branchOutcome.lastOutput = verifyOutput;
+                            reSplitNeeded = true;
+                            reSplitFiles = reSplitFiles.concat(split.files || []);
+                        }
                     }
-                    verifyOutput = (reVerify.stdout || '') + '\n' + (reVerify.stderr || '');
-                    break;
+                } catch (error) {
+                    Object.assign(branchOutcome, owner.failure(error));
+                } finally {
+                    await owner.cleanup(branchOutcome);
                 }
-
-                if (!madeProgress) {
-                    break;
-                }
+                if (branchOutcome.error) errorsOut.push(branchOutcome);
+                else if (fixedStrategy) fixed.push({name:split.name, strategy:fixedStrategy});
+                // An unknown command outcome or failed teardown cannot authorize
+                // another repair attempt or a new branch mutation.
+                if (branchOutcome.execFailed || branchOutcome.cleanupFailed) break;
             }
 
-            if (!resolved) {
-                errorsOut.push({
-                    name: split.name,
-                    error: 'verification failed after all auto-fix strategies',
-                    lastOutput: verifyOutput
-                });
-                reSplitNeeded = true;
-                reSplitFiles = reSplitFiles.concat(split.files || []);
+            var result = {
+                fixed: fixed,
+                errors: errorsOut,
+                totalRetries: totalRetries,
+                branchRetries: branchRetries,
+                reSplitNeeded: reSplitNeeded,
+                reSplitFiles: reSplitFiles,
+                reSplitReason: reSplitNeeded ? 'Auto-fix strategies exhausted for: ' + errorsOut.map(function(e) { return e.name; }).join(', ') : ''
+            };
+            var fatal = errorsOut.filter(function(error) { return error.execFailed || error.cleanupFailed; })[0];
+            if (fatal) {
+                result.error = fatal.error;
+                result.reSplitNeeded = false;
+                for (var key of ['execFailed', 'cleanupFailed', 'worktreeDir', 'worktreeRetained', 'treeCleanupError', 'truncated', 'timedOut', 'cancelled']) {
+                    if (fatal[key] !== undefined) result[key] = fatal[key];
+                }
             }
-
-            // Cleanup worktree for this branch.
-            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            return result;
+        } finally {
+            if (ownsPipelineLease) prSplit._releasePipelineOwner(pipelineOwner);
         }
-
-        return {
-            fixed: fixed,
-            errors: errorsOut,
-            totalRetries: totalRetries,
-            branchRetries: branchRetries,
-            reSplitNeeded: reSplitNeeded,
-            reSplitFiles: reSplitFiles,
-            reSplitReason: reSplitNeeded ? 'Auto-fix strategies exhausted for: ' + errorsOut.map(function(e) { return e.name; }).join(', ') : ''
-        };
     };
 
     prSplit.AUTO_FIX_STRATEGIES = AUTO_FIX_STRATEGIES;
+    prSplit._resolutionWorktree = resolutionWorktree;
 
 })(globalThis.prSplit);

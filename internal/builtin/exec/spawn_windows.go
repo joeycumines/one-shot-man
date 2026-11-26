@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -18,8 +19,17 @@ import (
 // before its first user instruction runs. Closing the job on every exit path
 // makes the process-tree lifetime explicit and prevents descendants from
 // escaping containment during the attach/resume window.
-func setProcAttr(cmd *osexec.Cmd) {
+func setProcAttr(cmd *osexec.Cmd, verbatim bool) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
+	if verbatim {
+		// CreateProcess still needs a correctly quoted argv[0]. Arguments
+		// already carry the target program's syntax; Go's usual escaping
+		// follows CommandLineToArgvW, which cmd.exe does not implement.
+		cmd.SysProcAttr.CmdLine = windows.EscapeArg(cmd.Args[0])
+		if len(cmd.Args) > 1 {
+			cmd.SysProcAttr.CmdLine += " " + strings.Join(cmd.Args[1:], " ")
+		}
+	}
 }
 
 // waitProcessBeforeReap waits for the direct child without reaping it. The
@@ -253,7 +263,7 @@ func processStateSignal(*os.ProcessState) string {
 
 // signalFromName resolves the POSIX-style signal names the JS surface
 // accepts. Windows has no POSIX signal delivery: every known name maps to
-// os.Interrupt as a dummy accepted os.Signal, and signalProcess provides the
+// os.Interrupt as a dummy accepted os.Signal, and the tree owner provides the
 // only (terminate-style) delivery anyway. Unknown names still return nil so a
 // typo'd signal rejects with os.ErrInvalid instead of degrading into a kill.
 func signalFromName(name string) os.Signal {
@@ -266,14 +276,12 @@ func signalFromName(name string) os.Signal {
 	}
 }
 
-// signalProcess is a Windows approximation: the platform tree owner provides
-// terminate-style delivery for the entire process tree.
-func signalProcess(cmd *osexec.Cmd, tree processTree, _ os.Signal) error {
-	if cmd.Process == nil {
-		return nil
-	}
-	if tree != nil {
-		return tree.kill(cmd)
-	}
-	return cmd.Process.Kill()
+// signal is a Windows approximation: every supported signal terminates the
+// process tree through its stable job handle.
+func (t *windowsProcessTree) signal(cmd *osexec.Cmd, _ os.Signal) error {
+	return t.kill(cmd)
 }
+
+// Windows job handles retain their identity across process reaping; the Unix
+// numeric-PGID gate has no corresponding transition on this platform.
+func (*windowsProcessTree) beginReap(bool) {}

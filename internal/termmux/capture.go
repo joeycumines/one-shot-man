@@ -25,6 +25,9 @@ type CaptureConfig struct {
 	Command string
 	// Args are the command arguments.
 	Args []string
+	// WindowsVerbatimArguments preserves caller-supplied argument quoting on
+	// Windows (for example cmd.exe shell text). It is ignored on Unix.
+	WindowsVerbatimArguments bool
 	// Dir is the working directory (default: caller's CWD).
 	Dir string
 	// Env contains additional environment variables merged with os.Environ().
@@ -187,13 +190,14 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 
 	childCtx, cancel := context.WithCancel(ctx)
 	proc, err := pty.Spawn(childCtx, pty.SpawnConfig{
-		Command:    cs.cfg.Command,
-		Args:       cs.cfg.Args,
-		Dir:        cs.cfg.Dir,
-		Env:        cs.cfg.Env,
-		EnvReplace: cs.cfg.EnvReplace,
-		Rows:       uint16(cs.rows),
-		Cols:       uint16(cs.cols),
+		Command:                  cs.cfg.Command,
+		Args:                     cs.cfg.Args,
+		WindowsVerbatimArguments: cs.cfg.WindowsVerbatimArguments,
+		Dir:                      cs.cfg.Dir,
+		Env:                      cs.cfg.Env,
+		EnvReplace:               cs.cfg.EnvReplace,
+		Rows:                     uint16(cs.rows),
+		Cols:                     uint16(cs.cols),
 	})
 	if err != nil {
 		cancel()

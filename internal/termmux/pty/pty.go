@@ -18,6 +18,9 @@ type SpawnConfig struct {
 	Command string
 	// Args are the command arguments.
 	Args []string
+	// WindowsVerbatimArguments preserves the caller's argument quoting on
+	// Windows. It is ignored on Unix.
+	WindowsVerbatimArguments bool
 	// Env contains additional environment variables merged with os.Environ().
 	// When EnvReplace is true the child receives only Env plus TERM and
 	// inherits nothing from the parent process environment.

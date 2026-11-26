@@ -8,6 +8,7 @@ import (
 )
 
 func TestVerifySplits_PerBranchTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -15,11 +16,24 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 		t.Fatalf("failed to install git mock: %v", err)
 	}
 
-	t.Run("timeout_detected_via_exit_code_124", func(t *testing.T) {
+	if _, err := evalJS(`
+		globalThis.__timeoutTestOriginalNow = Date.now;
+		globalThis.__timeoutTestClock = Date.now();
+		Date.now = function() { return __timeoutTestClock; };
+	`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := evalJS(`Date.now = __timeoutTestOriginalNow;`); err != nil {
+			t.Logf("restore verification clock: %v", err)
+		}
+	})
+
+	t.Run("timeout_detected_at_configured_deadline", func(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// Mock: checkout succeeds, sh returns exit code 124 (timeout utility signal).
+		// Advance only the split command beyond its configured deadline.
 		// T25: Call #1 is baseline — must succeed so split failures are real.
 		if _, err := evalJS(`
 			var _shTO = 0;
@@ -28,6 +42,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			_gitResponses['!sh'] = function(argv) {
 				_shTO++;
 				if (_shTO === 1) return _gitOk('baseline ok');
+				__timeoutTestClock += 5000;
 				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
 			};
 		`); err != nil {
@@ -84,7 +99,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 		}
 	})
 
-	t.Run("no_timeout_when_not_configured", func(t *testing.T) {
+	t.Run("default_deadline_when_timeout_not_configured", func(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
@@ -95,6 +110,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			_gitResponses['!sh'] = function(argv) {
 				_shNTO++;
 				if (_shNTO === 1) return _gitOk('baseline ok');
+				__timeoutTestClock += prSplit._effectiveVerifyTimeoutMs();
 				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
 			};
 		`); err != nil {

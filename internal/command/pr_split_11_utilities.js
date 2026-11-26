@@ -51,11 +51,11 @@
                     } else if (exec) {
                         var readResult2;
                         if (prSplit._isWindows && prSplit._isWindows()) {
-                            readResult2 = await exec.execv(['cmd.exe', '/C', 'type "' + files[i] + '"']);
+                            readResult2 = await prSplit._shellSpawnSync('type "' + files[i] + '"');
                         } else {
                             readResult2 = await exec.execv(['cat', files[i]]);
                         }
-                        if (readResult2.code === 0) {
+                        if (!prSplit._commandFailed(readResult2)) {
                             content = readResult2.stdout;
                         }
                     }
@@ -314,7 +314,7 @@
             diffArgs.push(files[i]);
         }
         var result = await gitExec(dir, diffArgs);
-        if (result.code !== 0) {
+        if (prSplit._commandFailed(result)) {
             // Fallback: diff against base for just these files.
             var fallbackArgs = ['diff', plan.baseBranch, '--'];
             for (var j = 0; j < files.length; j++) {
@@ -322,7 +322,7 @@
             }
             result = await gitExec(dir, fallbackArgs);
         }
-        if (result.code !== 0) {
+        if (prSplit._commandFailed(result)) {
             return { error: 'git diff failed: ' + result.stderr.trim(), diff: '' };
         }
         return { error: null, diff: result.stdout };

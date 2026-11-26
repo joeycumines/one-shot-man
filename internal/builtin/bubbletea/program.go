@@ -188,6 +188,10 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 	}
 	renderOutput := output
 	if !outputTTY {
+		// Queries and clipboard commands use BubbleTea's output buffer even
+		// without a renderer. Filter those messages before they reach that
+		// buffer; keep ordinary direct output and Exec's inherited stdout.
+		opts = append(opts, tea.WithFilter(filterTerminalOutput))
 		if isTTY {
 			// BubbleTea v2's WithoutRenderer also skips raw-input setup.
 			// Keep its terminal ownership for terminal stdin, including

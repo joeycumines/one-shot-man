@@ -19,6 +19,7 @@
     var paneCleanupPending = prSplit._paneCleanupPending;
     var paneCleanupExpired = prSplit._paneCleanupExpired;
     var paneCleanupErrorDetail = prSplit._paneCleanupErrorDetail;
+    var reportVerifyCleanupFailure = prSplit._reportVerifyCleanupFailure;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
@@ -43,6 +44,114 @@
         return s._verifyRunEpoch;
     }
 
+    // Verification and repair own worktrees outside the interactive pane.
+    // Keep their lifetime records across run resets, and publish their cleanup
+    // outcome even when the result no longer belongs in the UI.
+    function runOwnedWork(s, branchName, config, stillCurrent, run, observe, onCancel) {
+        var jobs = s._resourceJobs || (s._resourceJobs = []);
+        var job = { branchName: branchName, worktreeDir: null, pending: true, cancelled: false };
+        jobs.push(job);
+        var cancellationCheck = config.isCancelled;
+        var options = Object.assign({}, config, {
+            isCancelled: function() {
+                return job.cancelled || !stillCurrent() ||
+                    (typeof cancellationCheck === 'function' && cancellationCheck());
+            },
+            worktreeFn: function(path, branch) {
+                job.worktreeDir = path;
+                if (branch) job.branchName = branch;
+            }
+        });
+        job.report = function(result, phase) {
+            if (observe) return observe(result, job, phase);
+            return reportVerifyCleanupFailure(result, job.branchName, job.worktreeDir);
+        };
+        if (onCancel) job.beforeJoin = function() { return onCancel(job); };
+        function finish() {
+            job.pending = false;
+            var index = jobs.indexOf(job);
+            if (index >= 0) jobs.splice(index, 1);
+        }
+        async function report(result) {
+            try {
+                await job.report(result, 'settled');
+            } finally {
+                finish();
+            }
+        }
+        var result;
+        try {
+            result = run ? run(options) : prSplit.verifySplitAsync(branchName, options);
+        } catch (error) {
+            result = Promise.reject(error);
+        }
+        job.promise = Promise.resolve(result).then(async function(value) {
+            job.workFinished = true;
+            await report(value);
+            return value;
+        }, async function(error) {
+            job.workFinished = true;
+            await report(error);
+            throw error;
+        });
+        return job.promise;
+    }
+
+    // Cancellation waits for these resource owners before allowing the
+    // runtime to exit. A stuck Git setup/removal cannot make shutdown wait
+    // forever: report its original branch and allocated path as unconfirmed.
+    function cancelOwnedWork(s) {
+        var jobs = (s._resourceJobs || []).slice();
+        if (!jobs.length) return null;
+        var joins = [], unjoined = [];
+        for (var i = 0; i < jobs.length; i++) {
+            var job = jobs[i];
+            job.cancelled = true;
+            if (!job.cleanupPromise && !job.workFinished && job.beforeJoin) job.beforeJoin();
+            if (!job.cleanupPromise) unjoined.push(job);
+            else if (joins.indexOf(job.cleanupPromise) < 0) joins.push(job.cleanupPromise);
+        }
+        if (unjoined.length) {
+            var cleanup = joinOwnedJobs(unjoined);
+            for (var i = 0; i < unjoined.length; i++) unjoined[i].cleanupPromise = cleanup;
+            joins.push(cleanup);
+        }
+        return joins.length === 1 ? joins[0] : Promise.all(joins);
+    }
+
+    function joinOwnedJobs(jobs) {
+        var budget = prSplit._PANE_CLEANUP_TIMEOUT_MS;
+        return new Promise(function(resolve) {
+            var timer = setTimeout(function() {
+                timer = null;
+                for (var i = 0; i < jobs.length; i++) {
+                    var job = jobs[i];
+                    if (!job.pending) continue;
+                    var detail = 'worktree cleanup did not finish within ' + budget + 'ms; ' +
+                        'termination and worktree removal are unconfirmed';
+                    detail += job.worktreeDir ? '; worktree path: ' + job.worktreeDir
+                        : '; no worktree allocation was reported';
+                    job.report({
+                        cleanupFailed: true, cleanupUnconfirmed: true,
+                        worktreeDir: job.worktreeDir, error: detail
+                    }, 'timeout');
+                }
+                resolve();
+            }, budget);
+            Promise.all(jobs.map(function(job) {
+                // The result handlers report and preserve each outcome. This
+                // join observes completion only, including rejected owners.
+                return job.promise.then(function() {}, function() {});
+            })).then(function() {
+                if (timer !== null) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                resolve();
+            });
+        });
+    }
+
     // --- Update Handlers — screen-specific input handling ---
     function updateConfirmCancel(msg, s) {
         // Helper to clean up any active verify session before quitting.
@@ -56,6 +165,7 @@
 
         // T031: Helper to confirm cancel and quit.
         function confirmCancel() {
+            if (s.wizardQuitting) return [s, null];
             s.showConfirmCancel = false;
             s.confirmCancelFocus = 0;  // reset for next open
             s.isProcessing = false;
@@ -74,8 +184,8 @@
             // wizard quits on the next tick after close settles.
             s.wizardQuitting = true;
             s.wizardQuitSent = false;
-            // This path gates on four teardown steps (executor, MCP,
-            // persistence, pane) and publishes its own result through
+            // This path gates on executor, MCP, persistence, pane and owned
+            // verification teardown, publishing its own result through
             // wizardQuitSent, so the wizard-quit tick must not treat it as
             // pane-gated.
             s.wizardQuitPaneGated = false;
@@ -83,10 +193,20 @@
             var execDone = false;
             var persistenceDone = false;
             var paneDone = false;
+            var verificationDone = false;
             function maybeQuit() {
-                if (execDone && mcpDone && persistenceDone && paneDone && !s.wizardQuitSent) {
+                if (execDone && mcpDone && persistenceDone && paneDone && verificationDone && !s.wizardQuitSent) {
                     s.wizardQuitSent = true;
                 }
+            }
+            var verificationCleanup = cancelOwnedWork(s);
+            if (verificationCleanup) {
+                verificationCleanup.then(function() {
+                    verificationDone = true;
+                    maybeQuit();
+                });
+            } else {
+                verificationDone = true;
             }
             if (st && st.agentExecutor) {
                 try {
@@ -296,17 +416,8 @@
         if (!result) return result;
         var disposed = Object.assign({}, result);
         var report = function(outcome) {
-            if (verifyCleanupFailed(outcome)) {
-                if (!outcome.error) outcome.error = outcome.treeCleanupError || 'verify cleanup failed';
-                if (outcome.worktreeDir && outcome.error.indexOf(outcome.worktreeDir) < 0) {
-                    outcome.error += '; worktree ' + (outcome.worktreeRetained ? 'retained at ' : 'at ') + outcome.worktreeDir;
-                }
-                log.warn('verify setup cleanup failed', {
-                    error: outcome.error || outcome.treeCleanupError,
-                    worktreeDir: outcome.worktreeDir,
-                    worktreeRetained: !!outcome.worktreeRetained
-                });
-            }
+            var detail = reportVerifyCleanupFailure(outcome, outcome.branchName || outcome.name);
+            if (detail) outcome.error = detail;
             return outcome;
         };
         var failed = function(error, retained) {
@@ -631,18 +742,18 @@
                 var baselineStillCurrent = function() {
                     return s._verifyRunEpoch === baselineEpoch &&
                         s.isProcessing &&
+                        !s.wizardQuitting && !s.errorDiscardPending && !s.errorDiscardReady &&
                         (!s.wizard || s.wizard.current !== 'CANCELLED');
                 };
-                prSplit.verifySplitAsync(sourceBranch, {
+                runOwnedWork(s, sourceBranch, {
                     dir: baseDir,
                     verifyCommand: prSplit.runtime.verifyCommand,
                     verifyTimeoutMs: baseTimeoutMs,
-                    isCancelled: function() {
-                        return !baselineStillCurrent();
-                    },
                     outputFn: null
-                }).then(function(result) {
-                    if (!baselineStillCurrent()) return;
+                }, baselineStillCurrent).then(function(result) {
+                    if (!baselineStillCurrent()) {
+                        return;
+                    }
                     // An unknown baseline verdict (exec-layer failure, cut
                     // capture, cancellation) is NOT a baseline failure: it
                     // disables pre-existing detection instead of forgiving
@@ -652,7 +763,9 @@
                         sourceBranch: sourceBranch
                     });
                 }, function(error) {
-                    if (!baselineStillCurrent()) return;
+                    if (!baselineStillCurrent()) {
+                        return;
+                    }
                     // Baseline check errored — conservatively treat as no info.
                     // A cleanup failure still owns its diagnostic and path.
                     s._baselineVerifyResult = Object.assign({},
@@ -1196,6 +1309,7 @@
         var fallbackCurrent = function() {
             return s._verifyRunEpoch === runEpoch &&
                 s.isProcessing &&
+                !s.wizardQuitting && !s.errorDiscardPending && !s.errorDiscardReady &&
                 s.activeVerifyBranch === branchName &&
                 (!s.wizard || s.wizard.current !== 'CANCELLED');
         };
@@ -1208,7 +1322,7 @@
         var branchStart = Date.now();
         var verifyResult;
         try {
-            verifyResult = await prSplit.verifySplitAsync(branchName, {
+            verifyResult = await runOwnedWork(s, branchName, {
                 dir: dir,
                 verifyCommand: scopedCmd,
                 verifyTimeoutMs: timeoutMs,
@@ -1220,7 +1334,7 @@
                     var rows = Math.min(C.DEFAULT_ROWS, outputLines.length);
                     s.verifyScreen = outputLines.slice(-rows).join('\n');
                 }
-            });
+            }, fallbackCurrent);
         } catch (error) {
             if (!verifyCleanupFailed(error)) throw error;
             verifyResult = Object.assign(verifySetupFailure(error), {
@@ -1229,7 +1343,9 @@
         }
         var duration = Date.now() - branchStart;
 
-        if (!fallbackCurrent()) return;
+        if (!fallbackCurrent()) {
+            return;
+        }
 
         s.verifyOutput[branchName] = outputLines;
 
@@ -1806,6 +1922,9 @@
         // 'abort' and calls wizard.cancel(). Instead, crash-recovery
         // resets the wizard to a resumable state (PLAN_GENERATION) so
         // startAnalysis can take over.
+        if ((choice === 'restart-agent' || choice === 'fallback-heuristic') && prSplit._pipelinePending()) {
+            return prSplit._enterErrorState(s, 'The previous pipeline is still running; wait for verification, repair, and cleanup to finish before starting recovery.');
+        }
         if (choice === 'restart-agent') {
             var executor = st.agentExecutor;
             if (!executor) {
@@ -1841,6 +1960,10 @@
             return startAnalysis(s);
         }
 
+        if (choice === 'auto-resolve' && prSplit._pipelinePending()) {
+            return prSplit._enterErrorState(s, 'The previous execution or pipeline is still running; wait for its worktree cleanup to finish before starting repair.');
+        }
+
         var result = handleErrorResolutionState(s.wizard, choice);
         s.wizardState = s.wizard.current;
 
@@ -1851,26 +1974,133 @@
 
         switch (choice) {
         case 'auto-resolve':
+            var repairPipelineOwner = prSplit._claimPipelineOwner();
+            if (!repairPipelineOwner) return prSplit._enterErrorState(s, 'The previous pipeline is still running.');
             // Dispatch resolveConflicts as async Promise with tick polling
             // (same pattern as startAutoAnalysis).
             s.isProcessing = true;
             s.resolveRunning = true;
             s.resolveResult = null;
+            var resolveToken = {};
+            s._resolveJobToken = resolveToken;
+            var resolveEpoch = currentVerifyRunEpoch(s);
+            var resolvePlan = st.planCache;
+            var completedRows = st.executionResultCache || [];
+            var priorExecutionOutcome = st.executionOutcomeCache;
+            var originalSnapshot = Object.assign({}, st);
+            originalSnapshot.runtime = Object.assign({}, prSplit.runtime);
+            var repairPlanPath = prSplit.resolvePlanPath(null, resolvePlan && resolvePlan.dir);
+            function resolveCurrent() {
+                return s._resolveJobToken === resolveToken && currentVerifyRunEpoch(s) === resolveEpoch &&
+                    s.isProcessing && s.wizard.current === 'BRANCH_BUILDING' &&
+                    !s.wizardQuitting && !s.errorDiscardPending && !s.errorDiscardReady;
+            }
+            function saveRepairCheckpoint(job) {
+                var currentPath = prSplit.resolvePlanPath(null, st.planCache && st.planCache.dir);
+                // Retain a replacement plan at the same path. If the user has
+                // moved to another repository, update only the original path.
+                var snapshot = Object.assign({}, currentPath === repairPlanPath ? st : originalSnapshot, {
+                    runtime:currentPath === repairPlanPath ? Object.assign({}, prSplit.runtime) : originalSnapshot.runtime,
+                    executionResultCache:currentPath === repairPlanPath ? st.executionResultCache : completedRows,
+                    executionOutcomeCache:st.executionOutcomeCache
+                });
+                job.persistencePending = (job.persistencePending || 0) + 1;
+                // savePlan is the only write queue. Call it now so this
+                // snapshot is ordered before any later replacement save.
+                return (async function() {
+                    var saved;
+                    try {
+                        saved = await prSplit.savePlan(repairPlanPath, 'Repair cleanup', snapshot);
+                        if (!saved || saved.error) throw new Error(saved && saved.error || 'no save result');
+                        job.persistenceError = null;
+                    } catch (error) {
+                        job.persistenceError = String(error && error.message || error);
+                        reportVerifyCleanupFailure({
+                            cleanupFailed:true, worktreeDir:job.worktreeDir,
+                            error:'repair ownership snapshot was not saved to ' + repairPlanPath + ': ' +
+                                job.persistenceError + '; worktree path: ' + (job.worktreeDir || 'not allocated')
+                        }, job.branchName);
+                    } finally {
+                        job.persistencePending--;
+                    }
+                })();
+            }
+            function recordResolution(value, job, phase) {
+                if (phase === 'timeout') {
+                    var timeoutResult = Object.assign({}, job.checkpoint || value);
+                    if (job.workFinished) {
+                        timeoutResult.error = (job.checkpoint && job.checkpoint.error ? job.checkpoint.error + '; ' : '') +
+                            'repair work completed; final ownership snapshot is not confirmed saved';
+                        if (!job.checkpoint) delete timeoutResult.cleanupUnconfirmed;
+                    }
+                    if (job.persistencePending) timeoutResult.error += '; plan save has not completed at ' + repairPlanPath;
+                    if (job.persistenceError) timeoutResult.error += '; plan save failed: ' + job.persistenceError;
+                    if (job.worktreeDir && timeoutResult.error.indexOf(job.worktreeDir) < 0) {
+                        timeoutResult.error += '; worktree path: ' + job.worktreeDir;
+                    }
+                    reportVerifyCleanupFailure(timeoutResult, job.branchName, job.worktreeDir);
+                    return;
+                }
+                var rows = value && (value.errors || value.unresolvedFailures) || [];
+                var blocked = prSplit._executionCleanupFailure(rows, value);
+                var changed = false;
+                if (blocked) {
+                    job.checkpoint = Object.assign({}, blocked.execution, {
+                        results:completedRows, resourceFailure:value
+                    });
+                    st.executionOutcomeCache = job.checkpoint;
+                    changed = true;
+                } else if (job.checkpoint && job.checkpoint.cleanupUnconfirmed &&
+                    st.executionOutcomeCache === job.checkpoint) {
+                    // Actual completion can clear only this owner's still-
+                    // current provisional record, including its saved copy.
+                    st.executionOutcomeCache = priorExecutionOutcome;
+                    job.checkpoint = null;
+                    changed = true;
+                }
+                if (phase !== 'cancel') {
+                    rows.forEach(function(row) {
+                        reportVerifyCleanupFailure(row, row.name || row.branch || job.branchName, row.worktreeDir || job.worktreeDir);
+                    });
+                    var reportedTop = rows.some(function(row) {
+                        return (row.cleanupFailed || row.treeCleanupError || row.worktreeRetained) &&
+                            row.worktreeDir === (value && value.worktreeDir);
+                    });
+                    if (!reportedTop) reportVerifyCleanupFailure(value, job.branchName, job.worktreeDir);
+                }
+                if (changed) return saveRepairCheckpoint(job);
+            }
+            function beginRepairCancellation(job) {
+                return recordResolution({
+                    cleanupFailed:true, cleanupUnconfirmed:true, worktreeDir:job.worktreeDir,
+                    error:'repair cancellation is pending; termination and worktree removal are unconfirmed; worktree path: ' +
+                        (job.worktreeDir || 'not allocated')
+                }, job, 'cancel');
+            }
 
             var resolveOpts = {
+                pipelineOwner: repairPipelineOwner,
+                completedResults: completedRows,
+                completedOutcome: priorExecutionOutcome,
                 verifyCommand: prSplit.runtime.verifyCommand,
                 verifyTimeoutMs: effectiveVerifyTimeoutMs(
                     (typeof prSplitConfig !== 'undefined') ? prSplitConfig.timeoutMs : 0
                 ),
                 retryBudget: prSplit.runtime.retryBudget
             };
-            prSplit.resolveConflicts(st.planCache, resolveOpts).then(
+            runOwnedWork(s, 'auto-resolve', resolveOpts, resolveCurrent, function(options) {
+                return prSplit.resolveConflicts(resolvePlan, options);
+            }, recordResolution, beginRepairCancellation).then(
                 function(res) {
+                    prSplit._releasePipelineOwner(repairPipelineOwner);
+                    if (!resolveCurrent()) return;
                     s.resolveResult = res;
                     s.resolveRunning = false;
                 },
                 function(err) {
-                    s.resolveResult = { error: (err && err.message) ? err.message : String(err) };
+                    prSplit._releasePipelineOwner(repairPipelineOwner);
+                    if (!resolveCurrent()) return;
+                    s.resolveResult = Object.assign({}, err, { error: (err && err.message) ? err.message : String(err) });
                     s.resolveRunning = false;
                 }
             );
@@ -1907,8 +2137,9 @@
             return startAnalysis(s);
 
         case 'abort':
-            // Transition to CANCELLED happened. Quit the wizard.
-            return [s, tea.quit()];
+            // Transition to CANCELLED happened. Resource owners must finish
+            // or publish their bounded cleanup diagnostic before runtime exit.
+            return prSplit._quitAfterAgentTermpane(s);
 
         default:
             return [s, null];
@@ -1938,6 +2169,8 @@
 
     // Cross-chunk exports.
     prSplit._updateConfirmCancel = updateConfirmCancel;
+    prSplit._runOwnedWork = runOwnedWork;
+    prSplit._cancelOwnedWork = cancelOwnedWork;
     prSplit._runVerifyBranch = runVerifyBranch;
     prSplit._pollVerifySession = pollVerifySession;
     // Task 8: _pollShellSession removed — shell tab unified into verify pane.

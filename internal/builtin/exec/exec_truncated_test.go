@@ -48,48 +48,54 @@ func (*discardWriter) Write(data []byte) (int, error) { return len(data), nil }
 func (*discardWriter) Read([]byte) (int, error)       { return 0, io.EOF }
 func (*discardWriter) Close() error                   { return nil }
 
-// TestRunExec_NonEOFReadErrorWithKnownExitCodeIsTruncated pins review-15 P1#1B:
-// a child that exits with a known nonzero code while a reader returns a prefix
-// followed by a non-EOF error must surface a structural truncated flag, so the
-// pr-split verifier classifies the capture as unknown instead of a
-// deterministic failure. Before the fix, complete was "both goroutines
-// returned" and the read/close errors were joined, so the result carried only
-// code 7 + an error message.
+// TestRunExec_NonEOFReadErrorWithKnownExitCodeIsTruncated keeps the child's
+// exit status independent from the capture verdict. A clean exit still has
+// code 0 when reading its output fails; error and truncated report that failure.
 func TestRunExec_NonEOFReadErrorWithKnownExitCodeIsTruncated(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{name: "clean_exit", code: 0},
+		{name: "failed_exit", code: 7},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			eio := errors.New("input/output error")
+			stdout := &prefixThenErrReader{payload: []byte("partial-output\n"), cause: eio}
+			stderr := &prefixThenErrReader{payload: nil, cause: io.EOF}
+			calls := 0
+			pipeFactory := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
+				calls++
+				if calls == 1 {
+					return stdout, &discardWriter{}, nil
+				}
+				return stderr, &discardWriter{}, nil
+			}
 
-	eio := errors.New("input/output error")
-	stdout := &prefixThenErrReader{payload: []byte("partial-output\n"), cause: eio}
-	stderr := &prefixThenErrReader{payload: nil, cause: io.EOF}
-	calls := 0
-	pipeFactory := func() (commandPipeEndpoint, commandPipeEndpoint, error) {
-		calls++
-		if calls == 1 {
-			return stdout, &discardWriter{}, nil
-		}
-		return stderr, &discardWriter{}, nil
-	}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			command, args := exitCodeCommand(tc.code)
+			result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, pipeFactory, newProcessTree, outputEOFCeiling)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	command, args := exitCodeCommand(7)
-	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
-
-	if result["code"] != 7 {
-		t.Fatalf("code = %v, want 7 (the real exit status must survive)", result["code"])
-	}
-	if result["error"] != true {
-		t.Fatalf("error = %v, want true (the read failure is still reported)", result["error"])
-	}
-	if result["truncated"] != true {
-		t.Fatalf("truncated = %v, want true: a prefix+EIO read on a known exit code is an incomplete capture", result["truncated"])
-	}
-	if got := result["stdout"]; got != "partial-output\n" {
-		t.Fatalf("stdout = %q, want the captured prefix", got)
-	}
-	if msg, _ := result["message"].(string); !strings.Contains(msg, eio.Error()) {
-		t.Fatalf("message = %q, want it to retain the read error %q", msg, eio.Error())
+			if result["code"] != tc.code {
+				t.Fatalf("code = %v, want %d (the real exit status must survive)", result["code"], tc.code)
+			}
+			if result["error"] != true {
+				t.Fatalf("error = %v, want true (the read failure is still reported)", result["error"])
+			}
+			if result["truncated"] != true {
+				t.Fatalf("truncated = %v, want true: a prefix+EIO read on a known exit code is an incomplete capture", result["truncated"])
+			}
+			if got := result["stdout"]; got != "partial-output\n" {
+				t.Fatalf("stdout = %q, want the captured prefix", got)
+			}
+			if msg, _ := result["message"].(string); !strings.Contains(msg, eio.Error()) {
+				t.Fatalf("message = %q, want it to retain the read error %q", msg, eio.Error())
+			}
+		})
 	}
 }
 
@@ -115,7 +121,7 @@ func TestRunExec_CloseErrorAfterEOFStaysComplete(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	command, args := exitCodeCommand(0)
-	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, pipeFactory, newProcessTree, outputEOFCeiling)
 
 	if result["code"] != 0 {
 		t.Fatalf("code = %v, want 0: the child exited 0 and ProcessState holds the real status even though Close failed after EOF", result["code"])
@@ -171,7 +177,7 @@ func TestRunExec_CancelAfterCleanExitPreservesCode(t *testing.T) {
 	}
 
 	command, args := exitCodeCommand(0)
-	result := runExecCommand(ctx, command, args, pipeFactory, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, pipeFactory, newProcessTree, outputEOFCeiling)
 
 	if result["code"] != 0 {
 		t.Fatalf("code = %v, want 0 (message=%q)", result["code"], result["message"])

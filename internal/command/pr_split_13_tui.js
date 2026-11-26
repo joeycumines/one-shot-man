@@ -54,7 +54,9 @@
         'PLAN_REVIEW':      { 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'ERROR': true },
         'PLAN_EDITOR':      { 'PLAN_REVIEW': true },
         'BRANCH_BUILDING':  { 'EQUIV_CHECK': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
-        'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true },
+        // Recovery may be refused while the previous pipeline still owns
+        // native work. enterErrorState must preserve a valid Back route.
+        'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'ERROR': true },
         'EQUIV_CHECK':      { 'FINALIZATION': true, 'PLAN_REVIEW': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
         'FINALIZATION':     { 'FINALIZATION': true, 'DONE': true },
         'DONE':             { 'IDLE': true },
@@ -320,6 +322,7 @@
             baseBranch: runtime.baseBranch,
             strategy: runtime.strategy,
             dryRun: runtime.dryRun,
+            execution: st.executionOutcomeCache || null,
             analysis: null,
             groups: null,
             plan: null
@@ -650,6 +653,42 @@
     // Task 8: Shell tab removed — cleanupShellPaneSession no longer needed.
     // All interactive session cleanup goes through clearVerifyPaneSession.
 
+    // Cleanup diagnostics belong to the operation that owns the resource,
+    // even after its run has been replaced. Reporting must not mutate TUI
+    // state; callers apply the result only while they still own that state.
+    function reportVerifyCleanupFailure(result, branchName, worktreeDir) {
+        if (!result || (!result.treeCleanupError && !result.cleanupFailed && !result.worktreeRetained)) return '';
+        var path = worktreeDir || result.worktreeDir;
+        var detail = String(result.error || result.message || (result.treeCleanupError
+            ? 'process tree teardown failed: ' + result.treeCleanupError : 'verification cleanup failed'));
+        if (path && detail.indexOf(path) < 0) {
+            detail += (result.worktreeRetained ? '; worktree retained at ' : '; worktree removal was attempted at ') + path;
+        }
+        var fields = { branch: branchName, worktreeDir: path, error: detail };
+        if (result.worktreeRetained !== undefined) fields.worktreeRetained = result.worktreeRetained;
+        if (result.cleanupUnconfirmed) fields.cleanupUnconfirmed = true;
+        log.warn('verify cleanup failed', fields);
+        // The log and wizard rows may live only in the alternate screen.
+        // Keep a terminal diagnostic independently of replaceable run state
+        // and print it once BubbleTea has restored normal terminal output.
+        var diagnostic = '[verify ' + (branchName || 'unknown') + '] ' + detail;
+        if (prSplit._tuiOutputActive) {
+            if (!prSplit._verifyCleanupDiagnostics) prSplit._verifyCleanupDiagnostics = [];
+            prSplit._verifyCleanupDiagnostics.push(diagnostic);
+        } else {
+            output.print(diagnostic);
+        }
+        return detail;
+    }
+
+    function flushVerifyCleanupDiagnostics() {
+        var diagnostics = prSplit._verifyCleanupDiagnostics || [];
+        while (diagnostics.length) {
+            output.print(diagnostics[0]);
+            diagnostics.shift();
+        }
+    }
+
     function clearVerifyPaneSession(s, opts) {
         var options = opts || {};
         if (s._verifyPaneCleanupPending && s._verifyPaneCleanupPromise) {
@@ -683,17 +722,10 @@
         };
 
         var recordCleanupOutcome = function(result) {
-            if (!result || (!result.treeCleanupError && !result.cleanupFailed)) return result;
-            var detail = result.error || result.message || (result.treeCleanupError
-                ? 'process tree teardown failed: ' + result.treeCleanupError : 'verification cleanup failed');
-            if (verifyWorktree && detail.indexOf(verifyWorktree) < 0) {
-                detail += (result.worktreeRetained ? '; worktree retained at ' : '; worktree removal was attempted at ') + verifyWorktree;
-            }
             // The diagnostic remains observable even after a reset, but an
             // old cleanup cannot rewrite a replacement run's rows or pane.
-            log.warn('verify cleanup failed', {
-                branch: verifyBranch, worktreeDir: verifyWorktree, error: detail
-            });
+            var detail = reportVerifyCleanupFailure(result, verifyBranch, verifyWorktree);
+            if (!detail) return result;
             if (s._verifyPaneCleanupToken !== token || s._verifyRunEpoch !== verifyRunEpoch) return result;
             if (s.outputLines) s.outputLines.push(detail);
             if (verifyRows && s.verificationResults === verifyRows) {
@@ -702,6 +734,7 @@
                     if (row.name !== verifyBranch) continue;
                     row.passed = false;
                     row.preExisting = false;
+                    row.skipped = false;
                     row.status = branchStatuses.FAILED;
                     row.execFailed = true;
                     row.cleanupFailed = true;
@@ -882,8 +915,8 @@
         }
 
         var branchResult = probe;
-        if (branchResult.code !== 0) {
-            var stderrMsg = (branchResult.stderr || '').trim();
+        if (prSplit._commandFailed(branchResult)) {
+            var stderrMsg = prSplit._execFailReason(branchResult);
             if (stderrMsg.indexOf('ambiguous argument') !== -1 ||
                 stderrMsg.indexOf('bad default revision') !== -1 ||
                 stderrMsg.indexOf('unknown revision') !== -1) {
@@ -892,7 +925,7 @@
                 errors.push('Cannot determine current branch: ' + stderrMsg);
             }
             var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
-            if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
+            if (!prSplit._commandFailed(branchListResult) && branchListResult.stdout.trim()) {
                 availableBranches = branchListResult.stdout.trim().split('\n');
             }
         } else {
@@ -900,7 +933,7 @@
             if (sourceBranch === 'HEAD') {
                 errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
                 var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
-                if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
+                if (!prSplit._commandFailed(detachedBranchList) && detachedBranchList.stdout.trim()) {
                     availableBranches = detachedBranchList.stdout.trim().split('\n');
                 }
             } else if (sourceBranch === runtime.baseBranch) {
@@ -910,10 +943,14 @@
 
         if (runtime.baseBranch) {
             var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
-            if (targetCheck.code !== 0) {
-                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
-                if (remoteCheck.code !== 0) {
-                    errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+            if (prSplit._commandFailed(targetCheck)) {
+                if (prSplit._commandFailed(targetCheck, [1, 128])) {
+                    errors.push('Cannot validate target branch "' + runtime.baseBranch + '": ' + prSplit._execFailReason(targetCheck));
+                } else {
+                    var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                    if (prSplit._commandFailed(remoteCheck)) {
+                        errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+                    }
                 }
             }
         }
@@ -988,9 +1025,9 @@
         // Detect source branch (current branch). Reuse the probe issued in
         // handleConfigState instead of re-running rev-parse.
         var branchResult = await probe;
-        if (branchResult.code !== 0) {
+        if (prSplit._commandFailed(branchResult)) {
             // T43: Distinguish empty repo from other failures.
-            var stderrMsg = (branchResult.stderr || '').trim();
+            var stderrMsg = prSplit._execFailReason(branchResult);
             if (stderrMsg.indexOf('ambiguous argument') !== -1 ||
                 stderrMsg.indexOf('bad default revision') !== -1 ||
                 stderrMsg.indexOf('unknown revision') !== -1) {
@@ -1000,7 +1037,7 @@
             }
             // T43: Try to list available branches as fallback.
             var branchListResult = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
-            if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
+            if (!prSplit._commandFailed(branchListResult) && branchListResult.stdout.trim()) {
                 availableBranches = branchListResult.stdout.trim().split('\n');
             }
         } else {
@@ -1010,7 +1047,7 @@
                 errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
                 // T43: List available branches for reference.
                 var detachedBranchList = await gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
-                if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
+                if (!prSplit._commandFailed(detachedBranchList) && detachedBranchList.stdout.trim()) {
                     availableBranches = detachedBranchList.stdout.trim().split('\n');
                 }
             } else if (sourceBranch === runtime.baseBranch) {
@@ -1021,11 +1058,15 @@
         // T43: Validate target (base) branch exists.
         if (runtime.baseBranch) {
             var targetCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
-            if (targetCheck.code !== 0) {
-                // Also check for remote tracking branch.
-                var remoteCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
-                if (remoteCheck.code !== 0) {
-                    errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+            if (prSplit._commandFailed(targetCheck)) {
+                if (prSplit._commandFailed(targetCheck, [1, 128])) {
+                    errors.push('Cannot validate target branch "' + runtime.baseBranch + '": ' + prSplit._execFailReason(targetCheck));
+                } else {
+                    // Also check for remote tracking branch.
+                    var remoteCheck = await gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                    if (prSplit._commandFailed(remoteCheck)) {
+                        errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+                    }
                 }
             }
         }
@@ -1384,6 +1425,8 @@
     prSplit._transitionVerifyPhase = transitionVerifyPhase;
     prSplit._resetVerifyPhase = resetVerifyPhase;
     prSplit._resetVerifyRunState = resetVerifyRunState;
+    prSplit._reportVerifyCleanupFailure = reportVerifyCleanupFailure;
+    prSplit._flushVerifyCleanupDiagnostics = flushVerifyCleanupDiagnostics;
     prSplit._beginAsyncConfig = beginAsyncConfig;
     prSplit._installCancellationSource = installCancellationSource;
     prSplit._invalidateAsyncConfig = invalidateAsyncConfig;

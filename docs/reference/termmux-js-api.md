@@ -10,7 +10,7 @@ creating sessions and managers, plus event constants.
 |--------|------|-------------|
 | `newCaptureSession(cmd, args?, opts?)` | factory | Create a standalone PTY session |
 | `newSessionManager(opts?)` | factory | Create a new SessionManager. Options: `{rows?, cols?, requestBuffer?, outputBuffer?, title?}`. |
-| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, envReplace?, name?, kind?, remainOnExit?}`. Returns a Promise for `{mgr, session, sid}`. |
+| `newBoundedSession(opts)` | factory | Create a CaptureSession + SessionManager in one call. Opts: `{cmd, args?, dir?, rows?, cols?, env?, envReplace?, windowsVerbatimArguments?, name?, kind?, remainOnExit?}`. Returns a Promise for `{mgr, session, sid}`. |
 | `EXIT_TOGGLE` | `"toggle"` | Passthrough ended by toggle key |
 | `EXIT_CHILD_EXIT` | `"childExit"` | Passthrough ended by child process exit |
 | `EXIT_CONTEXT` | `"context"` | Passthrough ended by context cancellation |
@@ -68,6 +68,8 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `opts.rows` | `number` | `24` | Initial terminal rows |
 | `opts.cols` | `number` | `80` | Initial terminal columns |
 | `opts.env` | `object` | `{}` | Additional environment variables |
+| `opts.envReplace` | `boolean` | `false` | Replace inherited environment with the supplied environment plus TERM |
+| `opts.windowsVerbatimArguments` | `boolean` | `false` | Preserve caller-supplied Windows argument quoting; ignored on Unix. The executable name remains quoted. This setting is preserved by session persistence. |
 | `opts.name` | `string` | `""` | Session name metadata |
 | `opts.kind` | `string` | `""` | Session kind metadata |
 

@@ -8,14 +8,14 @@ import (
 )
 
 func TestBuildCommandLineQuotesExecutableWithoutArguments(t *testing.T) {
-	got := buildCommandLine(`C:\Users\under user\AppData\Local\Temp\helper.exe`, nil)
+	got := buildCommandLine(`C:\Users\under user\AppData\Local\Temp\helper.exe`, nil, false)
 	if !strings.HasPrefix(got, `"C:\Users\under user\AppData\Local\Temp\helper.exe"`) {
 		t.Fatalf("buildCommandLine returned unquoted executable path: %q", got)
 	}
 }
 
 func TestBuildCommandLineEscapesArguments(t *testing.T) {
-	got := buildCommandLine(`C:\Users\under user\helper.exe`, []string{"hello world"})
+	got := buildCommandLine(`C:\Users\under user\helper.exe`, []string{"hello world"}, false)
 	if !strings.HasPrefix(got, `"C:\Users\under user\helper.exe"`) || !strings.Contains(got, `"hello world"`) {
 		t.Fatalf("buildCommandLine did not escape executable and argument: %q", got)
 	}

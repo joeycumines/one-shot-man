@@ -163,7 +163,7 @@
         // Verify gh CLI is available (unless push-only mode).
         if (!pushOnly) {
             var ghCheck = await exec.execv(['gh', '--version']);
-            if (ghCheck.code !== 0) {
+            if (prSplit._commandFailed(ghCheck)) {
                 return { error: 'gh CLI not found — install GitHub CLI (https://cli.github.com) or use --push-only', results: [] };
             }
         }
@@ -171,8 +171,8 @@
         // Pre-flight: verify baseBranch on remote.
         if (!pushOnly) {
             var remoteCheck = await gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            // ls-remote: 0 empty = absent; 2 = transport error; error true = failure.
-            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+            // Without --exit-code, ls-remote reports a missing head as exit 0 with empty output.
+            if (prSplit._commandFailed(remoteCheck)) {
                 return {
                     error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
                     results: []
@@ -192,7 +192,7 @@
         for (var i = 0; i < plan.splits.length; i++) {
             var split = plan.splits[i];
             var pushResult = await gitExec(dir, ['push', '-f', remote, split.name]);
-            if (pushResult.code !== 0) {
+            if (prSplit._commandFailed(pushResult)) {
                 results.push({
                     name: split.name,
                     pushed: false,
@@ -233,20 +233,20 @@
             // Pre-check: head has changes from base.
             var diffCheck = await gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
             // Exit 0 = no diff (skip); 1 = diff (create); else = error.
-            if (diffCheck.code === 0) {
+            if (!prSplit._commandFailed(diffCheck)) {
                 // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" — skipping PR creation';
                 continue;
             }
-            if (diffCheck.code !== 1) {
+            if (prSplit._commandFailed(diffCheck, [0, 1])) {
                 results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
                 continue;
             }
 
             var ghResult = await exec.execv(ghArgs);
-            if (ghResult.code !== 0) {
+            if (prSplit._commandFailed(ghResult)) {
                 results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
@@ -265,7 +265,7 @@
                     '--auto'
                 ];
                 var mergeResult = await exec.execv(mergeArgs);
-                if (mergeResult.code !== 0) {
+                if (prSplit._commandFailed(mergeResult)) {
                     results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;
@@ -294,13 +294,16 @@
 
         var child = await exec.spawn('gh', args);
         var collected = await prSplit._collectSpawnOutput(child, outputFn);
-        return {
+        var result = {
             stdout: collected.stdout,
             stderr: collected.stderr,
             code: collected.code,
             error: collected.error,
-            message: collected.message
+            message: collected.message,
+            truncated: collected.truncated
         };
+        if (collected.treeCleanupError) result.treeCleanupError = collected.treeCleanupError;
+        return result;
     }
 
     async function createPRsAsync(plan, options) {
@@ -345,7 +348,7 @@
         if (!pushOnly) {
             if (progressFn) progressFn('Checking gh CLI availability\u2026');
             var ghCheck = await ghExecAsync(['--version']);
-            if (ghCheck.code !== 0) {
+            if (prSplit._commandFailed(ghCheck)) {
                 return { error: 'gh CLI not found \u2014 install GitHub CLI (https://cli.github.com) or use --push-only', results: [] };
             }
         }
@@ -354,8 +357,8 @@
         if (!pushOnly) {
             if (progressFn) progressFn('Verifying base branch "' + plan.baseBranch + '" on remote\u2026');
             var remoteCheck = await gitExecAsync(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
-            // ls-remote: 0 empty = absent; 2 = transport; error true = failure.
-            if (remoteCheck.error === true || (remoteCheck.code !== 0 && remoteCheck.code !== 2)) {
+            // Without --exit-code, an absent head is exit 0 with empty output.
+            if (prSplit._commandFailed(remoteCheck)) {
                 return {
                     error: 'ls-remote failed for remote "' + remote + '": ' + execFailReason(remoteCheck),
                     results: []
@@ -384,7 +387,7 @@
             var split = plan.splits[i];
             if (progressFn) progressFn('Pushing ' + (i + 1) + '/' + total + ': ' + split.name);
             var pushResult = await gitExecAsync(dir, ['push', '-f', remote, split.name]);
-            if (pushResult.code !== 0) {
+            if (prSplit._commandFailed(pushResult)) {
                 results.push({
                     name: split.name,
                     pushed: false,
@@ -417,14 +420,14 @@
             // Pre-check: head has changes.
             var diffCheck = await gitExecAsync(dir, ['diff', '--quiet', base, prSplit2.name]);
             // Exit 0 = no diff (skip); 1 = diff (create); else = error.
-            if (diffCheck.code === 0) {
+            if (!prSplit._commandFailed(diffCheck)) {
                 // No diff — skip.
                 results[pi].error = null;
                 results[pi].skipped = true;
                 results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" \u2014 skipping PR creation';
                 continue;
             }
-            if (diffCheck.code !== 1) {
+            if (prSplit._commandFailed(diffCheck, [0, 1])) {
                 results[pi].error = 'git diff --quiet failed: ' + execFailReason(diffCheck);
                 continue;
             }
@@ -440,7 +443,7 @@
             }
 
             var ghResult = await ghExecAsync(ghArgs);
-            if (ghResult.code !== 0) {
+            if (prSplit._commandFailed(ghResult)) {
                 results[pi].error = 'gh pr create failed: ' + execFailReason(ghResult);
             } else {
                 results[pi].prUrl = ghResult.stdout.trim();
@@ -459,7 +462,7 @@
                     '--auto'
                 ];
                 var mergeResult = await ghExecAsync(mergeArgs);
-                if (mergeResult.code !== 0) {
+                if (prSplit._commandFailed(mergeResult)) {
                     results[k].mergeError = 'auto-merge failed: ' + execFailReason(mergeResult);
                 } else {
                     results[k].autoMerge = true;

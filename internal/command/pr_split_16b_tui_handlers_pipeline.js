@@ -216,6 +216,9 @@
     // --- Async Pipeline Handlers — drive wizard state machine ---
 
     function startAnalysis(s) {
+        if (prSplit._pipelinePending()) {
+            return enterErrorState(s, 'The previous pipeline is still running; wait for verification, repair, and cleanup to finish before starting analysis.');
+        }
         if (typeof prSplit._installCancellationSource === 'function') {
             prSplit._installCancellationSource(s);
         }
@@ -652,6 +655,12 @@
     // --- Execution Handlers ---
 
     function startExecution(s) {
+        if (typeof prSplit._pipelinePending === 'function' && prSplit._pipelinePending()) {
+            return enterErrorState(s, 'The automated pipeline is still running; wait for verification, repair, and cleanup to finish before retrying.');
+        }
+        if (typeof prSplit._executionPending === 'function' && prSplit._executionPending()) {
+            return enterErrorState(s, 'Execution is still running; wait for the current execution and worktree cleanup to finish before retrying.');
+        }
         if (paneCleanupExpired(s)) {
             s._executionStartPending = false;
             return enterErrorState(s, paneCleanupErrorDetail('Execution was not started.'));
@@ -743,6 +752,7 @@
         var result;
         try {
             result = await prSplit.executeSplitAsync(st.planCache, {
+                completedOutcome: st.executionOutcomeCache,
                 progressFn: function(msg) {
                     // Parse branch index from progress messages like
                     // "Creating branch 2/5: split/02-feature".
@@ -771,6 +781,12 @@
             return;
         }
 
+        // Preserve execution ownership even if cancellation or a worktree-add
+        // failure produced no branch rows for the visible result list.
+        if (!result.executionPending) {
+            st.executionOutcomeCache = result;
+            st.executionResultCache = result.results || [];
+        }
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return; // cancelled
 
         if (result.error) {
@@ -783,7 +799,6 @@
             return;
         }
 
-        st.executionResultCache = result.results;
         s.executionResults = result.results || [];
 
         // Chain: If verify command configured, start per-branch verification.

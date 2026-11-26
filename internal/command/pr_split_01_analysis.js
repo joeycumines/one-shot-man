@@ -47,13 +47,13 @@
         };
 
         var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        if (branchResult.code !== 0) {
+        if (prSplit._commandFailed(branchResult)) {
             return createEmptyResult('failed to get current branch: ' + execFailReason(branchResult), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = await gitExec(dir, ['merge-base', baseBranch, currentBranch]);
-        if (mergeBase.code !== 0) {
+        if (prSplit._commandFailed(mergeBase)) {
             return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
         var mergeBaseSha = mergeBase.stdout.trim();
@@ -68,7 +68,7 @@
 
         // Use --name-status to capture diff status (A/M/D/R/C) per file.
         var diffResult = await gitExec(dir, ['diff', '--name-status', mergeBaseSha, currentBranch]);
-        if (diffResult.code !== 0) {
+        if (prSplit._commandFailed(diffResult)) {
             return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }
 
@@ -162,13 +162,13 @@
         };
 
         var branchResult = await gitExecAsync(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        if (branchResult.code !== 0) {
+        if (prSplit._commandFailed(branchResult)) {
             return createEmptyResult('failed to get current branch: ' + execFailReason(branchResult), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = await gitExecAsync(dir, ['merge-base', baseBranch, currentBranch]);
-        if (mergeBase.code !== 0) {
+        if (prSplit._commandFailed(mergeBase)) {
             return createEmptyResult('merge-base failed: ' + execFailReason(mergeBase), currentBranch);
         }
         var mergeBaseSha = mergeBase.stdout.trim();
@@ -177,7 +177,7 @@
         }
 
         var diffResult = await gitExecAsync(dir, ['diff', '--name-status', mergeBaseSha, currentBranch]);
-        if (diffResult.code !== 0) {
+        if (prSplit._commandFailed(diffResult)) {
             return createEmptyResult('git diff failed: ' + execFailReason(diffResult), currentBranch);
         }
 
@@ -258,7 +258,7 @@
         var dir = resolveDir(config.dir || '.');
 
         var branchResult = await gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        if (branchResult.code !== 0) {
+        if (prSplit._commandFailed(branchResult)) {
             return {
                 files: [],
                 error: 'failed to get current branch: ' + execFailReason(branchResult),
@@ -269,7 +269,7 @@
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = await gitExec(dir, ['merge-base', baseBranch, currentBranch]);
-        if (mergeBase.code !== 0) {
+        if (prSplit._commandFailed(mergeBase)) {
             return {
                 files: [],
                 error: 'merge-base failed: ' + execFailReason(mergeBase),
@@ -288,7 +288,7 @@
         }
 
         var statResult = await gitExec(dir, ['diff', '--numstat', mergeBaseSha, currentBranch]);
-        if (statResult.code !== 0) {
+        if (prSplit._commandFailed(statResult)) {
             return {
                 files: [],
                 error: 'git diff --numstat failed: ' + execFailReason(statResult),

@@ -508,22 +508,33 @@
     }
 
     function quitAfterAgentTermpane(s) {
+        if (s.wizardQuitting) return [s, null];
         s.wizardQuitting = true;
         s.wizardQuitSent = false;
         s.wizardQuitPaneReady = false;
-        // Marks this quit as gated on the pane close alone, which is what
-        // lets the wizard-quit tick send the quit once the pane settles.
-        // The confirmCancel path gates on four teardown steps and must not
+        // The quit tick waits for both the pane and any worktree owners left
+        // by an earlier verification run.
+        // The confirmCancel path gates on its own teardown steps and must not
         // be short-circuited here.
         s.wizardQuitPaneGated = true;
         var paneClose = null;
+        var paneSettled = false;
+        var verificationCleanup = prSplit._cancelOwnedWork(s);
+        var verificationReady = !verificationCleanup;
         var paneReady = function() {
-            s.wizardQuitPaneReady = true;
+            paneSettled = true;
+            s.wizardQuitPaneReady = verificationReady;
         };
         var paneFailed = function(e) {
             log.debug('quit pane close failed', { error: e.message || String(e) });
-            s.wizardQuitPaneReady = true;
+            paneReady();
         };
+        if (verificationCleanup) {
+            verificationCleanup.then(function() {
+                verificationReady = true;
+                s.wizardQuitPaneReady = paneSettled;
+            });
+        }
         if (typeof prSplit._destroyAgentTermpane === 'function') {
             try {
                 var pendingPaneUpdates = typeof prSplit._waitForPaneOperations === 'function' ?

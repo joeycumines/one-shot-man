@@ -53,7 +53,9 @@ type failingKillProcessTree struct {
 	killStarted chan struct{}
 }
 
-func (*failingKillProcessTree) attach(*osexec.Cmd) error { return nil }
+func (*failingKillProcessTree) beginReap(bool)                      {}
+func (*failingKillProcessTree) signal(*osexec.Cmd, os.Signal) error { return nil }
+func (*failingKillProcessTree) attach(*osexec.Cmd) error            { return nil }
 func (t *failingKillProcessTree) kill(*osexec.Cmd) error {
 	close(t.killStarted)
 	return os.ErrPermission
@@ -127,9 +129,12 @@ func TestRunExecWriterCloseFailurePreservesCleanupErrors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	command, args := hangingCommand()
-	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, newPipe, newProcessTree, outputEOFCeiling)
 	if result["error"] != true {
 		t.Fatalf("runExec result = %#v, want error", result)
+	}
+	if result["truncated"] != true {
+		t.Fatalf("unread output after writer-close rollback must be incomplete: %#v", result)
 	}
 	message, _ := result["message"].(string)
 	for _, target := range []string{stdoutErr.Error(), stderrErr.Error()} {
@@ -170,6 +175,7 @@ func TestCleanupFailedRunExecOrdersAndPreservesErrors(t *testing.T) {
 			events = append(events, "close-tree")
 			return closeTreeErr
 		},
+		func() { events = append(events, "begin-reap") },
 		func() error {
 			events = append(events, "wait")
 			return waitErr
@@ -180,7 +186,7 @@ func TestCleanupFailedRunExecOrdersAndPreservesErrors(t *testing.T) {
 		},
 	)
 
-	wantEvents := []string{"kill", "close-tree", "wait", "close-pipes"}
+	wantEvents := []string{"kill", "close-tree", "begin-reap", "wait", "close-pipes"}
 	if len(events) != len(wantEvents) {
 		t.Fatalf("cleanup events = %v, want %v", events, wantEvents)
 	}
@@ -333,7 +339,7 @@ func TestRunExec_CapturesOutputAfterASchedulingDelay(t *testing.T) {
 	}
 
 	command, args := immediateExitCommand()
-	result := runExecCommand(context.Background(), command, args, newPipe, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(context.Background(), SpawnConfig{Command: command, Args: args}, newPipe, newProcessTree, outputEOFCeiling)
 
 	if result["error"] != false {
 		t.Fatalf("runExec error = %v (%v), want false", result["error"], result["message"])
@@ -362,24 +368,28 @@ func TestRunExec_AbortedCaptureIsAnExecFailure(t *testing.T) {
 		return &failingCommandPipe{}, &failingCommandPipe{}, nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-	}()
+	native, err := newProcessTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// waitAndCloseProcessTree calls close only after observing the child exit
+	// (or after Wait on its fallback path). Cancel after that barrier, so this
+	// aborts output capture without racing to kill the still-running child.
+	tree := &cleanupFaultTree{processTree: native, beforeClose: cancel}
 
 	command, args := immediateExitCommand()
-	result := runExecCommand(ctx, command, args, newPipe, newProcessTree, outputEOFCeiling)
+	result := runExecCommand(ctx, SpawnConfig{Command: command, Args: args}, newPipe, func() (processTree, error) { return tree, nil }, outputEOFCeiling)
 
 	if result["error"] != true {
 		t.Fatalf("runExec error = %v, want true — an aborted capture is an exec-layer failure, not an empty output", result["error"])
 	}
-	// The status is the command's own, so it is platform-dependent: cancellation
-	// is SIGKILL (code -1) on Unix and job termination, exit 1, on Windows. What
-	// must hold everywhere is that an abandoned capture never looks like success.
-	if code, ok := result["code"].(int); !ok || code == 0 {
-		t.Fatalf("runExec code = %v, want a non-zero status — an aborted capture must not look like success", result["code"])
+	if tree.cmd == nil || tree.cmd.ProcessState == nil || tree.cmd.ProcessState.ExitCode() != 0 {
+		t.Fatalf("fixture did not observe a clean exit before cancelling capture: result=%v", result)
+	}
+	if result["code"] != 0 || result["truncated"] != true {
+		t.Fatalf("capture cancellation changed the child's status or lost incompleteness: result=%v", result)
 	}
 	message, _ := result["message"].(string)
 	if !strings.Contains(message, "output capture") {
@@ -413,7 +423,7 @@ func TestRunExec_CeilingBoundsAWriterTheGroupKillCannotReach(t *testing.T) {
 
 	command, args := immediateExitCommand()
 	start := time.Now()
-	result := runExecCommand(context.Background(), command, args, newPipe, newProcessTree, 2*time.Second)
+	result := runExecCommand(context.Background(), SpawnConfig{Command: command, Args: args}, newPipe, newProcessTree, 2*time.Second)
 	elapsed := time.Since(start)
 
 	if elapsed > 5*time.Second {

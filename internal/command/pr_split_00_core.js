@@ -143,9 +143,9 @@
                 break;
             } else if (!osmod) {
                 var result = isWindows()
-                    ? await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])
+                    ? await shellSpawnSync('if exist "' + path + '" (exit 0) else (exit 1)')
                     : await exec.execv(['test', '-f', path]);
-                if (result.code === 0) { hasMakefile = true; break; }
+                if (!commandFailed(result)) { hasMakefile = true; break; }
             }
         }
         if (!hasMakefile) return '';
@@ -410,11 +410,9 @@
         if (waitError) {
             code = -1;
         }
-        // A cut capture is an exec-layer failure, exactly as execv reports it:
-        // the caller gets the prefix it received plus a status it cannot mistake
-        // for the command's own. (execv may instead surface the process's own
-        // non-zero exit code alongside error true — both shapes are failures;
-        // no consumer may treat either as success.)
+        // Capture and cleanup failures do not change a recorded exit status.
+        // Callers check the structural error/truncated fields even for code 0;
+        // a rejected wait has no recorded status and uses code -1.
         var waitMessage = waitError ? String((waitError && waitError.message) || waitError) : '';
         var treeCleanupError = String(waitResult.treeCleanupError ||
             (waitError && waitError.treeCleanupError) || '');
@@ -427,7 +425,7 @@
         var result = {
             stdout: results[0],
             stderr: results[1],
-            code: truncated || waitError ? -1 : code,
+            code: code,
             signal: waitResult.signal || null,
             truncated: truncated,
             error: truncated || waitError || treeCleanupError || code !== 0 ? true : false,
@@ -488,7 +486,8 @@
             stderr: collected.stderr,
             code: collected.code,
             error: collected.error,
-            message: collected.message
+            message: collected.message,
+            truncated: collected.truncated
         };
         if (collected.treeCleanupError) result.treeCleanupError = collected.treeCleanupError;
         return result;
@@ -538,7 +537,9 @@
             stderr: collected.stderr,
             code: collected.code,
             error: collected.error || timedOut,
-            message: message
+            message: message,
+            truncated: collected.truncated,
+            timedOut: timedOut
         };
         if (collected.treeCleanupError) result.treeCleanupError = collected.treeCleanupError;
         return result;
@@ -625,9 +626,10 @@
             var r = await osmod.fileExists(path);
             return !!(r && r.exists);
         }
-        return isWindows()
-            ? (await exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])).code === 0
-            : (await exec.execv(['test', '-f', path])).code === 0;
+        var result = isWindows()
+            ? await shellSpawnSync('if exist "' + path + '" (exit 0) else (exit 1)')
+            : await exec.execv(['test', '-f', path]);
+        return !commandFailed(result);
     }
 
     // lookupBinary checks whether a binary exists on PATH.
@@ -652,7 +654,7 @@
     // lookupBinaryAsync is the non-blocking version of lookupBinary.
     // Returns a Promise<{found: bool, path: string}>. The spawned lookup drains
     // through the shared collectSpawnOutput, so a stream the exec layer had to
-    // cut before EOF is an exec-layer failure (code -1, error true), never a
+    // cut before EOF is an exec-layer failure (truncated true, error true), never a
     // {found: true, path: '<prefix>'}.
     async function lookupBinaryAsync(name) {
         if (absolutePath(name)) {
@@ -675,133 +677,88 @@
         };
     }
 
-    // shellSpawnSync runs a shell command string synchronously through the
-    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
-    // Returns the exec result object.
+    // cmd.exe parses its /c operand itself. Preserve that shell text instead
+    // of passing it through Go's CommandLineToArgvW quoting. /s removes exactly
+    // the enclosing quote pair, and /d disables unrelated AutoRun commands.
+    function shellInvocation(shellCmd, opts) {
+        var windows = isWindows();
+        var commandOptions = {};
+        if (windows) commandOptions.windowsVerbatimArguments = true;
+        if (opts && typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
+            commandOptions.timeoutMs = opts.timeoutMs;
+        }
+        return {
+            argv: windows ? ['cmd.exe', '/d', '/s', '/c', '"' + shellCmd + '"'] : ['sh', '-c', shellCmd],
+            options: commandOptions
+        };
+    }
+
+    // Capture all output through execv; the binding remains asynchronous.
     async function shellSpawnSync(shellCmd, opts) {
         opts = opts || {};
-        var argv = isWindows()
-            ? ['cmd.exe', '/C', shellCmd]
-            : ['sh', '-c', shellCmd];
-        var execOpts = null;
-        if (typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
-            execOpts = { timeoutMs: opts.timeoutMs };
-        }
-        var result = execOpts
-            ? await exec.execv(argv, execOpts)
-            : await exec.execv(argv);
+        var invocation = shellInvocation(shellCmd, opts);
+        var result = await exec.execv(invocation.argv, invocation.options);
         if (opts.onStdout && result.stdout) { opts.onStdout(result.stdout); }
         if (opts.onStderr && result.stderr) { opts.onStderr(result.stderr); }
         return result;
     }
 
-    // shellSpawnAsync runs a shell command string asynchronously through the
-    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
-    // Returns the spawned child process.
+    // Spawn the same shell invocation with separately drained streams.
     async function shellSpawnAsync(shellCmd, opts) {
-        opts = opts || {};
-        var spawnOpts = null;
-        if (typeof opts.timeoutMs === 'number' && opts.timeoutMs > 0) {
-            spawnOpts = { timeoutMs: opts.timeoutMs };
-        }
-        if (isWindows()) {
-            return spawnOpts
-                ? await exec.spawn('cmd.exe', ['/C', shellCmd], spawnOpts)
-                : await exec.spawn('cmd.exe', ['/C', shellCmd]);
-        }
-        return spawnOpts
-            ? await exec.spawn('sh', ['-c', shellCmd], spawnOpts)
-            : await exec.spawn('sh', ['-c', shellCmd]);
+        var invocation = shellInvocation(shellCmd, opts);
+        return await exec.spawn(invocation.argv[0], invocation.argv.slice(1), invocation.options);
     }
 
-    // gitAddChangedFiles stages modified, new, and deleted files while
-    // filtering out known pr-split tool artifacts (e.g., .pr-split-plan.json).
+    // Stage source changes while excluding tool-owned plan files. An owner
+    // can supply its Git observer so every subprocess remains part of the
+    // same worktree lifetime, including status and staging failures.
+    async function stageChangedFiles(dir, runGit) {
+        async function checked(args) {
+            var result = await runGit(dir, args);
+            if (commandFailed(result)) {
+                var failure = new Error('git ' + args[0] + ' failed: ' + (result ? execFailReason(result) : 'no command result'));
+                failure.cause = result;
+                if (result) {
+                    failure.code = result.code;
+                    failure.truncated = result.truncated === true;
+                    if (result.treeCleanupError) failure.treeCleanupError = result.treeCleanupError;
+                }
+                throw failure;
+            }
+            return result;
+        }
+        var status = await checked(['status', '--porcelain']);
+        if (status.stdout.trim() === '') return;
+        var excludedFiles = ['.pr-split-plan.json'];
+        var lines = status.stdout.split('\n');
+        var files = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.length < 3) continue;
+            var path = line.substring(3);
+            var arrowIdx = path.indexOf(' -> ');
+            if (arrowIdx >= 0) path = path.substring(arrowIdx + 4);
+            if (path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') {
+                path = path.substring(1, path.length - 1);
+            }
+            var excluded = false;
+            for (var e = 0; e < excludedFiles.length; e++) {
+                if (path === excludedFiles[e] || path.indexOf('/' + excludedFiles[e]) >= 0) {
+                    excluded = true;
+                    break;
+                }
+            }
+            if (!excluded) files.push(path);
+        }
+        if (files.length > 0) await checked(['add', '--'].concat(files));
+    }
+
     async function gitAddChangedFiles(dir) {
-        var status = await gitExec(dir, ['status', '--porcelain']);
-        if (status.code !== 0 || status.stdout.trim() === '') {
-            return;
-        }
-        var EXCLUDED = ['.pr-split-plan.json'];
-        var lines = status.stdout.split('\n');
-        var files = [];
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-            if (line.length < 3) continue;
-            var path = line.substring(3);
-            var arrowIdx = path.indexOf(' -> ');
-            if (arrowIdx >= 0) {
-                path = path.substring(arrowIdx + 4);
-            }
-            if (path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') {
-                path = path.substring(1, path.length - 1);
-            }
-            var excluded = false;
-            for (var e = 0; e < EXCLUDED.length; e++) {
-                if (path === EXCLUDED[e] || path.indexOf('/' + EXCLUDED[e]) >= 0) {
-                    excluded = true;
-                    break;
-                }
-            }
-            if (!excluded) {
-                files.push(path);
-            }
-        }
-        if (files.length > 0) {
-            var addArgs = ['add', '--'];
-            for (var f = 0; f < files.length; f++) {
-                addArgs.push(files[f]);
-            }
-            var addResult = await gitExec(dir, addArgs);
-            if (addResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
-                log.warn('pr-split: git add failed in gitAddChangedFiles: ' + addResult.stderr.trim());
-            }
-        }
+        return await stageChangedFiles(dir, gitExec);
     }
 
-    // gitAddChangedFilesAsync is the non-blocking version of gitAddChangedFiles.
-    // Uses gitExecAsync (exec.spawn) so the event loop stays responsive during BubbleTea TUI.
-    // T31: async version for pipeline use.
-    async function gitAddChangedFilesAsync(dir) {
-        var gitExecAsync = prSplit._gitExecAsync;
-        var status = await gitExecAsync(dir, ['status', '--porcelain']);
-        if (status.code !== 0 || status.stdout.trim() === '') {
-            return;
-        }
-        var EXCLUDED = ['.pr-split-plan.json'];
-        var lines = status.stdout.split('\n');
-        var files = [];
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-            if (line.length < 3) continue;
-            var path = line.substring(3);
-            var arrowIdx = path.indexOf(' -> ');
-            if (arrowIdx >= 0) {
-                path = path.substring(arrowIdx + 4);
-            }
-            if (path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') {
-                path = path.substring(1, path.length - 1);
-            }
-            var excluded = false;
-            for (var e = 0; e < EXCLUDED.length; e++) {
-                if (path === EXCLUDED[e] || path.indexOf('/' + EXCLUDED[e]) >= 0) {
-                    excluded = true;
-                    break;
-                }
-            }
-            if (!excluded) {
-                files.push(path);
-            }
-        }
-        if (files.length > 0) {
-            var addArgs = ['add', '--'];
-            for (var f = 0; f < files.length; f++) {
-                addArgs.push(files[f]);
-            }
-            var addResult = await gitExecAsync(dir, addArgs);
-            if (addResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
-                log.warn('pr-split: git add failed in gitAddChangedFilesAsync: ' + addResult.stderr.trim());
-            }
-        }
+    async function gitAddChangedFilesAsync(dir, runGit) {
+        return await stageChangedFiles(dir, runGit || prSplit._gitExecAsync);
     }
 
     // dirname extracts the directory at the given depth from a file path.
@@ -897,10 +854,66 @@
     // Mutable runtime config.
     prSplit.runtime = runtime;
 
+    // A native exit status is only one part of the command result. In
+    // particular, exit zero can coexist with failed capture or tree teardown.
+    // Some Git queries give ordinary nonzero statuses a useful meaning; those
+    // accepted codes do not suppress structural capture/cleanup failures.
+    function commandFailed(result, acceptedCodes) {
+        var accepted = acceptedCodes || [0];
+        return !result || result.truncated === true || result.execFailed === true ||
+            result.timedOut === true || result.cancelled === true ||
+            !!result.treeCleanupError || accepted.indexOf(result.code) < 0 ||
+            (result.code === 0 && result.error === true);
+    }
+
+    function executionCleanupFailure(results, execution) {
+        var recordedRows = execution && Array.isArray(execution.results) ? execution.results : [];
+        var rows = Array.isArray(results) ? results :
+            recordedRows;
+        var candidates = [execution].concat(rows, recordedRows);
+        // Check every owner before a stale prefix can hide a later failure.
+        for (var i = 0; i < candidates.length; i++) {
+            var candidate = candidates[i];
+            if (!candidate || !(candidate.cleanupFailed || candidate.treeCleanupError || candidate.worktreeRetained)) continue;
+            var detail = String(candidate.error || 'execution cleanup is unresolved');
+            if (candidate.treeCleanupError && detail.indexOf(candidate.treeCleanupError) < 0) detail += '; ' + candidate.treeCleanupError;
+            if (candidate.worktreeDir && detail.indexOf(candidate.worktreeDir) < 0) detail += '; worktree: ' + candidate.worktreeDir;
+            var message = detail.indexOf('Execution blocked: ') === 0 ? detail :
+                'Execution blocked: ' + detail + '. Confirm process termination and clean up the recorded worktree before discarding this checkpoint and starting a new run.';
+            return {
+                results: rows.slice(),
+                error: message,
+                execution: Object.assign({}, candidate, {results:rows.slice()})
+            };
+        }
+        return null;
+    }
+
+    // A pipeline retains this identity through execution, verification, repair,
+    // and cleanup. Nested operations borrow it; unrelated callers cannot begin
+    // replacing branches while an older stage still owns their resources.
+    var pipelineOwner = null;
+    function claimPipelineOwner() {
+        if (pipelineOwner !== null) return null;
+        pipelineOwner = {};
+        return pipelineOwner;
+    }
+    function ownsPipeline(owner) {
+        return pipelineOwner !== null && owner === pipelineOwner;
+    }
+    function releasePipelineOwner(owner) {
+        if (!ownsPipeline(owner)) return false;
+        pipelineOwner = null;
+        return true;
+    }
+
     // execFailReason renders a failed result's error string.
     var execFailReason = function(result) {
-        var stderr = (result.stderr || '').trim();
+        if (!result) return 'no command result';
+        var stderr = String(result.stderr || '').trim();
         var message = (result.message === undefined || result.message === null) ? '' : String(result.message);
+        if (!message && result.treeCleanupError) message = String(result.treeCleanupError);
+        if (!message && result.truncated === true) message = 'output capture was incomplete';
         if (message === '' || stderr.indexOf(message) >= 0) {
             return stderr;
         }
@@ -914,11 +927,18 @@
     prSplit._shellExecAsync = shellExecAsync;
     prSplit._resolveDir = resolveDir;
     prSplit._execFailReason = execFailReason;
+    prSplit._commandFailed = commandFailed;
+    prSplit._executionCleanupFailure = executionCleanupFailure;
+    prSplit._claimPipelineOwner = claimPipelineOwner;
+    prSplit._ownsPipeline = ownsPipeline;
+    prSplit._releasePipelineOwner = releasePipelineOwner;
+    prSplit._pipelinePending = function() { return pipelineOwner !== null; };
     prSplit._shellQuote = shellQuote;
     prSplit._worktreeTmpPath = worktreeTmpPath;
     prSplit._isWindows = isWindows;
     prSplit._lookupBinary = lookupBinary;
     prSplit._lookupBinaryAsync = lookupBinaryAsync;
+    prSplit._shellInvocation = shellInvocation;
     prSplit._shellSpawnSync = shellSpawnSync;
     prSplit._shellSpawnAsync = shellSpawnAsync;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;

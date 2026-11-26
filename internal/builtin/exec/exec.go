@@ -42,12 +42,12 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 		exports := module.Get("exports").(*goja.Object)
 
 		if adapter != nil {
-			// execv(argv, opts?): Promise<{stdout, stderr, code, error, message}>.
+			// execv(argv, opts?): Promise<{stdout, stderr, code, error, message, truncated, execFailed?, treeCleanupError?}>.
 			_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
 					promise, settler := adapter.NewPromise()
 					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
-						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv", "truncated": false}
+						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv", "truncated": false, "execFailed": true}
 						return m
 					}))
 					return promise
@@ -56,19 +56,18 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 				if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
 					promise, settler := adapter.NewPromise()
 					handleSettleErr(settler.Resolve(func(rt *goja.Runtime) any {
-						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings", "truncated": false}
+						m := map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings", "truncated": false, "execFailed": true}
 						return m
 					}))
 					return promise
 				}
-				cmd := parts[0]
-				var args []string
-				if len(parts) > 1 {
-					args = parts[1:]
-				}
+				cfg := SpawnConfig{Command: parts[0], Args: parts[1:]}
 				var timeout time.Duration
 				if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
 					opts := call.Argument(1).ToObject(runtime)
+					if v := opts.Get("windowsVerbatimArguments"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+						cfg.WindowsVerbatimArguments = v.ToBoolean()
+					}
 					if v := opts.Get("timeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 						timeout = timeoutFromMilliseconds(v.ToInteger())
 					}
@@ -79,7 +78,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, loop *goeventl
 						workerCtx, cancel = context.WithTimeout(workerCtx, timeout)
 						defer cancel()
 					}
-					result := runExec(workerCtx, cmd, args...)
+					result := runExec(workerCtx, cfg)
 					handleSettleErr(settle.Settle(false, func(rt *goja.Runtime) any { return result }))
 				})
 			})
@@ -124,6 +123,9 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			}
 			if v := optsObj.Get("envReplace"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				cfg.EnvReplace = v.ToBoolean()
+			}
+			if v := optsObj.Get("windowsVerbatimArguments"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				cfg.WindowsVerbatimArguments = v.ToBoolean()
 			}
 			if v := optsObj.Get("timeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 				timeout = timeoutFromMilliseconds(v.ToInteger())
@@ -493,10 +495,12 @@ func closeCommandPipes(stdoutReader, stdoutWriter, stderrReader, stderrWriter *c
 	)
 }
 
-func cleanupFailedRunExec(primaryErr error, kill, closeTree, wait, closePipes func() error) error {
+func cleanupFailedRunExec(primaryErr error, kill, closeTree func() error, beginReap func(), wait, closePipes func() error) error {
 	killErr := kill()
 	closeTreeErr := closeTree()
+	beginReap()
 	waitErr := wait()
+	closeTreeErr = retryProcessGroupClose(closeTree, closeTreeErr)
 	closePipesErr := closePipes()
 	// Filter before wrapping: the generic cleanup filter unwraps errors, so
 	// wrapping first would erase the structural tree-failure discriminator.
@@ -561,13 +565,40 @@ func (e *outputCaptureAbortedError) Error() string {
 
 func (e *outputCaptureAbortedError) Unwrap() error { return e.cause }
 
+// nonBenignCommandOutputError removes only closed-file causes. A wrapper
+// around a mixed error must remain intact: its message cannot be reconstructed
+// from Unwrap, and the independent cause is still a failure.
+func nonBenignCommandOutputError(err error) error {
+	if err == nil || !errors.Is(err, os.ErrClosed) {
+		return err
+	}
+	switch unwrapper := err.(type) {
+	case interface{ Unwrap() []error }:
+		parts := unwrapper.Unwrap()
+		filtered := make([]error, 0, len(parts))
+		for _, part := range parts {
+			if remaining := nonBenignCommandOutputError(part); remaining != nil {
+				filtered = append(filtered, remaining)
+			}
+		}
+		return errors.Join(filtered...)
+	case interface{ Unwrap() error }:
+		if nonBenignCommandOutputError(unwrapper.Unwrap()) == nil {
+			return nil
+		}
+		return err
+	default:
+		return nil
+	}
+}
+
 func readCommandOutput(index int, r io.ReadCloser, results chan<- commandOutputResult) {
 	data, err := io.ReadAll(r)
-	// io.ReadAll returns a nil error only when the reader reached io.EOF, so
-	// err == nil implies EOF. Any other outcome (non-EOF read error, or a
-	// nil-error edge) means the capture did not reach EOF and is incomplete.
-	eof := err == nil || errors.Is(err, io.EOF)
-	if closeErr := r.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+	// io.ReadAll consumes exact io.EOF into nil. A remaining error can wrap
+	// EOF together with an independent read failure, so errors.Is(EOF) alone
+	// cannot establish complete capture.
+	eof := err == nil
+	if closeErr := nonBenignCommandOutputError(r.Close()); closeErr != nil {
 		// A close failure after a clean EOF does not truncate the capture:
 		// all bytes were read before EOF. Keep the EOF verdict and surface
 		// the close error separately.
@@ -598,6 +629,81 @@ func abortCause(abort <-chan struct{}, ctx context.Context) error {
 	}
 }
 
+// commandOutputCollector owns the published completion records for one command.
+// Reader goroutines send immutable records; only the collector mutates this state.
+type commandOutputCollector struct {
+	results   <-chan commandOutputResult
+	output    [2]string
+	received  int
+	truncated bool
+	err       error
+}
+
+func (c *commandOutputCollector) store(result commandOutputResult, induced bool) {
+	if induced {
+		result.err = nonBenignCommandOutputError(result.err)
+	}
+	c.output[result.index] = string(result.data)
+	if !result.eof {
+		// A returned reader can still have failed before EOF. Its retained
+		// bytes are a prefix, independently of the process exit status.
+		c.truncated = true
+	}
+	c.err = errors.Join(c.err, result.err)
+	c.received++
+}
+
+func (c *commandOutputCollector) drainReady(induced bool) {
+	for c.received < 2 {
+		select {
+		case result := <-c.results:
+			c.store(result, induced)
+		default:
+			return
+		}
+	}
+}
+
+func (c *commandOutputCollector) complete() (string, string, bool, error) {
+	return c.output[0], c.output[1], c.truncated, c.err
+}
+
+func (c *commandOutputCollector) aborted(cause error) (string, string, bool, error) {
+	// A ready deadline must not discard a prefix already published by a
+	// reader. The cutoff remains truncated even if Close induced an EOF.
+	c.drainReady(true)
+	return c.output[0], c.output[1], true, errors.Join(c.err, &outputCaptureAbortedError{cause: cause})
+}
+
+// forceClose runs after the first abort grace expires. Published completions
+// still win over the timer: select may choose either when both are ready.
+func (c *commandOutputCollector) forceClose(cause error, stdout, stderr io.Closer) (string, string, bool, error) {
+	c.drainReady(false)
+	if c.received == 2 {
+		return c.complete()
+	}
+	// The empty result queue observed above is the cutoff boundary. A reader
+	// that has not published completion by then remains incomplete even if
+	// closing its pipe makes its subsequent Read report EOF.
+	if closeErr := nonBenignCommandOutputError(stdout.Close()); closeErr != nil {
+		c.err = errors.Join(c.err, fmt.Errorf("close command stdout pipe: %w", closeErr))
+	}
+	if closeErr := nonBenignCommandOutputError(stderr.Close()); closeErr != nil {
+		c.err = errors.Join(c.err, fmt.Errorf("close command stderr pipe: %w", closeErr))
+	}
+	timer := time.NewTimer(outputAbortGrace)
+	defer timer.Stop()
+	for c.received < 2 {
+		select {
+		case result := <-c.results:
+			c.store(result, true)
+		case <-timer.C:
+			return c.aborted(cause)
+		}
+	}
+	return c.aborted(cause)
+}
+
 // collectCommandOutput returns the command's stdout and stderr.
 //
 // truncated reports whether either reader's capture was cut short without
@@ -605,68 +711,33 @@ func abortCause(abort <-chan struct{}, ctx context.Context) error {
 // though its goroutine returned). When truncated is false, both readers
 // reached EOF cleanly.
 func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <-chan struct{}, results <-chan commandOutputResult, stdout, stderr io.ReadCloser) (stdoutText, stderrText string, truncated bool, err error) {
-	var output [2]string
-	received := 0
-
-	store := func(result commandOutputResult) {
-		output[result.index] = string(result.data)
-		if !result.eof {
-			// The reader did not reach EOF: its goroutine returned only
-			// because of a read or close failure, so the capture is a
-			// prefix and must be classified as truncated.
-			truncated = true
-		}
-		err = errors.Join(err, result.err)
-		received++
-	}
-
+	collector := commandOutputCollector{results: results}
 	abortCapture := func(cause error) (string, string, bool, error) {
-		induced := false
-		clearInduced := func(result commandOutputResult) commandOutputResult {
-			if induced && errors.Is(result.err, os.ErrClosed) {
-				result.err = nil
-			}
-			return result
-		}
 		grace := time.NewTimer(outputAbortGrace)
 		defer grace.Stop()
-		for received < 2 {
+		for collector.received < 2 {
 			select {
 			case result := <-results:
-				store(clearInduced(result))
+				collector.store(result, false)
 			case <-grace.C:
-				induced = true
-				_ = stdout.Close()
-				_ = stderr.Close()
-				timer := time.NewTimer(outputAbortGrace)
-				for received < 2 {
-					select {
-					case result := <-results:
-						store(clearInduced(result))
-					case <-timer.C:
-						timer.Stop()
-						return output[0], output[1], true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
-					}
-				}
-				timer.Stop()
-				return output[0], output[1], true, errors.Join(err, &outputCaptureAbortedError{cause: cause})
+				return collector.forceClose(cause, stdout, stderr)
 			}
 		}
-		return output[0], output[1], truncated, err
+		return collector.complete()
 	}
 
 	ceiling := time.NewTimer(eofCeiling)
 	defer ceiling.Stop()
-	for received < 2 {
+	for collector.received < 2 {
 		select {
 		case result := <-results:
-			store(result)
+			collector.store(result, false)
 			continue
 		default:
 		}
 		select {
 		case result := <-results:
-			store(result)
+			collector.store(result, false)
 		case <-abort:
 			return abortCapture(abortCause(abort, ctx))
 		case <-ctx.Done():
@@ -675,14 +746,14 @@ func collectCommandOutput(ctx context.Context, eofCeiling time.Duration, abort <
 			return abortCapture(fmt.Errorf("no EOF within %s of process-tree teardown: a writer outside the command's process group may still hold the output pipe", eofCeiling))
 		}
 	}
-	return output[0], output[1], truncated, err
+	return collector.complete()
 }
 
-func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
-	return runExecCommand(ctx, cmd, args, newCommandPipe, newProcessTree, outputEOFCeiling)
+func runExec(ctx context.Context, cfg SpawnConfig) map[string]any {
+	return runExecCommand(ctx, cfg, newCommandPipe, newProcessTree, outputEOFCeiling)
 }
 
-func runExecCommand(ctx context.Context, cmd string, args []string, newPipe commandPipeFactory, newTree processTreeFactory, eofCeiling time.Duration) map[string]any {
+func runExecCommand(ctx context.Context, cfg SpawnConfig, newPipe commandPipeFactory, newTree processTreeFactory, eofCeiling time.Duration) map[string]any {
 	if ctx == nil {
 		panic("exec: nil context requires baseCtx threading")
 	}
@@ -690,7 +761,7 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	if err != nil {
 		return map[string]any{
 			"stdout": "", "stderr": "", "code": -1,
-			"error": true, "message": err.Error(), "truncated": false,
+			"error": true, "message": err.Error(), "truncated": false, "execFailed": true,
 		}
 	}
 
@@ -699,7 +770,7 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	var observedCode int
 	var codeKnown bool
 	var started bool
-	result := func(runErr error) map[string]any {
+	result := func(runErr error, executionFailed bool) map[string]any {
 		code := 0
 		errStr := ""
 		if codeKnown {
@@ -712,11 +783,6 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 				} else {
 					code = -1
 				}
-			} else if code == 0 && captureTruncated {
-				// An aborted/incomplete capture must never present as exit 0;
-				// preserve non-zero exit codes, but degrade 0 to -1 when
-				// output capture was truncated.
-				code = -1
 			}
 			errStr = runErr.Error()
 		}
@@ -727,6 +793,9 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 			"error":     runErr != nil,
 			"message":   errStr,
 			"truncated": captureTruncated,
+		}
+		if executionFailed {
+			value["execFailed"] = true
 		}
 		if message := treeCleanupErrorMessage(runErr); started && message != "" {
 			value["treeCleanupError"] = message
@@ -741,35 +810,60 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 
 	stdoutReader, stdoutWriter, err = newPipe()
 	if err != nil {
-		return result(errors.Join(err, tree.close(nil), closePipes()))
+		return result(errors.Join(err, tree.close(nil), closePipes()), true)
 	}
 	stderrReader, stderrWriter, err = newPipe()
 	if err != nil {
-		return result(errors.Join(err, tree.close(nil), closePipes()))
+		return result(errors.Join(err, tree.close(nil), closePipes()), true)
 	}
 
-	c := osexec.CommandContext(ctx, cmd, args...)
+	c := newCommand(ctx, cfg)
+	// Read ProcessState only after Wait returns. Exit status remains a
+	// separate fact from capture and cleanup failures, including on startup
+	// rollback after the child has already exited.
+	recordExit := func(waitErr error) {
+		if c.ProcessState != nil {
+			observedCode = c.ProcessState.ExitCode()
+			codeKnown = true
+		} else if waitErr == nil {
+			observedCode = 0
+			codeKnown = true
+		} else if exitErr, ok := errors.AsType[*osexec.ExitError](waitErr); ok {
+			observedCode = exitErr.ExitCode()
+			codeKnown = true
+		}
+	}
+	wait := func() error {
+		waitErr := c.Wait()
+		recordExit(waitErr)
+		return waitErr
+	}
+
 	c.Stdout = stdoutWriter
 	c.Stderr = stderrWriter
 	c.Stdin = os.Stdin
-	setProcAttr(c)
 	c.Cancel = func() error {
 		return tree.kill(c)
 	}
 
 	if err := c.Start(); err != nil {
-		return result(errors.Join(err, tree.close(c), closePipes()))
+		return result(errors.Join(err, tree.close(c), closePipes()), true)
 	}
 	started = true
+	// A started child may already have written output, including before a
+	// later attach or pipe-close failure. Only the collector can establish
+	// that both streams reached EOF with all bytes retained.
+	captureTruncated = true
 	writerErr := errors.Join(closeCommandPipe(&stdoutWriter), closeCommandPipe(&stderrWriter))
 	if writerErr != nil {
 		return result(cleanupFailedRunExec(
 			writerErr,
 			func() error { return c.Process.Kill() },
 			func() error { return tree.close(c) },
-			c.Wait,
+			func() { tree.beginReap(false) },
+			wait,
 			closePipes,
-		))
+		), true)
 	}
 
 	if err := tree.attach(c); err != nil {
@@ -777,28 +871,16 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 			err,
 			func() error { return c.Process.Kill() },
 			func() error { return tree.close(c) },
-			c.Wait,
+			func() { tree.beginReap(false) },
+			wait,
 			closePipes,
-		))
+		), true)
 	}
 
 	outputResults := startCommandOutputReaders(stdoutReader, stderrReader)
 	waitErr, closeErr := waitAndCloseProcessTree(c, tree)
 
-	// Read the authoritative exit status from ProcessState immediately after
-	// Wait (matching ChildProcess.recordExit), rather than inferring code from
-	// error shape: a post-EOF pipe-close error or a context cancellation after
-	// a clean exit must not degrade a real exit code to -1.
-	if c.ProcessState != nil {
-		observedCode = c.ProcessState.ExitCode()
-		codeKnown = true
-	} else if waitErr == nil {
-		observedCode = 0
-		codeKnown = true
-	} else if exitErr, ok := errors.AsType[*osexec.ExitError](waitErr); ok {
-		observedCode = exitErr.ExitCode()
-		codeKnown = true
-	}
+	recordExit(waitErr)
 
 	var captureAbort chan struct{}
 	if closeErr != nil {
@@ -837,5 +919,10 @@ func runExecCommand(ctx context.Context, cmd string, args []string, newPipe comm
 	if closeErr != nil {
 		closeErr = &processTreeCloseError{err: closeErr}
 	}
-	return result(errors.Join(waitErr, closeErr, outputErr))
+	// Cmd.Wait returns a bare ExitError for an ordinary nonzero exit. Classify
+	// execution failures before joining errors: finding that ExitError inside
+	// a joined error must not hide a separate pipe-close or teardown failure.
+	_, ordinaryExit := waitErr.(*osexec.ExitError)
+	executionFailed := (waitErr != nil && !ordinaryExit) || closeErr != nil || outputErr != nil
+	return result(errors.Join(waitErr, closeErr, outputErr), executionFailed)
 }

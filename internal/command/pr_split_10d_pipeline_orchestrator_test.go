@@ -45,15 +45,16 @@ func TestChunk10d_ResumeValidationRejectsStaleAndBrokenChain(t *testing.T) {
 			var stale = await prSplit._validateResumeResults(plan, [
 				{ name: 'split/01-a', sha: 'cccccccccccccccccccccccccccccccccccccccc' }
 			], '/fallback');
-			return JSON.stringify({ valid: valid.length, stale: stale.length, calls: calls });
+			return JSON.stringify({ valid: valid.results.length, stale: stale.results.length, error: valid.error || stale.error, calls: calls });
 		})()
 	`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var payload struct {
-		Valid int `json:"valid"`
-		Stale int `json:"stale"`
+		Valid int    `json:"valid"`
+		Stale int    `json:"stale"`
+		Error string `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(result.(string)), &payload); err != nil {
 		t.Fatal(err)
@@ -63,5 +64,8 @@ func TestChunk10d_ResumeValidationRejectsStaleAndBrokenChain(t *testing.T) {
 	}
 	if payload.Stale != 0 {
 		t.Fatalf("stale prefix length = %d, want 0", payload.Stale)
+	}
+	if payload.Error != "" {
+		t.Fatalf("ordinary stale or non-ancestor result became an execution failure: %s", payload.Error)
 	}
 }

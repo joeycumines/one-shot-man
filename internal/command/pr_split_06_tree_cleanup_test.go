@@ -22,6 +22,13 @@ const treeCleanupFixtureJS = `
 	globalThis.__treeKillCalls = 0;
 	globalThis.__treeWaitCalls = 0;
 	globalThis.__treeCancelled = false;
+	globalThis.__treeBodyElapsedMs = 0;
+	globalThis.__treeAdvanceBody = function() {
+		if (__treeBodyElapsedMs > 0) {
+			var finishedMs = Date.now() + __treeBodyElapsedMs;
+			Date.now = function() { return finishedMs; };
+		}
+	};
 	globalThis.__treeException = function(message) {
 		var e = new Error(message);
 		if (__treeError) e.treeCleanupError = __treeError;
@@ -29,6 +36,7 @@ const treeCleanupFixtureJS = `
 	};
 	_gitResponses['!sh'] = function() {
 		__treeCommandCalls++;
+		__treeAdvanceBody();
 		if (__treeThrow) throw __treeException('post-start attach failed');
 		var r = {
 			code: __treeCode, stdout: 'complete output\n', stderr: '',
@@ -45,6 +53,7 @@ const treeCleanupFixtureJS = `
 	};
 	globalThis.__childFactory = function() {
 		__treeCommandCalls++;
+		__treeAdvanceBody();
 		if (__treeThrow) throw __treeException('post-start attach failed');
 		var sent = false;
 		return {
@@ -159,7 +168,7 @@ func TestVerifySplit_TreeCleanupFailure(t *testing.T) {
 	}{
 		{name: "clean_exit_zero"},
 		{name: "nonzero_truncated", setup: `__treeCode = 7; __treeTruncated = true;`, code: 7, truncated: true},
-		{name: "timeout_truncated", setup: `__treeCode = 124; __treeTruncated = true;`, code: 124, truncated: true, timeout: true},
+		{name: "timeout_truncated", setup: `__treeCode = 124; __treeTruncated = true; __treeBodyElapsedMs = 5000;`, code: 124, truncated: true, timeout: true},
 		{name: "throwing_output_callback", extra: `, outputFn: function() { throw new Error('output callback exploded'); }`},
 		{name: "rejected_post_start_spawn", setup: `__treeThrow = true;`, code: -1},
 	} {
@@ -186,7 +195,7 @@ func TestVerifySplitAsync_TreeCleanupFailure(t *testing.T) {
 	}{
 		{name: "clean_exit_zero"},
 		{name: "nonzero_truncated", setup: `__treeCode = 7; __treeTruncated = true;`, code: 7, truncated: true},
-		{name: "timeout_truncated", setup: `__treeCode = 124; __treeTruncated = true;`, code: 124, truncated: true, timeout: true},
+		{name: "timeout_truncated", setup: `__treeCode = 124; __treeTruncated = true; __treeBodyElapsedMs = 5000;`, code: 124, truncated: true, timeout: true},
 		{name: "first_wait_rejects", setup: `__treeWaitStyle = 'reject';`, code: -1},
 		{name: "rejected_post_start_spawn", setup: `__treeThrow = true;`, code: -1},
 		{name: "cleanup_wait_resolves_after_callback_throw", setup: `__treeCode = 7; __treeWaitStyle = 'after_kill';`, extra: `, outputFn: function() { throw new Error('output callback exploded'); }`, code: 7, kills: 1},
@@ -243,17 +252,34 @@ func TestVerifySplit_NoTreeCleanupFailure(t *testing.T) {
 			name, setup        string
 			code               int
 			passed, execFailed bool
+			execvError         bool
 		}{
 			{name: "clean_exit", passed: true},
 			{name: "ordinary_nonzero", setup: `__treeCode=7;`, code: 7},
-			{name: "post_eof_pipe_close_error", setup: `__treePipeError=true;`, passed: true},
+			{name: "post_eof_pipe_close_error", setup: `__treePipeError=true;`, passed: true, execvError: true},
 			{name: "ordinary_spawn_failure", setup: `__treeThrow=true;`, code: -1, execFailed: true},
 		} {
 			t.Run(method+"/"+tc.name, func(t *testing.T) {
 				got := observeTreeCleanup(t, method, tc.setup, "")
 				r := got.Result
-				if r.Passed != tc.passed || r.ExitCode != tc.code || r.ExecFailed != tc.execFailed || r.TreeCleanupError != "" || r.WorktreeRetained || r.CleanupFailed || got.Removes != 1 {
+				wantPassed, wantExecFailed := tc.passed, tc.execFailed
+				if method == "verifySplit" && tc.execvError {
+					// execv reports its post-EOF close error independently of
+					// exit status and capture. The spawn fixture's wait/read
+					// results expose no pipe-close error, so it remains successful.
+					wantPassed, wantExecFailed = false, true
+					if r.Error == nil || !strings.Contains(*r.Error, "pipe close failed after EOF") {
+						t.Errorf("execv close diagnostic lost: %+v", r)
+					}
+				}
+				if r.Passed != wantPassed || r.ExitCode != tc.code || r.ExecFailed != wantExecFailed || r.Truncated || r.TimedOut || r.TreeCleanupError != "" || r.WorktreeRetained || r.CleanupFailed || got.Removes != 1 {
 					t.Errorf("ordinary result changed: %+v, removes=%d", r, got.Removes)
+				}
+				if tc.execvError && r.Output != "complete output\n" {
+					t.Errorf("post-EOF close failure changed complete output: %q", r.Output)
+				}
+				if got.Pending != 0 {
+					t.Errorf("pending bounded-await/cancellation timers = %d, want zero", got.Pending)
 				}
 			})
 		}

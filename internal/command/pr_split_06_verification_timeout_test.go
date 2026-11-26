@@ -81,33 +81,33 @@ func TestVerifySplitAsync_TimeoutCaptureClassification(t *testing.T) {
 		code        int
 		truncated   bool
 		waitRejects bool
+		elapsedMs   int
 		wantTimeout bool
 	}{
 		{name: "success", code: 0},
 		{name: "command failure", code: 7},
 		{name: "incomplete capture", code: 7, truncated: true},
-		{name: "timeout", code: 124, wantTimeout: true},
-		{name: "timeout with incomplete capture", code: 124, truncated: true, wantTimeout: true},
-		{name: "rejected wait after deadline", waitRejects: true},
+		{name: "timeout", code: 124, elapsedMs: 600000, wantTimeout: true},
+		{name: "timeout with incomplete capture", code: 124, truncated: true, elapsedMs: 600000, wantTimeout: true},
+		{name: "rejected wait after deadline", waitRejects: true, elapsedMs: 600000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			waitBody := fmt.Sprintf("return Promise.resolve({code: %d, signal: null});", tc.code)
 			config := "verifyTimeoutMs: 600000"
 			if tc.waitRejects {
-				waitBody = `return new Promise(function(resolve, reject) {
-					setTimeout(function() { reject(new Error('wait unavailable')); }, 10);
-				});`
-				config = "verifyTimeoutMs: 1"
+				waitBody = `return Promise.reject(new Error('wait unavailable'));`
 			}
 			result, pending, removes := runAsyncVerifyWithFactory(t, fmt.Sprintf(`function() {
+				var finishedMs = Date.now() + %d;
+				Date.now = function() { return finishedMs; };
 				return {
 					stdout: { read: function() { return Promise.resolve({done: true, truncated: %v}); } },
 					stderr: { read: function() { return Promise.resolve({done: true}); } },
 					wait: function() { %s },
 					kill: function() { return Promise.resolve(); }
 				};
-			}`, tc.truncated, waitBody), config)
+			}`, tc.elapsedMs, tc.truncated, waitBody), config)
 			if result.TimedOut != tc.wantTimeout || result.Truncated != tc.truncated || result.ExecFailed != tc.waitRejects {
 				t.Fatalf("classification = %+v, want timedOut=%v truncated=%v execFailed=%v", result, tc.wantTimeout, tc.truncated, tc.waitRejects)
 			}
@@ -140,12 +140,15 @@ func TestVerifySplitsAsync_TruncatedTimeoutPreservesDependencyGuard(t *testing.T
 				var exec = prSplit._modules.exec;
 				var originalSpawn = exec.spawn;
 				var originalGit = prSplit._gitExecAsync;
+				var originalNow = Date.now, now = Date.now();
+				Date.now = function() { return now; };
 				var spawns = 0;
 				prSplit._gitExecAsync = function() { return {code: 0, stdout: '', stderr: ''}; };
 				exec.spawn = function() {
 					var baseline = spawns++ === 0;
 					var truncated = baseline === %v;
 					var code = truncated ? 124 : (baseline ? 7 : 2);
+					if (truncated) now += 600000;
 					return {
 						stdout: { read: function() { return Promise.resolve({done: true, truncated: truncated}); } },
 						stderr: { read: function() { return Promise.resolve({done: true}); } },
@@ -162,6 +165,7 @@ func TestVerifySplitsAsync_TruncatedTimeoutPreservesDependencyGuard(t *testing.T
 				} finally {
 					exec.spawn = originalSpawn;
 					prSplit._gitExecAsync = originalGit;
+					Date.now = originalNow;
 				}
 			})()`, baselineTruncated, quotedDir))
 			if err != nil {

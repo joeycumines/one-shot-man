@@ -216,7 +216,7 @@ func spawnWithConPTY(ctx context.Context, cfg SpawnConfig, pconsole, inputWrite,
 	if command == "" {
 		return nil, errors.New("pty: command is required")
 	}
-	cmdLine := buildCommandLine(command, args)
+	cmdLine := buildCommandLine(command, args, cfg.WindowsVerbatimArguments)
 	cmdLinePtr, err := syscall.UTF16PtrFromString(cmdLine)
 	if err != nil {
 		return nil, fmt.Errorf("pty: invalid command line: %w", err)
@@ -426,13 +426,17 @@ func (p *Process) platformClosePseudoConsole() {
 // is always escaped, including when there are no arguments: CreateProcess is
 // called without lpApplicationName, so an unquoted absolute path containing
 // spaces would otherwise be parsed as multiple tokens. Callers that need a
-// pre-formed command line must split it into Command and Args first.
-func buildCommandLine(name string, args []string) string {
+// pre-formed command line pass already quoted arguments with verbatim true.
+func buildCommandLine(name string, args []string, verbatim bool) string {
 	var b strings.Builder
 	b.WriteString(syscall.EscapeArg(name))
 	for _, a := range args {
 		b.WriteByte(' ')
-		b.WriteString(syscall.EscapeArg(a))
+		if verbatim {
+			b.WriteString(a)
+		} else {
+			b.WriteString(syscall.EscapeArg(a))
+		}
 	}
 	return b.String()
 }

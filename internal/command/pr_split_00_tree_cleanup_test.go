@@ -34,7 +34,9 @@ func TestChunk00_CollectSpawnOutputPreservesTreeCleanupFailure(t *testing.T) {
 		{name: "successful_exit", waitBody: `return {code: 0, signal: null, treeCleanupError: reason};`},
 		{name: "nonzero_exit", waitBody: `return {code: 7, signal: null, treeCleanupError: reason};`, code: 7},
 		{name: "signalled_exit", waitBody: `return {code: -1, signal: 'SIGTERM', treeCleanupError: reason};`, code: -1, signal: "SIGTERM"},
-		{name: "truncated_capture", waitBody: `return {code: 0, signal: null, treeCleanupError: reason};`, code: -1, truncated: true},
+		{name: "truncated_capture_zero", waitBody: `return {code: 0, signal: null, treeCleanupError: reason};`, truncated: true},
+		{name: "truncated_capture_nonzero", waitBody: `return {code: 7, signal: null, treeCleanupError: reason};`, code: 7, truncated: true},
+		{name: "truncated_wait_rejection", waitBody: `var e = new Error("wait failed"); e.treeCleanupError = reason; throw e;`, code: -1, truncated: true},
 		{name: "wait_rejection", waitBody: `var e = new Error('wait failed'); e.treeCleanupError = reason; throw e;`, code: -1},
 		{name: "ordinary_success", waitBody: `return {code: 0, signal: null};`, clean: true},
 	} {

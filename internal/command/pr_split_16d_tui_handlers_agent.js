@@ -295,6 +295,10 @@
     }
 
     function startAutoAnalysis(s) {
+        if ((typeof prSplit._pipelinePending === 'function' && prSplit._pipelinePending()) ||
+            (typeof prSplit._executionPending === 'function' && prSplit._executionPending())) {
+            return enterErrorState(s, 'The previous execution or automated pipeline is still running; wait for its worktree cleanup to finish before retrying.');
+        }
         // automatedSplit is also used by the full-screen wizard. Install the
         // wizard as the cancellation source before any async config work so
         // Confirm Cancel reaches the running pipeline, not only REPL commands.
@@ -435,7 +439,7 @@
                     s.analysisSteps[0].active = true;
                     var baseStart = Date.now();
                     try {
-                        var baselineResult = await prSplit.verifySplitAsync(prSplit.runtime.baseBranch, {
+                        var baselineResult = await prSplit._runOwnedWork(s, prSplit.runtime.baseBranch, {
                             verifyCommand: bvc.verifyCommand,
                             dir: bvc.dir,
                             verifyTimeoutMs: bvc.verifyTimeoutMs,
@@ -444,6 +448,9 @@
                                 log.printf('wizard: %s', line);
                                 s.verifyScreen = (s.verifyScreen || '') + line + '\n';
                             }
+                        }, function() {
+                            return prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch) &&
+                                !s.wizardQuitting && !s.errorDiscardPending && !s.errorDiscardReady;
                         });
                         if (!prSplit._asyncConfigCurrent(s, '_autoConfigEpoch', configEpoch)) return null;
                         if (!baselineResult.passed) {
@@ -695,16 +702,25 @@
         var result = s.autoSplitResult;
         s.isProcessing = false;
 
+        var report = (result && result.report) || {};
+        var executionPending = (result && result.executionPending) ||
+            (report.execution && report.execution.executionPending);
+        if (!executionPending) {
+            if (report.resourceFailure || report.execution) {
+                st.executionOutcomeCache = report.resourceFailure || report.execution;
+            }
+            if (report.splits) st.executionResultCache = report.splits;
+        }
+
         if (result && result.error) {
             return enterErrorState(s, result.error);  // T116
         }
 
         // Populate caches from pipeline report.
-        var report = (result && result.report) || {};
         if (report.analysis) { st.analysisCache = report.analysis; }
         if (report.classification) { st.groupsCache = report.classification; }
         if (report.plan) { st.planCache = report.plan; }
-        if (report.splits) {
+        if (report.splits && !executionPending) {
             st.executionResultCache = report.splits;
             s.executionResults = report.splits;
         }

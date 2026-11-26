@@ -158,6 +158,13 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-timeout <duration>`: deadline for agent MCP waits and verify steps (classify, plan, resolve, verify); `0` selects built-in defaults; does not bound the agent PTY lifetime itself
   - `-resume`: resume a previously saved auto-split session (replays the plan file, not the mux state file)
 
+Verification's `timedOut` result records that the configured verification
+budget elapsed before cleanup began. A command may return exit code `124`,
+`137`, or `143` without reaching that deadline; the exit code alone does not
+identify a timeout. Output completeness and cleanup failures remain separate
+result fields. Worktree cleanup uses its own budget and does not extend the
+measured verification duration.
+
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
